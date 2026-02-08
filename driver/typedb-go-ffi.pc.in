@@ -1,0 +1,11 @@
+# pkg-config template for typedb-go-ffi
+# Copy to /usr/local/lib/pkgconfig/typedb-go-ffi.pc and adjust prefix.
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: typedb-go-ffi
+Description: TypeDB Go FFI static library (Rust driver wrapper)
+Version: 0.1.0
+Libs: -L${libdir} -ltypedb_go_ffi -ldl -lpthread -lm
+Cflags: -I${includedir}

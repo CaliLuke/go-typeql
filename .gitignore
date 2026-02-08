@@ -1,0 +1,10 @@
+# Rust build artifacts
+driver/rust/target/
+
+# Go build artifacts
+*.exe
+*.test
+*.out
+
+# OS files
+.DS_Store
