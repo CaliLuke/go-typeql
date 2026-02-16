@@ -596,39 +596,91 @@ if dog, ok := instance.(*Dog); ok {
 
 ---
 
-## Code Generator (tqlgen)
+## Code Generator (tqlgen v0.3.0)
 
-Generate Go structs or a schema registry from existing TypeQL schema files:
+Generate Go structs or a schema registry from existing TypeQL schema files.
+
+### CLI Usage
 
 ```bash
-# Generate Go structs
+# Generate Go structs from TypeQL schema
 tqlgen -schema schema.tql -out models_gen.go -pkg models
 
-# Generate schema registry (type constants, parent maps, relation schemas)
+# Generate schema registry (type constants, parent maps, relation schemas, enum constants)
 tqlgen -schema schema.tql -registry -out registry_gen.go -pkg graph
+
+# All flags
+tqlgen -schema <file>     # Required: path to .tql file
+       -out <file>        # Output file (default: stdout)
+       -pkg <name>        # Package name (default: models)
+       -registry          # Generate registry instead of structs
+       -acronyms          # Go acronym conventions (default: true)
+       -skip-abstract     # Skip abstract types (default: true)
+       -enums             # Generate @values constants (default: true)
+       -inherit           # Accumulate inherited owns (default: true)
+       -schema-version <v> # Version string in header
 ```
+
+### Programmatic API
 
 ```go
 import "github.com/CaliLuke/go-typeql/tqlgen"
 
 // Parse a TypeQL schema file
-schema, err := tqlgen.ParseFile("schema.tql")
+schema, err := tqlgen.ParseSchemaFile("schema.tql")
+schema.AccumulateInheritance() // propagate parent owns/plays to children
 
-// Render Go structs
-code, err := tqlgen.Render(schema, "models")
+// --- Option A: Generate Go structs ---
+cfg := tqlgen.RenderConfig{PackageName: "models", UseAcronyms: true, Enums: true}
+err = tqlgen.Render(os.Stdout, schema, cfg)
 
-// Or render a schema registry
-data := tqlgen.BuildRegistryData(schema, tqlgen.RegistryConfig{PackageName: "graph"})
+// --- Option B: Generate schema registry ---
+regCfg := tqlgen.RegistryConfig{
+    PackageName:  "graph",
+    UseAcronyms:  true,
+    SkipAbstract: true,
+    Enums:        true,
+    TypePrefix:   "Type", // entity const prefix (default)
+    RelPrefix:    "Rel",  // relation const prefix (default)
+}
+data := tqlgen.BuildRegistryData(schema, regCfg)
 err = tqlgen.RenderRegistry(os.Stdout, data)
+
+// --- Annotation extraction ---
+// Parses # @key value, # @key(value), # @key from schema comments
+raw, _ := os.ReadFile("schema.tql")
+annotations := tqlgen.ExtractAnnotations(string(raw))
+// annotations["persona"]["prefix"] == "PER"
 ```
 
-Features:
+### Registry Output
+
+`BuildRegistryData` produces a `RegistryData` struct containing:
+
+| Field             | Type           | Description                                   |
+| ----------------- | -------------- | --------------------------------------------- |
+| EntityConstants   | []TypeConstCtx | `const TypePersona = "persona"`               |
+| RelationConstants | []TypeConstCtx | `const RelActs = "acts"`                      |
+| Enums             | []EnumCtx      | `const StatusProposed = "proposed"`           |
+| EntityParents     | []KVCtx        | `"persona": "artifact"`                       |
+| EntityAttributes  | []KVSliceCtx   | `"persona": {"name", "status", ...}` (sorted) |
+| AttrValueTypes    | []KVCtx        | `"name": "string"`                            |
+| AttrEnumValues    | []KVSliceCtx   | `"status": {"proposed", "accepted", ...}`     |
+| RelationSchema    | []RelSchemaCtx | Roles with player types per relation          |
+| RelationAttrs     | []KVSliceCtx   | Owned attributes per relation                 |
+| AllEntityTypes    | []string       | Sorted list of all entity types               |
+| AllRelationTypes  | []string       | Sorted list of all relation types             |
+
+Domain-specific items (display ID prefixes, business-logic defaults, helper functions) should be added by the consumer on top of `RegistryData`.
+
+### Features
 
 - Generates Go structs with `BaseEntity`/`BaseRelation` embedding and `typedb:"..."` tags
 - Generates string constants from `@values` constraints (`-enums`, on by default)
 - Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas
 - Comment annotations: `# @key value`, `# @key(value)`, `# @key` above type definitions
 - Inheritance propagation: parent `owns`/`plays` merged into children
+- Configurable constant prefixes (`TypePrefix`, `RelPrefix`)
 
 ---
 
