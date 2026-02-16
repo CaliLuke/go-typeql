@@ -697,6 +697,287 @@ func TestStampSequentialMigrations_AllAlreadyApplied(t *testing.T) {
 	}
 }
 
+// --- Error path tests ---
+
+// errMockTx always returns an error on Query.
+type errMockTx struct {
+	err error
+}
+
+func (m *errMockTx) Query(string) ([]map[string]any, error)                         { return nil, m.err }
+func (m *errMockTx) QueryWithContext(_ context.Context, q string) ([]map[string]any, error) { return m.Query(q) }
+func (m *errMockTx) Commit() error                                                  { return nil }
+func (m *errMockTx) Rollback() error                                                { return nil }
+func (m *errMockTx) Close()                                                         {}
+func (m *errMockTx) IsOpen() bool                                                   { return true }
+
+// errMockConn returns errMockTx instances that fail.
+type errMockConn struct {
+	schemaTxErr error // error for schema tx (first tx)
+	readTxErr   error // error for read tx (second tx)
+	txIdx       int
+}
+
+func (m *errMockConn) Transaction(_ string, txType int) (Tx, error) {
+	m.txIdx++
+	if m.txIdx == 1 && m.schemaTxErr != nil {
+		return &errMockTx{err: m.schemaTxErr}, nil
+	}
+	if m.txIdx == 2 && m.readTxErr != nil {
+		return &errMockTx{err: m.readTxErr}, nil
+	}
+	return &mockTx{}, nil
+}
+
+func (m *errMockConn) Schema(string) (string, error)        { return "", nil }
+func (m *errMockConn) DatabaseCreate(string) error           { return nil }
+func (m *errMockConn) DatabaseDelete(string) error           { return nil }
+func (m *errMockConn) DatabaseContains(string) (bool, error) { return true, nil }
+func (m *errMockConn) DatabaseAll() ([]string, error)        { return nil, nil }
+func (m *errMockConn) Close()                                {}
+func (m *errMockConn) IsOpen() bool                          { return true }
+
+func TestRunSequentialMigrations_EnsureSchemaError(t *testing.T) {
+	conn := &errMockConn{schemaTxErr: fmt.Errorf("schema fail")}
+	db := NewDatabase(conn, "test")
+	noop := func(ctx context.Context, db *Database) error { return nil }
+
+	_, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{
+		{Name: "001", Up: noop},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "ensure state schema") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunSequentialMigrations_AppliedQueryError(t *testing.T) {
+	conn := &errMockConn{readTxErr: fmt.Errorf("read fail")}
+	db := NewDatabase(conn, "test")
+	noop := func(ctx context.Context, db *Database) error { return nil }
+
+	_, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{
+		{Name: "001", Up: noop},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "query applied") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestStampSequentialMigrations_EnsureSchemaError(t *testing.T) {
+	conn := &errMockConn{schemaTxErr: fmt.Errorf("schema fail")}
+	db := NewDatabase(conn, "test")
+	noop := func(ctx context.Context, db *Database) error { return nil }
+
+	_, err := StampSequentialMigrations(context.Background(), db, []SequentialMigration{
+		{Name: "001", Up: noop},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "ensure state schema") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestStampSequentialMigrations_AppliedQueryError(t *testing.T) {
+	conn := &errMockConn{readTxErr: fmt.Errorf("read fail")}
+	db := NewDatabase(conn, "test")
+	noop := func(ctx context.Context, db *Database) error { return nil }
+
+	_, err := StampSequentialMigrations(context.Background(), db, []SequentialMigration{
+		{Name: "001", Up: noop},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "query applied") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestSeqMigrationStatus_EnsureSchemaError(t *testing.T) {
+	conn := &errMockConn{schemaTxErr: fmt.Errorf("schema fail")}
+	db := NewDatabase(conn, "test")
+	noop := func(ctx context.Context, db *Database) error { return nil }
+
+	_, err := SeqMigrationStatus(context.Background(), db, []SequentialMigration{
+		{Name: "001", Up: noop},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestRollbackSequentialMigration_ZeroSteps(t *testing.T) {
+	result, err := RollbackSequentialMigration(context.Background(), nil, nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil, got %v", result)
+	}
+}
+
+func TestRollbackSequentialMigration_EnsureSchemaError(t *testing.T) {
+	conn := &errMockConn{schemaTxErr: fmt.Errorf("schema fail")}
+	db := NewDatabase(conn, "test")
+
+	_, err := RollbackSequentialMigration(context.Background(), db, nil, 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "ensure schema") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRollbackSequentialMigration_AppliedQueryError(t *testing.T) {
+	conn := &errMockConn{readTxErr: fmt.Errorf("read fail")}
+	db := NewDatabase(conn, "test")
+
+	_, err := RollbackSequentialMigration(context.Background(), db, nil, 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "query applied") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRollbackSequentialMigration_MigrationNotFound(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "001_init"}, "applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"}}},
+	}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	// Provide empty migrations list — applied migration won't be found
+	_, err := RollbackSequentialMigration(context.Background(), db, nil, 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRollbackSequentialMigration_DownError(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "001_init"}, "applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"}}},
+	}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_init",
+			Up:   func(ctx context.Context, db *Database) error { return nil },
+			Down: func(ctx context.Context, db *Database) error { return fmt.Errorf("down boom") },
+		},
+	}
+
+	_, err := RollbackSequentialMigration(context.Background(), db, migrations, 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var seqErr *SeqMigrationError
+	if ok := errorAs(err, &seqErr); !ok {
+		t.Fatalf("expected SeqMigrationError, got %T: %v", err, err)
+	}
+}
+
+func TestRollbackSequentialMigration_StepsExceedsApplied(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "001_init"}, "applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"}}},
+	}}
+	deleteTx := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx, deleteTx}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_init",
+			Up:   func(ctx context.Context, db *Database) error { return nil },
+			Down: func(ctx context.Context, db *Database) error { return nil },
+		},
+	}
+
+	// Request 5 rollbacks but only 1 is applied — should clamp to 1
+	rolledBack, err := RollbackSequentialMigration(context.Background(), db, migrations, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rolledBack) != 1 {
+		t.Errorf("expected 1 rolled back, got %d", len(rolledBack))
+	}
+}
+
+func TestTQLMigration_DownClosure(t *testing.T) {
+	schemaTx := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx}}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001", []string{"define attribute name, value string;"}, []string{"undefine attribute name;"})
+	err := m.Down(context.Background(), db)
+	if err != nil {
+		t.Fatalf("Down failed: %v", err)
+	}
+	if len(schemaTx.queries) != 1 {
+		t.Errorf("expected 1 query, got %d", len(schemaTx.queries))
+	}
+}
+
+func TestTQLMigration_UpErrorReturned(t *testing.T) {
+	// errMockTx that fails on query
+	conn := &errMockConn{schemaTxErr: fmt.Errorf("exec fail")}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001", []string{"define attribute name, value string;"}, nil)
+	err := m.Up(context.Background(), db)
+	if err == nil {
+		t.Fatal("expected error from Up")
+	}
+}
+
+func TestTQLMigration_DownErrorReturned(t *testing.T) {
+	conn := &errMockConn{schemaTxErr: fmt.Errorf("exec fail")}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001", []string{"define attr;"}, []string{"undefine attr;"})
+	err := m.Down(context.Background(), db)
+	if err == nil {
+		t.Fatal("expected error from Down")
+	}
+}
+
+func TestStampSequentialMigrations_DryRunLogsStatements(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001_init", []string{"define attribute name, value string;", "define entity person;"}, nil)
+	var logged []string
+	_, err := StampSequentialMigrations(context.Background(), db, []SequentialMigration{m},
+		WithSeqDryRun(),
+		WithSeqLogger(func(msg string) { logged = append(logged, msg) }),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 1 "stamp" + 2 statement lines
+	if len(logged) != 3 {
+		t.Errorf("expected 3 log messages, got %d: %v", len(logged), logged)
+	}
+}
+
 // errorAs is a helper that wraps errors.As to work with generics in tests.
 func errorAs(err error, target any) bool {
 	// Use type assertion approach since we can't import errors in a simple way

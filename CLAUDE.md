@@ -9,7 +9,7 @@ Go ORM for TypeDB 3.x. Wraps the Rust driver via CGo FFI. Module: `github.com/Ca
 ## Commands
 
 ```bash
-# Unit tests (253 tests, no DB or CGo needed)
+# Unit tests (298 tests, no DB or CGo needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Single test
@@ -120,6 +120,80 @@ When adding exported symbols, always add a godoc comment. The reference docs and
 ## Git
 
 Do NOT add `Co-Authored-By` lines to commit messages.
+
+## Releasing a New Version
+
+Go modules are published by pushing a semver git tag. pkg.go.dev indexes it automatically. Follow this checklist **in order**:
+
+1. **Decide the version** — follow [semver](https://semver.org/):
+   - Patch (`v1.0.2`): bug fixes, doc updates, no API changes
+   - Minor (`v1.1.0`): new features, backward-compatible API additions
+   - Major (`v2.0.0`): breaking changes (requires module path change to `github.com/CaliLuke/go-typeql/v2`)
+
+2. **Run the full test suite** (unit + integration):
+
+   ```bash
+   go test ./ast/... ./gotype/... ./tqlgen/...
+   podman compose up -d
+   go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+   ```
+
+3. **Check test coverage** — ensure new code has adequate coverage:
+
+   ```bash
+   go test -coverprofile=coverage.out ./ast/... ./gotype/... ./tqlgen/...
+   go tool cover -func=coverage.out | tail -1   # overall percentage
+   go tool cover -html=coverage.out              # browse uncovered lines
+   ```
+
+   Review any significant uncovered paths in new/changed code. No hard threshold, but don't ship untested public APIs.
+
+4. **Run linters**:
+
+   ```bash
+   go vet ./...
+   golangci-lint run ./...
+   ```
+
+5. **Verify `go.mod` is tidy**:
+
+   ```bash
+   go mod tidy
+   git diff go.mod go.sum  # should be empty
+   ```
+
+6. **Regenerate reference docs** (if any exported symbols changed):
+
+   ```bash
+   ~/go/bin/gomarkdoc ./ast/ > docs/api/reference/ast.md
+   ~/go/bin/gomarkdoc ./gotype/ > docs/api/reference/gotype.md
+   ~/go/bin/gomarkdoc ./tqlgen/ > docs/api/reference/tqlgen.md
+   ```
+
+7. **Update CLAUDE.md test count** if tests were added (the "253 tests" line at top).
+
+8. **Update version in README.md** — the `go get` install command pins a version:
+
+   ```bash
+   go get github.com/CaliLuke/go-typeql@v1.X.Y
+   ```
+
+9. **Commit any outstanding changes** from steps 4-8.
+
+10. **Tag the release**:
+
+    ```bash
+    git tag v1.X.Y
+    git push origin v1.X.Y
+    ```
+
+11. **Create a GitHub release** with release notes:
+
+    ```bash
+    gh release create v1.X.Y --generate-notes --title "v1.X.Y"
+    ```
+
+12. **Verify on pkg.go.dev** — visit `https://pkg.go.dev/github.com/CaliLuke/go-typeql@v1.X.Y`. It may take a few minutes to index. You can force it by fetching: `GOPROXY=https://proxy.golang.org GO111MODULE=on go get github.com/CaliLuke/go-typeql@v1.X.Y`
 
 ## Container Runtime
 
