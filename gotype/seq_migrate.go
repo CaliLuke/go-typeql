@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+// TQLStatements holds raw TypeQL statements for introspection.
+// Populated automatically by TQLMigration; nil for custom Up/Down functions.
+type TQLStatements struct {
+	Up   []string
+	Down []string // nil if no down statements
+}
+
 // SequentialMigration represents a single named migration with Up and optional Down functions.
 type SequentialMigration struct {
 	// Name is the unique identifier, typically prefixed with a timestamp (e.g. "20240101_create_users").
@@ -16,6 +23,9 @@ type SequentialMigration struct {
 	Up func(ctx context.Context, db *Database) error
 	// Down reverses the migration. May be nil if rollback is not supported.
 	Down func(ctx context.Context, db *Database) error
+	// Statements is optionally set by TQLMigration for dry-run introspection.
+	// nil for migrations with custom Up/Down functions.
+	Statements *TQLStatements
 }
 
 // SeqMigrationInfo describes the status of a single migration.
@@ -88,6 +98,20 @@ func inferTxType(stmt string) string {
 // Each statement is routed to ExecuteSchema or ExecuteWrite based on its prefix.
 func TQLMigration(name string, up []string, down []string) SequentialMigration {
 	m := SequentialMigration{Name: name}
+
+	// Store raw statements for introspection
+	if len(up) > 0 || len(down) > 0 {
+		stmts := &TQLStatements{}
+		if len(up) > 0 {
+			stmts.Up = make([]string, len(up))
+			copy(stmts.Up, up)
+		}
+		if len(down) > 0 {
+			stmts.Down = make([]string, len(down))
+			copy(stmts.Down, down)
+		}
+		m.Statements = stmts
+	}
 
 	if len(up) > 0 {
 		upStmts := make([]string, len(up))
@@ -235,6 +259,11 @@ func RunSequentialMigrations(ctx context.Context, db *Database, migrations []Seq
 		for i, m := range pending {
 			names[i] = m.Name
 			logFn(fmt.Sprintf("[dry-run] pending: %s", m.Name))
+			if m.Statements != nil {
+				for _, s := range m.Statements.Up {
+					logFn(fmt.Sprintf("[dry-run]   %s", s))
+				}
+			}
 		}
 		return names, nil
 	}
@@ -254,6 +283,85 @@ func RunSequentialMigrations(ctx context.Context, db *Database, migrations []Seq
 	}
 
 	return appliedNames, nil
+}
+
+// StampSequentialMigrations marks the specified migrations as applied without
+// executing their Up functions. Migrations that are already applied are skipped.
+// Returns the names of newly stamped migrations.
+//
+// This is useful when a database's schema was applied in bulk (e.g., via ExecuteSchema)
+// and the migration records need to catch up to reflect the current state.
+//
+// Supports WithSeqDryRun (report without stamping), WithSeqTarget (stamp up to
+// a named migration), and WithSeqLogger (progress callback).
+func StampSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error) {
+	if len(migrations) == 0 {
+		return nil, nil
+	}
+
+	cfg := &seqMigrationOptions{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	logFn := cfg.logger
+	if logFn == nil {
+		logFn = func(string) {}
+	}
+
+	// Sort by name
+	sorted := make([]SequentialMigration, len(migrations))
+	copy(sorted, migrations)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Name < sorted[j].Name
+	})
+
+	// Ensure state schema and query applied
+	state := newSeqMigrationState(db)
+	if err := state.EnsureSchema(ctx); err != nil {
+		return nil, fmt.Errorf("seq stamp: ensure state schema: %w", err)
+	}
+
+	applied, err := state.Applied(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("seq stamp: query applied: %w", err)
+	}
+
+	// Determine pending
+	var pending []SequentialMigration
+	for _, m := range sorted {
+		if _, ok := applied[m.Name]; ok {
+			continue
+		}
+		pending = append(pending, m)
+		if cfg.target != "" && m.Name == cfg.target {
+			break
+		}
+	}
+
+	if cfg.dryRun {
+		names := make([]string, len(pending))
+		for i, m := range pending {
+			names[i] = m.Name
+			logFn(fmt.Sprintf("[dry-run] stamp: %s", m.Name))
+			if m.Statements != nil {
+				for _, s := range m.Statements.Up {
+					logFn(fmt.Sprintf("[dry-run]   %s", s))
+				}
+			}
+		}
+		return names, nil
+	}
+
+	var stampedNames []string
+	for _, m := range pending {
+		if err := state.Record(ctx, m.Name); err != nil {
+			return stampedNames, fmt.Errorf("seq stamp: record %q: %w", m.Name, err)
+		}
+		stampedNames = append(stampedNames, m.Name)
+		logFn(fmt.Sprintf("stamped: %s", m.Name))
+	}
+
+	return stampedNames, nil
 }
 
 // SeqMigrationStatus returns the status of all provided migrations.

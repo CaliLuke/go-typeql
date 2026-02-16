@@ -316,3 +316,66 @@ func TestSeqMigrate_MixedOps(t *testing.T) {
 		t.Errorf("expected 1 applied, got %d", len(applied))
 	}
 }
+
+func TestStampSequentialMigrations_Integration(t *testing.T) {
+	db := setupSeqMigrateDB(t)
+	ctx := context.Background()
+
+	// Apply schema directly (simulating bulk setup)
+	if err := db.ExecuteSchema(ctx, "define attribute name, value string;"); err != nil {
+		t.Fatalf("schema failed: %v", err)
+	}
+	if err := db.ExecuteSchema(ctx, "define entity person, owns name @key;"); err != nil {
+		t.Fatalf("schema failed: %v", err)
+	}
+	if err := db.ExecuteSchema(ctx, "define attribute email, value string;"); err != nil {
+		t.Fatalf("schema failed: %v", err)
+	}
+	if err := db.ExecuteSchema(ctx, "define person owns email;"); err != nil {
+		t.Fatalf("schema failed: %v", err)
+	}
+
+	migrations := []gotype.SequentialMigration{
+		gotype.TQLMigration("001_create_person", []string{
+			"define attribute name, value string;",
+			"define entity person, owns name @key;",
+		}, nil),
+		gotype.TQLMigration("002_add_email", []string{
+			"define attribute email, value string;",
+			"define person owns email;",
+		}, nil),
+		gotype.TQLMigration("003_add_age", []string{
+			"define attribute age, value long;",
+			"define person owns age;",
+		}, nil),
+	}
+
+	// Stamp all 3 as applied
+	stamped, err := gotype.StampSequentialMigrations(ctx, db, migrations)
+	if err != nil {
+		t.Fatalf("stamp failed: %v", err)
+	}
+	if len(stamped) != 3 {
+		t.Fatalf("expected 3 stamped, got %d: %v", len(stamped), stamped)
+	}
+
+	// Verify status shows all as applied
+	infos, err := gotype.SeqMigrationStatus(ctx, db, migrations)
+	if err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	for _, info := range infos {
+		if !info.Applied {
+			t.Errorf("%s should be applied", info.Name)
+		}
+	}
+
+	// RunSequentialMigrations should apply 0 (all stamped)
+	applied, err := gotype.RunSequentialMigrations(ctx, db, migrations)
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	if len(applied) != 0 {
+		t.Errorf("expected 0 applied after stamp, got %d: %v", len(applied), applied)
+	}
+}

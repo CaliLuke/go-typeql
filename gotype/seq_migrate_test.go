@@ -471,6 +471,232 @@ func TestSeqMigrationError_Format(t *testing.T) {
 	}
 }
 
+// --- TQLStatements ---
+
+func TestTQLMigration_PopulatesStatements(t *testing.T) {
+	up := []string{"define attribute name, value string;", "define entity person;"}
+	down := []string{"undefine entity person;"}
+	m := TQLMigration("001", up, down)
+
+	if m.Statements == nil {
+		t.Fatal("Statements should not be nil")
+	}
+	if len(m.Statements.Up) != 2 {
+		t.Errorf("expected 2 up statements, got %d", len(m.Statements.Up))
+	}
+	if len(m.Statements.Down) != 1 {
+		t.Errorf("expected 1 down statement, got %d", len(m.Statements.Down))
+	}
+
+	// Verify they're copies
+	up[0] = "mutated"
+	if m.Statements.Up[0] == "mutated" {
+		t.Error("Statements.Up should be a copy, not a reference")
+	}
+}
+
+func TestTQLMigration_NilStatementsWhenBothEmpty(t *testing.T) {
+	m := TQLMigration("001", nil, nil)
+	if m.Statements != nil {
+		t.Error("Statements should be nil when both up and down are empty")
+	}
+}
+
+func TestCustomMigration_StatementsNil(t *testing.T) {
+	m := SequentialMigration{
+		Name: "001",
+		Up:   func(ctx context.Context, db *Database) error { return nil },
+	}
+	if m.Statements != nil {
+		t.Error("Statements should be nil for custom migrations")
+	}
+}
+
+func TestRunSequentialMigrations_DryRunLogsStatements(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001_init", []string{"define attribute name, value string;", "define entity person;"}, nil)
+	var logged []string
+	_, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m},
+		WithSeqDryRun(),
+		WithSeqLogger(func(msg string) { logged = append(logged, msg) }),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 1 "pending" + 2 statement lines
+	if len(logged) != 3 {
+		t.Errorf("expected 3 log messages, got %d: %v", len(logged), logged)
+	}
+}
+
+func TestRunSequentialMigrations_DryRunCustomMigrationNoStatements(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	m := SequentialMigration{
+		Name: "001_init",
+		Up:   func(ctx context.Context, db *Database) error { return nil },
+	}
+	var logged []string
+	_, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m},
+		WithSeqDryRun(),
+		WithSeqLogger(func(msg string) { logged = append(logged, msg) }),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(logged) != 1 {
+		t.Errorf("expected 1 log message, got %d: %v", len(logged), logged)
+	}
+}
+
+// --- StampSequentialMigrations ---
+
+func TestStampSequentialMigrations_StampsAll(t *testing.T) {
+	noop := func(ctx context.Context, db *Database) error { return nil }
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	recordTx1 := &mockTx{}
+	recordTx2 := &mockTx{}
+	recordTx3 := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx, recordTx1, recordTx2, recordTx3}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_init", Up: noop},
+		{Name: "002_second", Up: noop},
+		{Name: "003_third", Up: noop},
+	}
+
+	stamped, err := StampSequentialMigrations(context.Background(), db, migrations)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stamped) != 3 {
+		t.Fatalf("expected 3 stamped, got %d", len(stamped))
+	}
+}
+
+func TestStampSequentialMigrations_SkipsAlreadyApplied(t *testing.T) {
+	noop := func(ctx context.Context, db *Database) error { return nil }
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "001_init"}, "applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"}}},
+	}}
+	recordTx1 := &mockTx{}
+	recordTx2 := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx, recordTx1, recordTx2}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_init", Up: noop},
+		{Name: "002_second", Up: noop},
+		{Name: "003_third", Up: noop},
+	}
+
+	stamped, err := StampSequentialMigrations(context.Background(), db, migrations)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stamped) != 2 {
+		t.Fatalf("expected 2 stamped, got %d: %v", len(stamped), stamped)
+	}
+}
+
+func TestStampSequentialMigrations_DryRun(t *testing.T) {
+	noop := func(ctx context.Context, db *Database) error { return nil }
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}} // no write txs — dry run shouldn't need them
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_init", Up: noop},
+		{Name: "002_second", Up: noop},
+	}
+
+	var logged []string
+	stamped, err := StampSequentialMigrations(context.Background(), db, migrations,
+		WithSeqDryRun(),
+		WithSeqLogger(func(msg string) { logged = append(logged, msg) }),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stamped) != 2 {
+		t.Fatalf("expected 2 stamped, got %d", len(stamped))
+	}
+	if len(logged) != 2 {
+		t.Errorf("expected 2 log messages, got %d", len(logged))
+	}
+}
+
+func TestStampSequentialMigrations_WithTarget(t *testing.T) {
+	noop := func(ctx context.Context, db *Database) error { return nil }
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	recordTx1 := &mockTx{}
+	recordTx2 := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx, recordTx1, recordTx2}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_first", Up: noop},
+		{Name: "002_second", Up: noop},
+		{Name: "003_third", Up: noop},
+	}
+
+	stamped, err := StampSequentialMigrations(context.Background(), db, migrations, WithSeqTarget("002_second"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stamped) != 2 {
+		t.Fatalf("expected 2 stamped, got %d: %v", len(stamped), stamped)
+	}
+}
+
+func TestStampSequentialMigrations_EmptySlice(t *testing.T) {
+	stamped, err := StampSequentialMigrations(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stamped != nil {
+		t.Errorf("expected nil, got %v", stamped)
+	}
+}
+
+func TestStampSequentialMigrations_AllAlreadyApplied(t *testing.T) {
+	noop := func(ctx context.Context, db *Database) error { return nil }
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{
+			{"name": map[string]any{"value": "001_init"}, "applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"}},
+			{"name": map[string]any{"value": "002_second"}, "applied-at": map[string]any{"value": "2024-01-02T00:00:00Z"}},
+		},
+	}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_init", Up: noop},
+		{Name: "002_second", Up: noop},
+	}
+
+	stamped, err := StampSequentialMigrations(context.Background(), db, migrations)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stamped) != 0 {
+		t.Errorf("expected 0 stamped, got %d: %v", len(stamped), stamped)
+	}
+}
+
 // errorAs is a helper that wraps errors.As to work with generics in tests.
 func errorAs(err error, target any) bool {
 	// Use type assertion approach since we can't import errors in a simple way

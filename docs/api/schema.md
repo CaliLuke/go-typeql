@@ -310,11 +310,19 @@ For projects that manage schema via `.tql` files (or programmatic steps) rather 
 
 ```go
 type SequentialMigration struct {
-    Name string
-    Up   func(ctx context.Context, db *Database) error
-    Down func(ctx context.Context, db *Database) error // nil if not reversible
+    Name       string
+    Up         func(ctx context.Context, db *Database) error
+    Down       func(ctx context.Context, db *Database) error // nil if not reversible
+    Statements *TQLStatements                                // set by TQLMigration for introspection
+}
+
+type TQLStatements struct {
+    Up   []string
+    Down []string // nil if no down statements
 }
 ```
+
+`Statements` is automatically populated by `TQLMigration` and used by dry-run mode to log the TypeQL that would execute. For custom `Up`/`Down` functions, `Statements` is nil.
 
 ### TQLMigration
 
@@ -322,7 +330,7 @@ type SequentialMigration struct {
 func TQLMigration(name string, up []string, down []string) SequentialMigration
 ```
 
-Creates a migration from raw TypeQL statements. Each statement is automatically routed to `ExecuteSchema` (for `define`/`undefine`/`redefine`) or `ExecuteWrite` (for everything else).
+Creates a migration from raw TypeQL statements. Each statement is automatically routed to `ExecuteSchema` (for `define`/`undefine`/`redefine`) or `ExecuteWrite` (for everything else). Also populates `Statements` for dry-run introspection.
 
 ```go
 migrations := []gotype.SequentialMigration{
@@ -382,6 +390,20 @@ func RollbackSequentialMigration(ctx context.Context, db *Database, migrations [
 ```
 
 Rolls back the last N applied migrations in reverse name order. Each migration must have a non-nil `Down` function.
+
+### StampSequentialMigrations
+
+```go
+func StampSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error)
+```
+
+Marks migrations as applied without executing their `Up` functions. Useful when a database was set up in bulk (e.g., `ExecuteSchema` with a full `.tql` file) and migration records need to catch up. Supports `WithSeqDryRun`, `WithSeqTarget`, and `WithSeqLogger`.
+
+```go
+// After applying schema in bulk:
+stamped, err := gotype.StampSequentialMigrations(ctx, db, migrations)
+// stamped: ["001_create_person", "002_add_email", ...]
+```
 
 ### SeqMigrationError
 
