@@ -598,7 +598,15 @@ if dog, ok := instance.(*Dog); ok {
 
 ## Code Generator (tqlgen)
 
-Generate Go structs from existing TypeQL schema files:
+Generate Go structs or a schema registry from existing TypeQL schema files:
+
+```bash
+# Generate Go structs
+tqlgen -schema schema.tql -out models_gen.go -pkg models
+
+# Generate schema registry (type constants, parent maps, relation schemas)
+tqlgen -schema schema.tql -registry -out registry_gen.go -pkg graph
+```
 
 ```go
 import "github.com/CaliLuke/go-typeql/tqlgen"
@@ -606,12 +614,21 @@ import "github.com/CaliLuke/go-typeql/tqlgen"
 // Parse a TypeQL schema file
 schema, err := tqlgen.ParseFile("schema.tql")
 
-// Render Go code
+// Render Go structs
 code, err := tqlgen.Render(schema, "models")
-// Writes Go structs with proper struct tags, BaseEntity/BaseRelation embedding
+
+// Or render a schema registry
+data := tqlgen.BuildRegistryData(schema, tqlgen.RegistryConfig{PackageName: "graph"})
+err = tqlgen.RenderRegistry(os.Stdout, data)
 ```
 
-The parser handles `define` blocks including attributes, entities, relations, and struct types. Functions in the schema are stripped by a character-level scanner and extracted separately.
+Features:
+
+- Generates Go structs with `BaseEntity`/`BaseRelation` embedding and `typedb:"..."` tags
+- Generates string constants from `@values` constraints (`-enums`, on by default)
+- Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas
+- Comment annotations: `# @key value`, `# @key(value)`, `# @key` above type definitions
+- Inheritance propagation: parent `owns`/`plays` merged into children
 
 ---
 

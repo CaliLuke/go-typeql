@@ -17,6 +17,7 @@ Package tqlgen provides code generation from TypeQL schemas.
 - [Variables](<#variables>)
 - [func ExtractAnnotations\(input string\) map\[string\]map\[string\]string](<#ExtractAnnotations>)
 - [func Render\(w io.Writer, schema \*ParsedSchema, cfg RenderConfig\) error](<#Render>)
+- [func RenderRegistry\(w io.Writer, data \*RegistryData\) error](<#RenderRegistry>)
 - [func ToPascalCase\(name string\) string](<#ToPascalCase>)
 - [func ToPascalCaseAcronyms\(name string\) string](<#ToPascalCaseAcronyms>)
 - [func ToSnakeCase\(name string\) string](<#ToSnakeCase>)
@@ -28,9 +29,13 @@ Package tqlgen provides code generation from TypeQL schemas.
 - [type EntityClause](<#EntityClause>)
 - [type EntityDef](<#EntityDef>)
 - [type EntitySpec](<#EntitySpec>)
+- [type EnumCtx](<#EnumCtx>)
+- [type EnumValueCtx](<#EnumValueCtx>)
 - [type FunBodyTok](<#FunBodyTok>)
 - [type FunDef](<#FunDef>)
 - [type FunctionSpec](<#FunctionSpec>)
+- [type KVCtx](<#KVCtx>)
+- [type KVSliceCtx](<#KVSliceCtx>)
 - [type OwnsDef](<#OwnsDef>)
 - [type OwnsSpec](<#OwnsSpec>)
 - [type ParameterSpec](<#ParameterSpec>)
@@ -42,6 +47,10 @@ Package tqlgen provides code generation from TypeQL schemas.
 - [type PlaysSpec](<#PlaysSpec>)
 - [type RangeAnnot](<#RangeAnnot>)
 - [type RegexAnnot](<#RegexAnnot>)
+- [type RegistryConfig](<#RegistryConfig>)
+- [type RegistryData](<#RegistryData>)
+  - [func BuildRegistryData\(schema \*ParsedSchema, cfg RegistryConfig\) \*RegistryData](<#BuildRegistryData>)
+- [type RelSchemaCtx](<#RelSchemaCtx>)
 - [type RelatesDef](<#RelatesDef>)
 - [type RelatesSpec](<#RelatesSpec>)
 - [type RelationClause](<#RelationClause>)
@@ -56,6 +65,7 @@ Package tqlgen provides code generation from TypeQL schemas.
 - [type StructSpec](<#StructSpec>)
 - [type SubClause](<#SubClause>)
 - [type TQLFileSimple](<#TQLFileSimple>)
+- [type TypeConstCtx](<#TypeConstCtx>)
 - [type ValuesAnnot](<#ValuesAnnot>)
 
 
@@ -85,13 +95,22 @@ func ExtractAnnotations(input string) map[string]map[string]string
 ExtractAnnotations parses comment annotations of the form "\# @key value" from schema text. Returns a map of type name \-\> annotation map.
 
 <a name="Render"></a>
-## func [Render](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L36>)
+## func [Render](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L39>)
 
 ```go
 func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error
 ```
 
 Render processes a ParsedSchema and writes the generated Go source code to the provided writer.
+
+<a name="RenderRegistry"></a>
+## func [RenderRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L275>)
+
+```go
+func RenderRegistry(w io.Writer, data *RegistryData) error
+```
+
+RenderRegistry writes a complete schema registry Go file from RegistryData.
 
 <a name="ToPascalCase"></a>
 ## func [ToPascalCase](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/naming.go#L17>)
@@ -241,6 +260,24 @@ type EntitySpec struct {
 }
 ```
 
+<a name="EnumCtx"></a>
+## type [EnumCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L50>)
+
+EnumCtx holds enum constants derived from @values constraints.
+
+```go
+type EnumCtx = enumCtx
+```
+
+<a name="EnumValueCtx"></a>
+## type [EnumValueCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L53>)
+
+EnumValueCtx holds a single enum constant.
+
+```go
+type EnumValueCtx = enumValueCtx
+```
+
 <a name="FunBodyTok"></a>
 ## type [FunBodyTok](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L190-L192>)
 
@@ -277,6 +314,29 @@ type FunctionSpec struct {
     Parameters []ParameterSpec
     // ReturnType is the TypeQL return type of the function.
     ReturnType string
+}
+```
+
+<a name="KVCtx"></a>
+## type [KVCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L56-L58>)
+
+KVCtx is a simple key\-value pair.
+
+```go
+type KVCtx struct {
+    Key, Value string
+}
+```
+
+<a name="KVSliceCtx"></a>
+## type [KVSliceCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L61-L64>)
+
+KVSliceCtx is a key with multiple string values.
+
+```go
+type KVSliceCtx struct {
+    Key    string
+    Values []string
 }
 ```
 
@@ -419,6 +479,74 @@ type RegexAnnot struct {
 }
 ```
 
+<a name="RegistryConfig"></a>
+## type [RegistryConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L12-L25>)
+
+RegistryConfig specifies settings for generating a schema registry.
+
+```go
+type RegistryConfig struct {
+    // PackageName is the Go package name for the generated code.
+    PackageName string
+    // UseAcronyms applies Go acronym naming conventions (e.g., "ID" not "Id").
+    UseAcronyms bool
+    // SkipAbstract excludes abstract types from entity/relation constants and EntityAttributes.
+    SkipAbstract bool
+    // Enums generates string constants from @values constraints.
+    Enums bool
+    // TypePrefix is the prefix for entity type constants (default "Type").
+    TypePrefix string
+    // RelPrefix is the prefix for relation type constants (default "Rel").
+    RelPrefix string
+}
+```
+
+<a name="RegistryData"></a>
+## type [RegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L28-L41>)
+
+RegistryData holds all schema\-derived data for registry code generation.
+
+```go
+type RegistryData struct {
+    PackageName       string
+    EntityConstants   []TypeConstCtx
+    RelationConstants []TypeConstCtx
+    Enums             []EnumCtx
+    EntityParents     []KVCtx
+    EntityAttributes  []KVSliceCtx
+    AttrValueTypes    []KVCtx
+    AttrEnumValues    []KVSliceCtx
+    RelationSchema    []RelSchemaCtx
+    RelationAttrs     []KVSliceCtx
+    AllEntityTypes    []string
+    AllRelationTypes  []string
+}
+```
+
+<a name="BuildRegistryData"></a>
+### func [BuildRegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L77>)
+
+```go
+func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData
+```
+
+BuildRegistryData populates a RegistryData from a parsed schema. The schema should have AccumulateInheritance\(\) called before this.
+
+<a name="RelSchemaCtx"></a>
+## type [RelSchemaCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L67-L73>)
+
+RelSchemaCtx describes a relation's role schema.
+
+```go
+type RelSchemaCtx struct {
+    Name       string
+    Role0Name  string
+    Role0Types []string
+    Role1Name  string
+    Role1Types []string
+}
+```
+
 <a name="RelatesDef"></a>
 ## type [RelatesDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L74-L78>)
 
@@ -500,7 +628,7 @@ type RelationSpec struct {
 ```
 
 <a name="RenderConfig"></a>
-## type [RenderConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L12-L23>)
+## type [RenderConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L12-L25>)
 
 RenderConfig specifies the settings for generating Go code from a TypeQL schema.
 
@@ -516,11 +644,13 @@ type RenderConfig struct {
     SkipAbstract bool
     // SchemaVersion is an optional string included in the generated file header.
     SchemaVersion string
+    // Enums, if true, generates string constants from @values constraints on attributes.
+    Enums bool
 }
 ```
 
 <a name="DefaultConfig"></a>
-### func [DefaultConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L26>)
+### func [DefaultConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L28>)
 
 ```go
 func DefaultConfig() RenderConfig
@@ -621,6 +751,18 @@ TQLFileSimple is the top\-level grammar for a TypeQL define block.
 type TQLFileSimple struct {
     Define      string      `parser:"'define'"`
     Definitions []SimpleDef `parser:"@@*"`
+}
+```
+
+<a name="TypeConstCtx"></a>
+## type [TypeConstCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L44-L47>)
+
+TypeConstCtx holds a Go constant name and its string value.
+
+```go
+type TypeConstCtx struct {
+    Name  string // e.g. "TypePersona"
+    Value string // e.g. "persona"
 }
 ```
 

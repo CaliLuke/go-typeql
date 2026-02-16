@@ -77,7 +77,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.1.0
+go get github.com/CaliLuke/go-typeql@v1.2.0
 ```
 
 The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires building the Rust FFI library — see the [Development Guide](docs/DEVELOPMENT.md).

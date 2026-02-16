@@ -438,39 +438,31 @@ func ExtractAnnotations(input string) map[string]map[string]string {
 	lines := strings.Split(input, "\n")
 	var pendingAnnots []struct{ key, val string }
 
-	annotRe := regexp.MustCompile(`^#\s*@(\w+)\s+(.+)$`)
+	// Match: # @key or # @key(value) or # @key value
+	annotRe := regexp.MustCompile(`^#\s*@(\w+)(?:\(([^)]*)\)|\s+(.+))?$`)
+	typeRe := regexp.MustCompile(`^(entity|relation|attribute|struct)\s+([\w-]+)`)
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
 		// Check for annotation comment
 		if m := annotRe.FindStringSubmatch(trimmed); m != nil {
-			pendingAnnots = append(pendingAnnots, struct{ key, val string }{m[1], m[2]})
+			val := m[2] // from (value)
+			if val == "" {
+				val = m[3] // from space-separated
+			}
+			pendingAnnots = append(pendingAnnots, struct{ key, val string }{m[1], strings.TrimSpace(val)})
 			continue
 		}
 
-		// Check if this line defines a type (entity, relation, attribute, struct)
+		// Check if this line defines a type
 		if len(pendingAnnots) > 0 {
-			var typeName string
-			for _, prefix := range []string{"entity ", "relation ", "attribute ", "struct "} {
-				if strings.HasPrefix(trimmed, prefix) {
-					rest := strings.TrimPrefix(trimmed, prefix)
-					tokens := strings.FieldsFunc(rest, func(r rune) bool {
-						return r == ' ' || r == ',' || r == ';'
-					})
-					if len(tokens) > 0 {
-						typeName = tokens[0]
-					}
-					break
-				}
-			}
-
-			if typeName != "" {
+			if m := typeRe.FindStringSubmatch(trimmed); m != nil {
 				annots := make(map[string]string)
 				for _, a := range pendingAnnots {
 					annots[a.key] = a.val
 				}
-				result[typeName] = annots
+				result[m[2]] = annots
 			}
 			pendingAnnots = nil
 		} else if trimmed != "" && !strings.HasPrefix(trimmed, "#") {

@@ -20,6 +20,8 @@ type RenderConfig struct {
 	SkipAbstract bool
 	// SchemaVersion is an optional string included in the generated file header.
 	SchemaVersion string
+	// Enums, if true, generates string constants from @values constraints on attributes.
+	Enums bool
 }
 
 // DefaultConfig returns a standard RenderConfig with sensible defaults.
@@ -29,6 +31,7 @@ func DefaultConfig() RenderConfig {
 		ModulePath:   "github.com/CaliLuke/go-typeql/gotype",
 		UseAcronyms:  true,
 		SkipAbstract: true,
+		Enums:        true,
 	}
 }
 
@@ -54,6 +57,14 @@ func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error {
 		NeedsTime:   needsTimeImport(schema, attrTypes),
 	}
 
+	if cfg.Enums {
+		for _, a := range schema.Attributes {
+			if len(a.Values) > 0 {
+				data.Enums = append(data.Enums, buildEnumCtx(a, cfg))
+			}
+		}
+	}
+
 	for _, e := range schema.Entities {
 		if cfg.SkipAbstract && e.Abstract {
 			continue
@@ -77,8 +88,20 @@ type renderData struct {
 	PackageName string
 	ModulePath  string
 	NeedsTime   bool
+	Enums       []enumCtx
 	Entities    []entityCtx
 	Relations   []relationCtx
+}
+
+type enumCtx struct {
+	AttrName string // TypeDB attribute name
+	GoPrefix string // PascalCase prefix
+	Values   []enumValueCtx
+}
+
+type enumValueCtx struct {
+	GoName string // e.g. "StatusProposed"
+	Value  string // e.g. "proposed"
 }
 
 type entityCtx struct {
@@ -113,6 +136,21 @@ type roleCtx struct {
 }
 
 // --- Context builders ---
+
+func buildEnumCtx(a AttributeSpec, cfg RenderConfig) enumCtx {
+	prefix := goTypeName(a.Name, cfg)
+	ctx := enumCtx{
+		AttrName: a.Name,
+		GoPrefix: prefix,
+	}
+	for _, v := range a.Values {
+		ctx.Values = append(ctx.Values, enumValueCtx{
+			GoName: prefix + goTypeName(v, cfg),
+			Value:  v,
+		})
+	}
+	return ctx
+}
 
 func buildEntityCtx(e EntitySpec, attrTypes map[string]string, cfg RenderConfig) entityCtx {
 	ctx := entityCtx{
@@ -294,6 +332,18 @@ import (
 	"time"
 {{- end}}
 )
+{{- if .Enums}}
+
+// --- Enum constants (from @values constraints) ---
+{{range .Enums}}
+// {{.GoPrefix}} values for the "{{.AttrName}}" attribute.
+const (
+{{- range .Values}}
+	{{.GoName}} = "{{.Value}}"
+{{- end}}
+)
+{{end}}
+{{- end}}
 {{range .Entities}}
 {{- if .Comment}}
 // {{.GoName}} — {{.Comment}}

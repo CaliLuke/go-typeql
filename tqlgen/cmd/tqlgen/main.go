@@ -1,8 +1,9 @@
-// tqlgen generates Go struct definitions from TypeQL schema files.
+// tqlgen generates Go code from TypeQL schema files.
 //
 // Usage:
 //
 //	tqlgen -schema schema.tql [-out models_gen.go] [-pkg models] [-acronyms]
+//	tqlgen -schema schema.tql -registry [-out registry_gen.go] [-pkg graph]
 package main
 
 import (
@@ -13,7 +14,7 @@ import (
 	"github.com/CaliLuke/go-typeql/tqlgen"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	schemaFile := flag.String("schema", "", "Path to TypeQL schema file (required)")
@@ -23,7 +24,9 @@ func main() {
 	skipAbstract := flag.Bool("skip-abstract", true, "Skip abstract types in output")
 	inherit := flag.Bool("inherit", true, "Accumulate inherited owns from parent types")
 	showVersion := flag.Bool("version", false, "Print version and exit")
+	enums := flag.Bool("enums", true, "Generate string constants from @values constraints")
 	versionStr := flag.String("schema-version", "", "Schema version string (included in generated header)")
+	registry := flag.Bool("registry", false, "Generate schema registry instead of Go structs")
 
 	flag.Parse()
 
@@ -48,13 +51,6 @@ func main() {
 		schema.AccumulateInheritance()
 	}
 
-	cfg := tqlgen.RenderConfig{
-		PackageName:   *pkg,
-		UseAcronyms:   *acronyms,
-		SkipAbstract:  *skipAbstract,
-		SchemaVersion: *versionStr,
-	}
-
 	var w *os.File
 	if *outFile != "" {
 		w, err = os.Create(*outFile)
@@ -67,8 +63,29 @@ func main() {
 		w = os.Stdout
 	}
 
-	if err := tqlgen.Render(w, schema, cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "error rendering: %v\n", err)
-		os.Exit(1)
+	if *registry {
+		regCfg := tqlgen.RegistryConfig{
+			PackageName:  *pkg,
+			UseAcronyms:  *acronyms,
+			SkipAbstract: *skipAbstract,
+			Enums:        *enums,
+		}
+		data := tqlgen.BuildRegistryData(schema, regCfg)
+		if err := tqlgen.RenderRegistry(w, data); err != nil {
+			fmt.Fprintf(os.Stderr, "error rendering registry: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		cfg := tqlgen.RenderConfig{
+			PackageName:   *pkg,
+			UseAcronyms:   *acronyms,
+			SkipAbstract:  *skipAbstract,
+			SchemaVersion: *versionStr,
+			Enums:         *enums,
+		}
+		if err := tqlgen.Render(w, schema, cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "error rendering: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
