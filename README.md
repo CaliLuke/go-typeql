@@ -1,5 +1,8 @@
 # go-typeql
 
+[![Go Version](https://img.shields.io/github/v/tag/CaliLuke/go-typeql?label=version)](https://pkg.go.dev/github.com/CaliLuke/go-typeql)
+[![Go Reference](https://pkg.go.dev/badge/github.com/CaliLuke/go-typeql.svg)](https://pkg.go.dev/github.com/CaliLuke/go-typeql)
+
 A Go ORM for [TypeDB](https://typedb.com/) 3.x. Define your graph schema as Go structs, and get type-safe CRUD, queries, migrations, and code generation.
 
 ## Why
@@ -76,8 +79,6 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ```bash
 go get github.com/CaliLuke/go-typeql@v1.1.0
 ```
-
-[![Go Reference](https://pkg.go.dev/badge/github.com/CaliLuke/go-typeql.svg)](https://pkg.go.dev/github.com/CaliLuke/go-typeql)
 
 The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires building the Rust FFI library — see the [Development Guide](docs/DEVELOPMENT.md).
 
