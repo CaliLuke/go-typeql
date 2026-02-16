@@ -187,13 +187,15 @@ Go modules are published by pushing a semver git tag. pkg.go.dev indexes it auto
     git push origin v1.X.Y
     ```
 
-11. **Create a GitHub release** with release notes:
+11. **Create a GitHub release**:
 
     ```bash
     gh release create v1.X.Y --generate-notes --title "v1.X.Y"
     ```
 
-12. **Verify on pkg.go.dev** — visit `https://pkg.go.dev/github.com/CaliLuke/go-typeql@v1.X.Y`. It may take a few minutes to index. You can force it by fetching: `GOPROXY=https://proxy.golang.org GO111MODULE=on go get github.com/CaliLuke/go-typeql@v1.X.Y`
+12. **Write a changelog** for the release. Edit the release notes to include a human-written summary of new features, new types/functions, options, and documentation changes. Omit internal-only changes (CLAUDE.md edits, memory updates). Use `gh release edit v1.X.Y --notes "..."`.
+
+13. **Verify on pkg.go.dev** — visit `https://pkg.go.dev/github.com/CaliLuke/go-typeql@v1.X.Y`. It may take a few minutes to index. You can force it by fetching: `GOPROXY=https://proxy.golang.org GO111MODULE=on go get github.com/CaliLuke/go-typeql@v1.X.Y`
 
 ## Container Runtime
 
