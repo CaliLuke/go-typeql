@@ -2,7 +2,7 @@
 
 `import "github.com/CaliLuke/go-typeql/gotype"`
 
-go-typeql can generate TypeQL `define` statements from registered Go structs, migrate an existing database schema, track migration state in the database, and represent migrations as discrete operations with rollback support.
+go-typeql can generate TypeQL `define` statements from registered Go structs, migrate an existing database schema, track migration state in the database, represent migrations as discrete operations with rollback support, and run sequential file-based migrations for projects that manage schema via raw TypeQL.
 
 ## Schema Generation
 
@@ -302,6 +302,108 @@ func IntrospectSchemaFromString(schemaStr string) (*tqlgen.ParsedSchema, error)
 
 Parses a TypeQL schema string (as returned by `Conn.Schema()`) into a `tqlgen.ParsedSchema`. Returns an empty `ParsedSchema` for empty input (no error). See [Generator](generator.md) for `ParsedSchema` details.
 
+## Sequential Migrations
+
+For projects that manage schema via `.tql` files (or programmatic steps) rather than Go struct tags, use the sequential migration system. Modeled after goose/golang-migrate.
+
+### SequentialMigration
+
+```go
+type SequentialMigration struct {
+    Name string
+    Up   func(ctx context.Context, db *Database) error
+    Down func(ctx context.Context, db *Database) error // nil if not reversible
+}
+```
+
+### TQLMigration
+
+```go
+func TQLMigration(name string, up []string, down []string) SequentialMigration
+```
+
+Creates a migration from raw TypeQL statements. Each statement is automatically routed to `ExecuteSchema` (for `define`/`undefine`/`redefine`) or `ExecuteWrite` (for everything else).
+
+```go
+migrations := []gotype.SequentialMigration{
+    gotype.TQLMigration("001_create_person", []string{
+        "define attribute name, value string;",
+        "define entity person, owns name @key;",
+    }, []string{
+        "undefine entity person;",
+        "undefine attribute name;",
+    }),
+    gotype.TQLMigration("002_seed_data", []string{
+        `insert $p isa person, has name "Alice";`,
+    }, nil),
+}
+```
+
+### RunSequentialMigrations
+
+```go
+func RunSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error)
+```
+
+Validates, sorts by name, and applies pending migrations. Returns names of applied migrations.
+
+```go
+applied, err := gotype.RunSequentialMigrations(ctx, db, migrations)
+```
+
+### Options
+
+| Option                | Description                                         |
+| --------------------- | --------------------------------------------------- |
+| `WithSeqDryRun()`     | Validate and return pending names without executing |
+| `WithSeqTarget(name)` | Stop after applying the named migration             |
+| `WithSeqLogger(fn)`   | Callback for progress messages                      |
+
+### ValidateSequentialMigrations
+
+```go
+func ValidateSequentialMigrations(migrations []SequentialMigration) []SeqValidationIssue
+```
+
+Pure validation (no DB). Checks for empty names, duplicates, nil `Up` functions, and unsorted order. Returns issues with severity `"error"` or `"warning"`.
+
+### SeqMigrationStatus
+
+```go
+func SeqMigrationStatus(ctx context.Context, db *Database, migrations []SequentialMigration) ([]SeqMigrationInfo, error)
+```
+
+Returns applied/pending status for each migration.
+
+### RollbackSequentialMigration
+
+```go
+func RollbackSequentialMigration(ctx context.Context, db *Database, migrations []SequentialMigration, steps int) ([]string, error)
+```
+
+Rolls back the last N applied migrations in reverse name order. Each migration must have a non-nil `Down` function.
+
+### SeqMigrationError
+
+```go
+type SeqMigrationError struct {
+    Name  string
+    Cause error
+}
+```
+
+Returned when a migration's `Up` or `Down` function fails. Supports `errors.Unwrap`.
+
+### Sequential vs Struct-Diff Migration
+
+| Feature         | Struct-diff (`Migrate`)        | Sequential (`RunSequentialMigrations`) |
+| --------------- | ------------------------------ | -------------------------------------- |
+| Schema source   | Go struct tags                 | Raw TypeQL statements                  |
+| Data migrations | No                             | Yes                                    |
+| Rollback        | Via `Operation.RollbackTypeQL` | Via `Down` function                    |
+| Ordering        | Automatic from diff            | Explicit by name                       |
+| State tracking  | Hash-based                     | Name-based                             |
+
 ## Migration Workflow Guide
 
 ### Which function to use
@@ -313,6 +415,7 @@ Parses a TypeQL schema string (as returned by `Conn.Schema()`) into a `tqlgen.Pa
 | Production deploys         | `MigrateWithState`           | Diffs + state tracking. Skips already-applied migrations. Recommended. |
 | Custom schema source       | `MigrateWithStateFromSchema` | Same as above but you provide the schema string.                       |
 | Dry run / inspection       | `DiffSchemaFromRegistry`     | Returns the diff without applying anything.                            |
+| File-based migrations      | `RunSequentialMigrations`    | Ordered, named migrations from TypeQL statements. Supports rollback.   |
 
 ### Development workflow
 

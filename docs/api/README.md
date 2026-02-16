@@ -9,7 +9,7 @@ Usage guides for the go-typeql packages. For an introduction to the library, see
 | [Models](models.md)       | Defining entities and relations, struct tags, type registration |
 | [CRUD](crud.md)           | Insert, Get, Update, Delete, Put, batch ops, transactions       |
 | [Queries](queries.md)     | Filters, sorting, pagination, aggregations, group-by            |
-| [Schema](schema.md)       | Schema generation, migration workflows, state tracking          |
+| [Schema](schema.md)       | Schema generation, migration workflows, sequential migrations   |
 | [Generator](generator.md) | tqlgen: generate Go structs from TypeQL schemas                 |
 | [AST](ast.md)             | Low-level TypeQL AST for programmatic query building            |
 | [Driver](driver.md)       | Rust FFI driver setup and connection                            |
