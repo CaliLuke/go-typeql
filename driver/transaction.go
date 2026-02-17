@@ -69,62 +69,57 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 }
 
 // QueryWithContext executes a TypeQL query with context cancellation support.
-// If the context is cancelled while the query is in-flight, the FFI future is
-// aborted and ctx.Err() is returned.
+// The query runs synchronously inside a goroutine while holding the transaction
+// mutex for the entire FFI call. If the context is cancelled, ctx.Err() is
+// returned but the underlying FFI call is allowed to finish naturally (C calls
+// cannot be safely interrupted mid-flight).
 func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map[string]any, error) {
 	// Fast path: bail immediately if already cancelled
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	t.mu.Lock()
-	if t.ptr == nil {
-		t.mu.Unlock()
-		return nil, ErrNotConnected
-	}
-
-	cQuery := C.CString(query)
-	defer C.free(unsafe.Pointer(cQuery))
-
-	var asyncErr *C.char
-	future := C.typedb_transaction_query_async(t.ptr, cQuery, nil, &asyncErr)
-	t.mu.Unlock() // release lock while waiting
-
-	if future == nil {
-		if err := getError(asyncErr); err != nil {
-			return nil, err
-		}
-		return nil, nil
-	}
-
-	// Resolve in a goroutine so we can select on context cancellation
 	type queryResult struct {
-		buf    *C.uchar
-		outLen C.size_t
-		err    *C.char
+		results []map[string]any
+		err     error
 	}
 	ch := make(chan queryResult, 1)
+
 	go func() {
-		var resolveErr *C.char
+		// Hold mutex for the entire sync FFI call
+		t.mu.Lock()
+		defer t.mu.Unlock()
+
+		if t.ptr == nil {
+			ch <- queryResult{err: ErrNotConnected}
+			return
+		}
+
+		cQuery := C.CString(query)
+		defer C.free(unsafe.Pointer(cQuery))
+
 		var outLen C.size_t
-		buf := C.typedb_future_resolve(future, &outLen, &resolveErr)
-		ch <- queryResult{buf: buf, outLen: outLen, err: resolveErr}
+		var queryErr *C.char
+		buf := C.typedb_transaction_query(t.ptr, cQuery, nil, &outLen, &queryErr)
+		if buf == nil {
+			if err := getError(queryErr); err != nil {
+				ch <- queryResult{err: err}
+				return
+			}
+			ch <- queryResult{}
+			return
+		}
+		defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
+
+		results, err := decodeMsgpack(buf, outLen)
+		ch <- queryResult{results: results, err: err}
 	}()
 
 	select {
 	case <-ctx.Done():
-		C.typedb_future_abort(future)
-		<-ch // drain goroutine after abort unblocks resolve
 		return nil, ctx.Err()
 	case res := <-ch:
-		if res.buf == nil {
-			if err := getError(res.err); err != nil {
-				return nil, err
-			}
-			return nil, nil
-		}
-		defer C.typedb_free_bytes(res.buf, res.outLen)
-		return decodeMsgpack((*C.uchar)(unsafe.Pointer(res.buf)), res.outLen)
+		return res.results, res.err
 	}
 }
 

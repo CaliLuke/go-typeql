@@ -53,11 +53,4 @@ extern void typedb_transaction_commit(void* txn, char** err_out);
 extern void typedb_transaction_rollback(const void* txn, char** err_out);
 extern void typedb_transaction_close(void* txn);
 
-// Async query
-extern void* typedb_transaction_query_async(void* txn, const char* query, const void* options, char** err_out);
-extern bool typedb_future_is_ready(const void* future);
-extern unsigned char* typedb_future_resolve(void* future, size_t* out_len, char** err_out);
-extern void typedb_future_abort(void* future);
-extern void typedb_future_drop(void* future);
-
 #endif

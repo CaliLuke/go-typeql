@@ -23,10 +23,9 @@ func TestQueryWithContext_BasicQuery(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Create a test database
-	dbName := "test_async_basic"
+	dbName := "test_ctx_basic"
 	dm := conn.Databases()
-	_ = dm.Delete(dbName) // ignore error if doesn't exist
+	_ = dm.Delete(dbName)
 	if err := dm.Create(dbName); err != nil {
 		t.Fatalf("create db: %v", err)
 	}
@@ -57,7 +56,6 @@ func TestQueryWithContext_BasicQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query with context: %v", err)
 	}
-	// We defined one attribute type, so there should be results
 	_ = results
 }
 
@@ -71,7 +69,7 @@ func TestQueryWithContext_AlreadyCancelled(t *testing.T) {
 	}
 	defer conn.Close()
 
-	dbName := "test_async_cancelled"
+	dbName := "test_ctx_cancelled"
 	dm := conn.Databases()
 	_ = dm.Delete(dbName)
 	if err := dm.Create(dbName); err != nil {
@@ -101,7 +99,7 @@ func TestQueryWithContext_TimeoutCancellation(t *testing.T) {
 	}
 	defer conn.Close()
 
-	dbName := "test_async_timeout"
+	dbName := "test_ctx_timeout"
 	dm := conn.Databases()
 	_ = dm.Delete(dbName)
 	if err := dm.Create(dbName); err != nil {
@@ -115,8 +113,6 @@ func TestQueryWithContext_TimeoutCancellation(t *testing.T) {
 	}
 	defer tx.Close()
 
-	// Use a very short timeout — the query should complete before the timeout
-	// for a simple query, but this tests the mechanism works
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
