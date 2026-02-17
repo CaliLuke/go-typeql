@@ -1,4 +1,4 @@
-//go:build cgo && typedb && !typedb_system
+//go:build cgo && typedb && !typedb_prebuilt
 
 package driver
 
