@@ -105,9 +105,7 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 	info.TypeName = toKebabCase(t.Name())
 
 	// Scan fields
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-
+	for field := range t.Fields() {
 		// Skip unexported fields
 		if !field.IsExported() {
 			continue
@@ -142,7 +140,7 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 			role := RoleInfo{
 				RoleName:   tag.RoleName,
 				FieldName:  field.Name,
-				FieldIndex: i,
+				FieldIndex: field.Index[0],
 			}
 
 			// Determine player type name
@@ -161,7 +159,7 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 			info.Roles = append(info.Roles, role)
 		} else {
 			// Attribute field
-			fi := buildFieldInfo(field, i, tag)
+			fi := buildFieldInfo(field, field.Index[0], tag)
 			info.Fields = append(info.Fields, fi)
 
 			if tag.Key {
@@ -174,8 +172,7 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 }
 
 func detectModelKind(t reflect.Type) (ModelKind, error) {
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for field := range t.Fields() {
 		if !field.Anonymous {
 			continue
 		}

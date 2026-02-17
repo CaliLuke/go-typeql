@@ -23,7 +23,7 @@ func TestIntegration_AttrCRUD_Integer(t *testing.T) {
 	mgr := gotype.NewManager[Person](db)
 
 	// Insert with integer age.
-	assertInsert(t, ctx, mgr, &Person{Name: "IntTest", Email: "int@test.com", Age: intPtr(42)})
+	assertInsert(t, ctx, mgr, &Person{Name: "IntTest", Email: "int@test.com", Age: new(42)})
 
 	// Fetch and verify.
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "IntTest"})
@@ -32,7 +32,7 @@ func TestIntegration_AttrCRUD_Integer(t *testing.T) {
 	}
 
 	// Update integer.
-	fetched.Age = intPtr(99)
+	fetched.Age = new(99)
 	assertUpdate(t, ctx, mgr, fetched)
 
 	updated := assertGetOne(t, ctx, mgr, map[string]any{"name": "IntTest"})
@@ -56,7 +56,7 @@ func TestIntegration_AttrCRUD_Double(t *testing.T) {
 	mgr := gotype.NewManager[Profile](db)
 
 	// Insert with double score.
-	assertInsert(t, ctx, mgr, &Profile{Username: "dbltest", Score: float64Ptr(3.14)})
+	assertInsert(t, ctx, mgr, &Profile{Username: "dbltest", Score: new(3.14)})
 
 	// Fetch and verify.
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"username": "dbltest"})
@@ -65,7 +65,7 @@ func TestIntegration_AttrCRUD_Double(t *testing.T) {
 	}
 
 	// Update double.
-	fetched.Score = float64Ptr(2.718)
+	fetched.Score = new(2.718)
 	assertUpdate(t, ctx, mgr, fetched)
 
 	updated := assertGetOne(t, ctx, mgr, map[string]any{"username": "dbltest"})
@@ -89,7 +89,7 @@ func TestIntegration_AttrCRUD_Boolean(t *testing.T) {
 	mgr := gotype.NewManager[Profile](db)
 
 	// Insert with boolean active=true.
-	assertInsert(t, ctx, mgr, &Profile{Username: "booltest", Active: boolPtr(true)})
+	assertInsert(t, ctx, mgr, &Profile{Username: "booltest", Active: new(true)})
 
 	// Fetch and verify.
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"username": "booltest"})
@@ -98,7 +98,7 @@ func TestIntegration_AttrCRUD_Boolean(t *testing.T) {
 	}
 
 	// Update to false.
-	fetched.Active = boolPtr(false)
+	fetched.Active = new(false)
 	assertUpdate(t, ctx, mgr, fetched)
 
 	updated := assertGetOne(t, ctx, mgr, map[string]any{"username": "booltest"})

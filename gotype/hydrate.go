@@ -132,12 +132,11 @@ func HydrateAny(data map[string]any) (any, error) {
 
 func setIID(v reflect.Value, iid string) {
 	// Look for BaseEntity or BaseRelation embedded field
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		if !field.CanAddr() {
+	for _, fv := range v.Fields() {
+		if !fv.CanAddr() {
 			continue
 		}
-		addr := field.Addr().Interface()
+		addr := fv.Addr().Interface()
 		if e, ok := addr.(*BaseEntity); ok {
 			e.SetIID(iid)
 			return

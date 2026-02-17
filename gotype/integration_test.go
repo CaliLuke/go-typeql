@@ -45,7 +45,7 @@ func TestIntegration_InsertEntity(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	alice := &Person{Name: "Alice", Email: "alice@example.com", Age: intPtr(30)}
+	alice := &Person{Name: "Alice", Email: "alice@example.com", Age: new(30)}
 	assertInsert(t, ctx, mgr, alice)
 
 	// After insert, IID should be populated (entity has a key field).
@@ -60,7 +60,7 @@ func TestIntegration_InsertAndFetchAll(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@example.com", Age: intPtr(30)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@example.com", Age: new(30)})
 
 	results := assertCount(t, ctx, mgr, 1)
 	if results[0].Name != "Alice" {
@@ -80,8 +80,8 @@ func TestIntegration_InsertAndGetByFilter(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@example.com", Age: intPtr(30)})
-	assertInsert(t, ctx, mgr, &Person{Name: "Bob", Email: "bob@example.com", Age: intPtr(25)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@example.com", Age: new(30)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Bob", Email: "bob@example.com", Age: new(25)})
 
 	result := assertGetOne(t, ctx, mgr, map[string]any{"name": "Alice"})
 	if result.Name != "Alice" {
@@ -99,7 +99,7 @@ func TestIntegration_UpdateEntity(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Henry", Email: "henry@example.com", Age: intPtr(25)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Henry", Email: "henry@example.com", Age: new(25)})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "Henry"})
 
 	fetched.Email = "henry.new@example.com"
@@ -121,7 +121,7 @@ func TestIntegration_DeleteEntity(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Jack", Email: "jack@example.com", Age: intPtr(30)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Jack", Email: "jack@example.com", Age: new(30)})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "Jack"})
 
 	assertDelete(t, ctx, mgr, fetched)
@@ -139,9 +139,9 @@ func TestIntegration_InsertMany(t *testing.T) {
 	mgr := gotype.NewManager[Person](db)
 
 	persons := []*Person{
-		{Name: "Bob", Email: "bob@example.com", Age: intPtr(25)},
-		{Name: "Charlie", Email: "charlie@example.com", Age: intPtr(35)},
-		{Name: "Diana", Email: "diana@example.com", Age: intPtr(28)},
+		{Name: "Bob", Email: "bob@example.com", Age: new(25)},
+		{Name: "Charlie", Email: "charlie@example.com", Age: new(35)},
+		{Name: "Diana", Email: "diana@example.com", Age: new(28)},
 	}
 	assertInsertMany(t, ctx, mgr, persons)
 

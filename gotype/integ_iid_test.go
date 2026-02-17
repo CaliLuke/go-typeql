@@ -21,7 +21,7 @@ func TestIntegration_IID_PopulatedAfterGet(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@iid.com", Age: intPtr(30)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@iid.com", Age: new(30)})
 
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "Alice"})
 	if fetched.GetIID() == "" {
@@ -37,7 +37,7 @@ func TestIntegration_IID_PopulatedAfterFilter(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Bob", Email: "bob@iid.com", Age: intPtr(25)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Bob", Email: "bob@iid.com", Age: new(25)})
 
 	results, err := mgr.Query().Filter(gotype.Eq("name", "Bob")).Execute(ctx)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestIntegration_IID_StableAcrossQueries(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Charlie", Email: "charlie@iid.com", Age: intPtr(35)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Charlie", Email: "charlie@iid.com", Age: new(35)})
 
 	first := assertGetOne(t, ctx, mgr, map[string]any{"name": "Charlie"})
 	second := assertGetOne(t, ctx, mgr, map[string]any{"name": "Charlie"})
@@ -79,9 +79,9 @@ func TestIntegration_IID_UniquePerEntity(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "UniqueA", Email: "a@iid.com", Age: intPtr(20)})
-	assertInsert(t, ctx, mgr, &Person{Name: "UniqueB", Email: "b@iid.com", Age: intPtr(21)})
-	assertInsert(t, ctx, mgr, &Person{Name: "UniqueC", Email: "c@iid.com", Age: intPtr(22)})
+	assertInsert(t, ctx, mgr, &Person{Name: "UniqueA", Email: "a@iid.com", Age: new(20)})
+	assertInsert(t, ctx, mgr, &Person{Name: "UniqueB", Email: "b@iid.com", Age: new(21)})
+	assertInsert(t, ctx, mgr, &Person{Name: "UniqueC", Email: "c@iid.com", Age: new(22)})
 
 	a := assertGetOne(t, ctx, mgr, map[string]any{"name": "UniqueA"})
 	b := assertGetOne(t, ctx, mgr, map[string]any{"name": "UniqueB"})
@@ -126,7 +126,7 @@ func TestIntegration_IID_RelationPopulated(t *testing.T) {
 	companyMgr := gotype.NewManager[Company](db)
 	empMgr := gotype.NewManager[Employment](db)
 
-	p := insertAndGet(t, ctx, personMgr, &Person{Name: "Eve", Email: "eve@iid.com", Age: intPtr(28)}, "name", "Eve")
+	p := insertAndGet(t, ctx, personMgr, &Person{Name: "Eve", Email: "eve@iid.com", Age: new(28)}, "name", "Eve")
 	c := insertAndGet(t, ctx, companyMgr, &Company{Name: "IIDCorp", Industry: "Tech"}, "name", "IIDCorp")
 
 	assertInsert(t, ctx, empMgr, &Employment{Employee: p, Employer: c, StartDate: "2024-01-01"})
@@ -181,7 +181,7 @@ func TestIntegration_IID_ByIIDFilterConsistent(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "IIDLookup", Email: "lookup@iid.com", Age: intPtr(40)})
+	assertInsert(t, ctx, mgr, &Person{Name: "IIDLookup", Email: "lookup@iid.com", Age: new(40)})
 
 	// Get by key filter.
 	byKey := assertGetOne(t, ctx, mgr, map[string]any{"name": "IIDLookup"})

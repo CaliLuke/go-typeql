@@ -15,18 +15,22 @@ go run github.com/CaliLuke/go-typeql/tqlgen/cmd/tqlgen \
 
 ### Flags
 
-| Flag              | Default    | Description                                                   |
-| ----------------- | ---------- | ------------------------------------------------------------- |
-| `-schema`         | (required) | Path to TypeQL `.tql` schema file                             |
-| `-out`            | stdout     | Output file path                                              |
-| `-pkg`            | `models`   | Go package name                                               |
-| `-acronyms`       | `true`     | Apply Go naming conventions for acronyms (ID, URL, API, etc.) |
-| `-skip-abstract`  | `true`     | Skip abstract types in output                                 |
-| `-inherit`        | `true`     | Propagate parent `owns` to children                           |
-| `-enums`          | `true`     | Generate string constants from `@values` constraints          |
-| `-registry`       | `false`    | Generate a schema registry instead of Go structs              |
-| `-schema-version` | (none)     | Embed a schema version string in the generated header         |
-| `-version`        | --         | Print tqlgen version and exit                                 |
+| Flag                 | Default    | Description                                                   |
+| -------------------- | ---------- | ------------------------------------------------------------- |
+| `-schema`            | (required) | Path to TypeQL `.tql` schema file                             |
+| `-out`               | stdout     | Output file path                                              |
+| `-pkg`               | `models`   | Go package name                                               |
+| `-acronyms`          | `true`     | Apply Go naming conventions for acronyms (ID, URL, API, etc.) |
+| `-skip-abstract`     | `true`     | Skip abstract types in output                                 |
+| `-inherit`           | `true`     | Propagate parent `owns` to children                           |
+| `-enums`             | `true`     | Generate string constants from `@values` constraints          |
+| `-registry`          | `false`    | Generate a schema registry instead of Go structs              |
+| `-dto`               | `false`    | Generate DTO structs (Out/Create/Patch) for HTTP APIs         |
+| `-id-field`          | `ID`       | ID field name in Out DTOs                                     |
+| `-strict-out`        | `false`    | Make required fields non-pointer in Out structs               |
+| `-skip-relation-out` | `false`    | Skip generating relation Out structs                          |
+| `-schema-version`    | (none)     | Embed a schema version string in the generated header         |
+| `-version`           | --         | Print tqlgen version and exit                                 |
 
 ## What It Generates
 
@@ -131,11 +135,17 @@ The registry file contains:
 - **Type constants** — `const TypePerson = "person"`, `const RelEmployment = "employment"`
 - **Entity parents** — `EntityParents` map for inheritance lookups
 - **Entity attributes** — `EntityAttributes` map of type → sorted owned attributes
+- **Entity keys** — `EntityKeys` map of type → `@key` attribute names
+- **Abstract tracking** — `EntityAbstract` and `RelationAbstract` maps
 - **Attribute value types** — `AttributeValueTypes` map of attribute → TypeDB value type
 - **Attribute enum values** — `AttributeEnumValues` map for `@values`-constrained attributes
-- **Relation schemas** — `RelationSchema` map with role names and player types
+- **All attribute types** — `AllAttributeTypes` sorted slice
+- **Relation schemas** — `RelationSchema` map with N roles (not limited to binary) and player types
 - **Relation attributes** — `RelationAttributes` map of relation → owned attributes
+- **Relation parents** — `RelationParents` map for relation inheritance
 - **Sorted type lists** — `AllEntityTypes` and `AllRelationTypes` slices
+- **Schema hash** — `SchemaHash` constant (SHA256 prefix) when schema text is provided
+- **Convenience functions** — `GetEntityKeys()`, `IsAbstractEntity()`, `IsAbstractRelation()`, `GetRolePlayers()`, `GetEntityAttributes()`, `GetRelationAttributes()`
 
 Programmatic usage:
 
@@ -145,8 +155,57 @@ data := tqlgen.BuildRegistryData(schema, tqlgen.RegistryConfig{
     UseAcronyms:  true,
     SkipAbstract: true,
     Enums:        true,
+    SchemaText:   schemaStr, // optional: enables SchemaHash in output
 })
 err := tqlgen.RenderRegistry(os.Stdout, data)
+```
+
+## DTO Mode
+
+The `-dto` flag generates Out/Create/Patch struct variants for HTTP API layers:
+
+```bash
+tqlgen -schema schema.tql -dto -out dto_gen.go -pkg dto
+```
+
+For each non-abstract entity `Foo`:
+
+- `FooOut` — response struct with `ID`, `Type`, and all attribute fields
+- `FooCreate` — create request with required fields non-pointer (`@key`, `@unique`, `@card(1+)`) and optional fields as `*T`
+- `FooPatch` — partial update with all fields as `*T` (nil = don't update)
+
+For each non-abstract relation `Bar`:
+
+- `BarOut` — response with role player IIDs and owned attributes
+- `BarCreate` — request with role player IDs and owned attributes
+
+Plus Go interfaces (`EntityOut`, `EntityCreate`, `EntityPatch`, `RelationOut`, `RelationCreate`) with `TypeName() string` methods.
+
+### DTO Configuration
+
+```go
+dtoCfg := tqlgen.DTOConfig{
+    PackageName:     "dto",
+    UseAcronyms:     true,
+    SkipAbstract:    true,
+    StrictOut:       false,       // true = required fields non-pointer in Out
+    IDFieldName:     "ID",
+    ExcludeEntities: []string{"internal-counter"},
+    SkipRelationOut: false,
+    // Shared base structs for entity hierarchies
+    BaseStructs: []tqlgen.BaseStructConfig{{
+        SourceEntity:   "artifact",
+        BaseName:       "BaseArtifact",
+        InheritedAttrs: []string{"name", "status"},
+    }},
+    // Per-field overrides
+    EntityFieldOverrides: []tqlgen.EntityFieldOverride{{
+        Entity: "person", Field: "email", Variant: "create",
+        Required: boolPtr(false),
+    }},
+}
+data := tqlgen.BuildDTOData(schema, dtoCfg)
+err := tqlgen.RenderDTO(os.Stdout, data)
 ```
 
 ## Programmatic API

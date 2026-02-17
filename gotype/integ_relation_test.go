@@ -24,8 +24,8 @@ func TestIntegration_Relation_SelfReferencing(t *testing.T) {
 	ctx := context.Background()
 
 	personMgr := gotype.NewManager[Person](db)
-	alice := insertAndGet(t, ctx, personMgr, &Person{Name: "Alice", Email: "alice@example.com", Age: intPtr(30)}, "name", "Alice")
-	bob := insertAndGet(t, ctx, personMgr, &Person{Name: "Bob", Email: "bob@example.com", Age: intPtr(25)}, "name", "Bob")
+	alice := insertAndGet(t, ctx, personMgr, &Person{Name: "Alice", Email: "alice@example.com", Age: new(30)}, "name", "Alice")
+	bob := insertAndGet(t, ctx, personMgr, &Person{Name: "Bob", Email: "bob@example.com", Age: new(25)}, "name", "Bob")
 
 	friendMgr := gotype.NewManager[Friendship](db)
 	assertInsert(t, ctx, friendMgr, &Friendship{
@@ -55,7 +55,7 @@ func TestIntegration_Relation_MultipleAttributes(t *testing.T) {
 		Member: alice,
 		Group:  corp,
 		Title:  "Lead",
-		Active: boolPtr(true),
+		Active: new(true),
 	})
 
 	all := assertCount(t, ctx, memMgr, 1)

@@ -100,9 +100,9 @@ func TestIntegration_IntegerKey_FilterChainable(t *testing.T) {
 
 	mgr := gotype.NewManager[Sensor](db)
 
-	assertInsert(t, ctx, mgr, &Sensor{SensorID: 1, Location: "A", Reading: float64Ptr(10.5)})
-	assertInsert(t, ctx, mgr, &Sensor{SensorID: 2, Location: "B", Reading: float64Ptr(20.0)})
-	assertInsert(t, ctx, mgr, &Sensor{SensorID: 3, Location: "C", Reading: float64Ptr(30.0)})
+	assertInsert(t, ctx, mgr, &Sensor{SensorID: 1, Location: "A", Reading: new(10.5)})
+	assertInsert(t, ctx, mgr, &Sensor{SensorID: 2, Location: "B", Reading: new(20.0)})
+	assertInsert(t, ctx, mgr, &Sensor{SensorID: 3, Location: "C", Reading: new(30.0)})
 
 	// Filter by integer key using Eq.
 	results, err := mgr.Query().Filter(gotype.Eq("sensor-id", 2)).Execute(ctx)

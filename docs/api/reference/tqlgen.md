@@ -17,6 +17,8 @@ Package tqlgen provides code generation from TypeQL schemas.
 - [Variables](<#variables>)
 - [func ExtractAnnotations\(input string\) map\[string\]map\[string\]string](<#ExtractAnnotations>)
 - [func Render\(w io.Writer, schema \*ParsedSchema, cfg RenderConfig\) error](<#Render>)
+- [func RenderDTO\(w io.Writer, data \*DTOData\) error](<#RenderDTO>)
+- [func RenderLeafConstants\(w io.Writer, schema \*ParsedSchema, cfg LeafConstantsConfig\) error](<#RenderLeafConstants>)
 - [func RenderRegistry\(w io.Writer, data \*RegistryData\) error](<#RenderRegistry>)
 - [func ToPascalCase\(name string\) string](<#ToPascalCase>)
 - [func ToPascalCaseAcronyms\(name string\) string](<#ToPascalCaseAcronyms>)
@@ -25,17 +27,27 @@ Package tqlgen provides code generation from TypeQL schemas.
 - [type AsClause](<#AsClause>)
 - [type AttrDef](<#AttrDef>)
 - [type AttributeSpec](<#AttributeSpec>)
+- [type BaseStructConfig](<#BaseStructConfig>)
 - [type CardAnnot](<#CardAnnot>)
+- [type CompositeEntityConfig](<#CompositeEntityConfig>)
+- [type DTOConfig](<#DTOConfig>)
+- [type DTOData](<#DTOData>)
+  - [func BuildDTOData\(schema \*ParsedSchema, cfg DTOConfig\) \*DTOData](<#BuildDTOData>)
 - [type EntityClause](<#EntityClause>)
 - [type EntityDef](<#EntityDef>)
+- [type EntityFieldOverride](<#EntityFieldOverride>)
 - [type EntitySpec](<#EntitySpec>)
 - [type EnumCtx](<#EnumCtx>)
 - [type EnumValueCtx](<#EnumValueCtx>)
 - [type FunBodyTok](<#FunBodyTok>)
 - [type FunDef](<#FunDef>)
 - [type FunctionSpec](<#FunctionSpec>)
+- [type JSONSchemaCtx](<#JSONSchemaCtx>)
+- [type JSONSchemaPropCtx](<#JSONSchemaPropCtx>)
 - [type KVCtx](<#KVCtx>)
+- [type KVMapCtx](<#KVMapCtx>)
 - [type KVSliceCtx](<#KVSliceCtx>)
+- [type LeafConstantsConfig](<#LeafConstantsConfig>)
 - [type OwnsDef](<#OwnsDef>)
 - [type OwnsSpec](<#OwnsSpec>)
 - [type ParameterSpec](<#ParameterSpec>)
@@ -58,6 +70,7 @@ Package tqlgen provides code generation from TypeQL schemas.
 - [type RelationSpec](<#RelationSpec>)
 - [type RenderConfig](<#RenderConfig>)
   - [func DefaultConfig\(\) RenderConfig](<#DefaultConfig>)
+- [type RoleCtx](<#RoleCtx>)
 - [type SimpleDef](<#SimpleDef>)
 - [type StructDefP](<#StructDefP>)
 - [type StructFieldP](<#StructFieldP>)
@@ -103,8 +116,26 @@ func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error
 
 Render processes a ParsedSchema and writes the generated Go source code to the provided writer.
 
+<a name="RenderDTO"></a>
+## func [RenderDTO](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto.go#L376>)
+
+```go
+func RenderDTO(w io.Writer, data *DTOData) error
+```
+
+RenderDTO writes a DTO Go file from DTOData.
+
+<a name="RenderLeafConstants"></a>
+## func [RenderLeafConstants](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L537>)
+
+```go
+func RenderLeafConstants(w io.Writer, schema *ParsedSchema, cfg LeafConstantsConfig) error
+```
+
+RenderLeafConstants writes a standalone leaf package containing only type, relation, and enum constants. This package has zero internal dependencies, making it safe to import from any package.
+
 <a name="RenderRegistry"></a>
-## func [RenderRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L275>)
+## func [RenderRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L520>)
 
 ```go
 func RenderRegistry(w io.Writer, data *RegistryData) error
@@ -201,6 +232,25 @@ type AttributeSpec struct {
 }
 ```
 
+<a name="BaseStructConfig"></a>
+## type [BaseStructConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto_config.go#L46-L56>)
+
+BaseStructConfig configures a shared embedded base struct for an entity hierarchy. When an entity inherits from SourceEntity, its DTOs embed the base struct instead of repeating the inherited fields.
+
+```go
+type BaseStructConfig struct {
+    // SourceEntity is the schema entity name that triggers this base struct.
+    SourceEntity string
+    // BaseName is the Go struct name prefix (e.g., "BaseArtifact").
+    BaseName string
+    // InheritedAttrs lists attribute names defined in the base struct.
+    // These are skipped when rendering child entity DTOs.
+    InheritedAttrs []string
+    // ExtraFields adds additional fields as name → Go type annotation.
+    ExtraFields map[string]string
+}
+```
+
 <a name="CardAnnot"></a>
 ## type [CardAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L96-L98>)
 
@@ -211,6 +261,114 @@ type CardAnnot struct {
     Expr string `parser:"'@card' '(' @CardExpr ')'"`
 }
 ```
+
+<a name="CompositeEntityConfig"></a>
+## type [CompositeEntityConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto_config.go#L60-L67>)
+
+CompositeEntityConfig merges multiple entity subtypes into a single flat DTO with a Type discriminator. Useful for polymorphic API endpoints.
+
+```go
+type CompositeEntityConfig struct {
+    // Name is the Go struct name for the composite DTO (e.g., "ArtifactDTO").
+    Name string
+    // Entities lists the TypeDB entity names to merge.
+    Entities []string
+    // TypeName is the TypeDB type name for TypeName() method (e.g., "artifact").
+    TypeName string
+}
+```
+
+<a name="DTOConfig"></a>
+## type [DTOConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto_config.go#L5-L41>)
+
+DTOConfig configures DTO \(Data Transfer Object\) code generation. DTOs generate Out/Create/Patch struct variants for HTTP API layers.
+
+```go
+type DTOConfig struct {
+    // PackageName is the Go package name for the generated file (required).
+    PackageName string
+    // UseAcronyms applies Go acronym naming conventions (e.g., "ID" not "Id").
+    UseAcronyms bool
+    // SkipAbstract excludes abstract types from DTO generation.
+    SkipAbstract bool
+    // IDFieldName is the name of the ID field in Out structs (default "ID").
+    IDFieldName string
+    // StrictOut makes required fields non-pointer in Out structs.
+    // When false (default), all attribute fields in Out are pointers for safety.
+    StrictOut bool
+    // ExcludeEntities lists entity names to skip during generation.
+    ExcludeEntities []string
+    // ExcludeRelations lists relation names to skip during generation.
+    ExcludeRelations []string
+    // SkipRelationOut skips generating Out structs for relations.
+    SkipRelationOut bool
+    // BaseStructs configures shared base structs for entity hierarchies.
+    BaseStructs []BaseStructConfig
+    // EntityFieldOverrides provides per-entity, per-variant field overrides.
+    EntityFieldOverrides []EntityFieldOverride
+    // CompositeEntities configures merged flat structs from multiple entity types.
+    CompositeEntities []CompositeEntityConfig
+    // EntityOutName overrides the interface name for entity Out DTOs (default "EntityOut").
+    EntityOutName string
+    // EntityCreateName overrides the interface name for entity Create DTOs (default "EntityCreate").
+    EntityCreateName string
+    // EntityPatchName overrides the interface name for entity Patch DTOs (default "EntityPatch").
+    EntityPatchName string
+    // RelationOutName overrides the interface name for relation Out DTOs (default "RelationOut").
+    RelationOutName string
+    // RelationCreateName overrides the interface name for relation Create DTOs (default "RelationCreate").
+    RelationCreateName string
+    // RelationCreateEmbed is a struct name to embed in all relation Create DTOs.
+    RelationCreateEmbed string
+}
+```
+
+<a name="DTOData"></a>
+## type [DTOData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto.go#L12-L41>)
+
+DTOData holds all schema\-derived data for DTO code generation.
+
+```go
+type DTOData struct {
+    PackageName string
+    NeedsTime   bool
+    IDFieldName string
+
+    // Base structs (from BaseStructConfig)
+    BaseStructs []baseStructDTOCtx
+
+    // Entity DTOs
+    Entities []entityDTOCtx
+
+    // Relation DTOs
+    Relations           []relationDTOCtx
+    SkipRelationOut     bool
+    RelationCreateEmbed string
+
+    // Composite entity DTOs
+    Composites []compositeDTOCtx
+
+    // Union interface lists (concrete types only)
+    ConcreteEntities  []string // Go type names
+    ConcreteRelations []string
+
+    // Configurable interface names
+    EntityOutName      string
+    EntityCreateName   string
+    EntityPatchName    string
+    RelationOutName    string
+    RelationCreateName string
+}
+```
+
+<a name="BuildDTOData"></a>
+### func [BuildDTOData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto.go#L94>)
+
+```go
+func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData
+```
+
+BuildDTOData populates DTOData from a parsed schema. The schema should have AccumulateInheritance\(\) called before this.
 
 <a name="EntityClause"></a>
 ## type [EntityClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L40-L43>)
@@ -239,6 +397,25 @@ type EntityDef struct {
 }
 ```
 
+<a name="EntityFieldOverride"></a>
+## type [EntityFieldOverride](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto_config.go#L70-L80>)
+
+EntityFieldOverride provides per\-entity, per\-variant field overrides.
+
+```go
+type EntityFieldOverride struct {
+    // Entity is the TypeDB entity name.
+    Entity string
+    // Field is the TypeDB attribute name.
+    Field string
+    // Variant is the DTO variant: "out", "create", or "patch".
+    Variant string
+    // Required overrides whether the field is required (non-pointer).
+    // nil means keep the schema default.
+    Required *bool
+}
+```
+
 <a name="EntitySpec"></a>
 ## type [EntitySpec](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/model.go#L71-L83>)
 
@@ -261,7 +438,7 @@ type EntitySpec struct {
 ```
 
 <a name="EnumCtx"></a>
-## type [EnumCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L50>)
+## type [EnumCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L82>)
 
 EnumCtx holds enum constants derived from @values constraints.
 
@@ -270,7 +447,7 @@ type EnumCtx = enumCtx
 ```
 
 <a name="EnumValueCtx"></a>
-## type [EnumValueCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L53>)
+## type [EnumValueCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L85>)
 
 EnumValueCtx holds a single enum constant.
 
@@ -317,8 +494,33 @@ type FunctionSpec struct {
 }
 ```
 
+<a name="JSONSchemaCtx"></a>
+## type [JSONSchemaCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L117-L121>)
+
+JSONSchemaCtx holds a JSON schema fragment for a single type.
+
+```go
+type JSONSchemaCtx struct {
+    TypeName   string
+    Properties []JSONSchemaPropCtx
+    Required   []string
+}
+```
+
+<a name="JSONSchemaPropCtx"></a>
+## type [JSONSchemaPropCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L124-L127>)
+
+JSONSchemaPropCtx describes a single property in a JSON schema fragment.
+
+```go
+type JSONSchemaPropCtx struct {
+    Name     string
+    JSONType string
+}
+```
+
 <a name="KVCtx"></a>
-## type [KVCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L56-L58>)
+## type [KVCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L88-L90>)
 
 KVCtx is a simple key\-value pair.
 
@@ -328,8 +530,20 @@ type KVCtx struct {
 }
 ```
 
+<a name="KVMapCtx"></a>
+## type [KVMapCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L111-L114>)
+
+KVMapCtx is a key with a map of string key\-value pairs \(for annotations\).
+
+```go
+type KVMapCtx struct {
+    Key    string
+    Values []KVCtx
+}
+```
+
 <a name="KVSliceCtx"></a>
-## type [KVSliceCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L61-L64>)
+## type [KVSliceCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L93-L96>)
 
 KVSliceCtx is a key with multiple string values.
 
@@ -337,6 +551,22 @@ KVSliceCtx is a key with multiple string values.
 type KVSliceCtx struct {
     Key    string
     Values []string
+}
+```
+
+<a name="LeafConstantsConfig"></a>
+## type [LeafConstantsConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L525-L532>)
+
+LeafConstantsConfig configures leaf constants package generation.
+
+```go
+type LeafConstantsConfig struct {
+    // PackageName for the generated file (e.g. "schema").
+    PackageName string
+    // UseAcronyms applies Go acronym naming conventions.
+    UseAcronyms bool
+    // SkipAbstract excludes abstract types.
+    SkipAbstract bool
 }
 ```
 
@@ -480,13 +710,13 @@ type RegexAnnot struct {
 ```
 
 <a name="RegistryConfig"></a>
-## type [RegistryConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L12-L25>)
+## type [RegistryConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L13-L36>)
 
 RegistryConfig specifies settings for generating a schema registry.
 
 ```go
 type RegistryConfig struct {
-    // PackageName is the Go package name for the generated code.
+    // PackageName is the Go package name for the generated code (required).
     PackageName string
     // UseAcronyms applies Go acronym naming conventions (e.g., "ID" not "Id").
     UseAcronyms bool
@@ -498,11 +728,21 @@ type RegistryConfig struct {
     TypePrefix string
     // RelPrefix is the prefix for relation type constants (default "Rel").
     RelPrefix string
+    // SchemaText is the raw schema source. If non-empty, a SHA256-based SchemaHash is computed
+    // and annotations are extracted from comments.
+    SchemaText string
+    // SchemaVersion is a user-provided version string emitted as a constant.
+    SchemaVersion string
+    // TypedConstants generates typed string constants (type EntityType string, etc.)
+    // for compile-time safety instead of plain string constants.
+    TypedConstants bool
+    // JSONSchema generates JSON schema fragment maps for each entity/relation type.
+    JSONSchema bool
 }
 ```
 
 <a name="RegistryData"></a>
-## type [RegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L28-L41>)
+## type [RegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L39-L73>)
 
 RegistryData holds all schema\-derived data for registry code generation.
 
@@ -520,11 +760,32 @@ type RegistryData struct {
     RelationAttrs     []KVSliceCtx
     AllEntityTypes    []string
     AllRelationTypes  []string
+    // Metadata fields
+    EntityKeys       []KVSliceCtx
+    EntityAbstract   []string
+    RelationAbstract []string
+    RelationParents  []KVCtx
+    SchemaHash       string
+    SchemaVersion    string
+    AttributeTypes   []string
+
+    // Annotations from schema comments (# @key value)
+    EntityAnnotations    []KVMapCtx
+    AttributeAnnotations []KVMapCtx
+    RelationAnnotations  []KVMapCtx
+
+    // Typed constants (StrEnum-style)
+    TypedConstants         bool
+    AttributeTypeConstants []TypeConstCtx
+
+    // JSON schema fragments
+    JSONSchema       bool
+    EntityJSONSchema []JSONSchemaCtx
 }
 ```
 
 <a name="BuildRegistryData"></a>
-### func [BuildRegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L77>)
+### func [BuildRegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L131>)
 
 ```go
 func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData
@@ -533,17 +794,14 @@ func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData
 BuildRegistryData populates a RegistryData from a parsed schema. The schema should have AccumulateInheritance\(\) called before this.
 
 <a name="RelSchemaCtx"></a>
-## type [RelSchemaCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L67-L73>)
+## type [RelSchemaCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L105-L108>)
 
-RelSchemaCtx describes a relation's role schema.
+RelSchemaCtx describes a relation's role schema with N roles.
 
 ```go
 type RelSchemaCtx struct {
-    Name       string
-    Role0Name  string
-    Role0Types []string
-    Role1Name  string
-    Role1Types []string
+    Name  string
+    Roles []RoleCtx
 }
 ```
 
@@ -658,6 +916,18 @@ func DefaultConfig() RenderConfig
 
 DefaultConfig returns a standard RenderConfig with sensible defaults.
 
+<a name="RoleCtx"></a>
+## type [RoleCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L99-L102>)
+
+RoleCtx describes a single role in a relation: its name and which entity types can fill it.
+
+```go
+type RoleCtx struct {
+    RoleName    string
+    PlayerTypes []string
+}
+```
+
 <a name="SimpleDef"></a>
 ## type [SimpleDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L173-L179>)
 
@@ -755,7 +1025,7 @@ type TQLFileSimple struct {
 ```
 
 <a name="TypeConstCtx"></a>
-## type [TypeConstCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L44-L47>)
+## type [TypeConstCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L76-L79>)
 
 TypeConstCtx holds a Go constant name and its string value.
 

@@ -60,7 +60,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 - **Generic CRUD** — `Manager[T]` for Insert, Get, Update, Delete, Put (upsert), plus batch variants
 - **Query builder** — chainable filters, sorting, pagination, aggregations (sum, count, min, max, mean, median, std, variance, group by)
 - **Schema migration** — diff Go structs against a live database, apply changes, track migration state
-- **Code generator** — `tqlgen` generates Go structs from existing TypeQL schema files
+- **Code generator** — `tqlgen` generates Go structs, DTOs, and a typed registry from TypeQL schema files
 - **Rust FFI driver** — wraps `typedb-driver` 3.x via CGo; the ORM packages compile and test without it
 
 ## Packages
@@ -77,7 +77,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.2.0
+go get github.com/CaliLuke/go-typeql@v1.3.0
 ```
 
 The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires building the Rust FFI library — see the [Development Guide](docs/DEVELOPMENT.md).
@@ -87,7 +87,7 @@ For a complete runnable example covering connect, schema, and CRUD, see the [Get
 ## Running tests
 
 ```bash
-# Unit tests (253 tests, no database needed)
+# Unit tests (354 tests, no database needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (needs TypeDB on port 1729)
@@ -103,7 +103,7 @@ go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.26+
 - Rust toolchain (only for the driver)
 - TypeDB 3.x (only for integration tests)
 

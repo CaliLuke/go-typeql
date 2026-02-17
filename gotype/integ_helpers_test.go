@@ -112,10 +112,6 @@ func dbAddress() string {
 	return "localhost:1729"
 }
 
-// intPtr is a helper to create *int values.
-func intPtr(v int) *int {
-	return &v
-}
 
 // ---------------------------------------------------------------------------
 // Flexible DB setup helper
@@ -196,9 +192,6 @@ func setupTestDBDefault(t *testing.T) *gotype.Database {
 // Pointer helpers
 // ---------------------------------------------------------------------------
 
-func stringPtr(v string) *string   { return &v }
-func float64Ptr(v float64) *float64 { return &v }
-func boolPtr(v bool) *bool         { return &v }
 
 // ---------------------------------------------------------------------------
 // Seed data helper: inserts a standard set of Person records.
@@ -207,10 +200,10 @@ func boolPtr(v bool) *bool         { return &v }
 func seedPersons(t *testing.T, ctx context.Context, mgr *gotype.Manager[Person]) []*Person {
 	t.Helper()
 	persons := []*Person{
-		{Name: "Alice", Email: "alice@example.com", Age: intPtr(30)},
-		{Name: "Bob", Email: "bob@example.com", Age: intPtr(25)},
-		{Name: "Charlie", Email: "charlie@example.com", Age: intPtr(35)},
-		{Name: "Diana", Email: "diana@example.com", Age: intPtr(28)},
+		{Name: "Alice", Email: "alice@example.com", Age: new(30)},
+		{Name: "Bob", Email: "bob@example.com", Age: new(25)},
+		{Name: "Charlie", Email: "charlie@example.com", Age: new(35)},
+		{Name: "Diana", Email: "diana@example.com", Age: new(28)},
 		{Name: "Eve", Email: "eve@example.com", Age: nil},
 	}
 	if err := mgr.InsertMany(ctx, persons); err != nil {

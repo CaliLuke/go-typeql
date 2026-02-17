@@ -44,10 +44,10 @@ func TestIntegration_Optional_AllSet(t *testing.T) {
 
 	p := &Profile{
 		Username: "full",
-		Bio:      stringPtr("hello world"),
-		Score:    float64Ptr(99.5),
-		Active:   boolPtr(true),
-		Level:    intPtr(10),
+		Bio:      new("hello world"),
+		Score:    new(99.5),
+		Active:   new(true),
+		Level:    new(10),
 	}
 	assertInsert(t, ctx, mgr, p)
 
@@ -74,7 +74,7 @@ func TestIntegration_Optional_UpdateNilToValue(t *testing.T) {
 	assertInsert(t, ctx, mgr, &Profile{Username: "updater"})
 
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"username": "updater"})
-	fetched.Bio = stringPtr("now set")
+	fetched.Bio = new("now set")
 	assertUpdate(t, ctx, mgr, fetched)
 
 	result := assertGetOne(t, ctx, mgr, map[string]any{"username": "updater"})
@@ -88,10 +88,10 @@ func TestIntegration_Optional_UpdateExistingValue(t *testing.T) {
 	ctx := context.Background()
 	mgr := gotype.NewManager[Profile](db)
 
-	assertInsert(t, ctx, mgr, &Profile{Username: "changer", Bio: stringPtr("old bio")})
+	assertInsert(t, ctx, mgr, &Profile{Username: "changer", Bio: new("old bio")})
 
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"username": "changer"})
-	fetched.Bio = stringPtr("new bio")
+	fetched.Bio = new("new bio")
 	assertUpdate(t, ctx, mgr, fetched)
 
 	result := assertGetOne(t, ctx, mgr, map[string]any{"username": "changer"})
@@ -105,7 +105,7 @@ func TestIntegration_Optional_FilterHasAttr(t *testing.T) {
 	ctx := context.Background()
 	mgr := gotype.NewManager[Profile](db)
 
-	assertInsert(t, ctx, mgr, &Profile{Username: "withbio", Bio: stringPtr("hi")})
+	assertInsert(t, ctx, mgr, &Profile{Username: "withbio", Bio: new("hi")})
 	assertInsert(t, ctx, mgr, &Profile{Username: "nobio"})
 
 	// Filter: has bio.
@@ -140,9 +140,9 @@ func TestIntegration_Optional_MixedNilAndSet(t *testing.T) {
 
 	assertInsert(t, ctx, mgr, &Profile{
 		Username: "mixed",
-		Bio:      stringPtr("has bio"),
+		Bio:      new("has bio"),
 		Score:    nil,
-		Active:   boolPtr(false),
+		Active:   new(false),
 		Level:    nil,
 	})
 

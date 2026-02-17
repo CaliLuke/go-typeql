@@ -39,17 +39,17 @@ func TestParseTag(t *testing.T) {
 		{
 			name: "cardinality range",
 			tag:  "tags,card=0..5",
-			want: FieldTag{Name: "tags", CardMin: intPtr(0), CardMax: intPtr(5)},
+			want: FieldTag{Name: "tags", CardMin: new(0), CardMax: new(5)},
 		},
 		{
 			name: "cardinality unbounded",
 			tag:  "tags,card=2..",
-			want: FieldTag{Name: "tags", CardMin: intPtr(2)},
+			want: FieldTag{Name: "tags", CardMin: new(2)},
 		},
 		{
 			name: "cardinality shorthand",
 			tag:  "tags,card=0+",
-			want: FieldTag{Name: "tags", CardMin: intPtr(0)},
+			want: FieldTag{Name: "tags", CardMin: new(0)},
 		},
 		{
 			name: "abstract",

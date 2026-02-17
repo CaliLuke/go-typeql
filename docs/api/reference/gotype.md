@@ -397,7 +397,7 @@ var TypeQLReservedWords = map[string]bool{
 ```
 
 <a name="ClearRegistry"></a>
-## func [ClearRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L168>)
+## func [ClearRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L167>)
 
 ```go
 func ClearRegistry()
@@ -426,7 +426,7 @@ FormatValue converts a Go value into its TypeQL literal string representation. I
 This function delegates to ast.FormatGoValue for the actual formatting logic.
 
 <a name="FromDict"></a>
-## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L265>)
+## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L262>)
 
 ```go
 func FromDict[T any](data map[string]any) (*T, error)
@@ -516,7 +516,7 @@ func MigrateFromEmpty(ctx context.Context, db *Database) error
 MigrateFromEmpty applies the complete schema defined by registered Go models to an empty database.
 
 <a name="MustRegister"></a>
-## func [MustRegister](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L98>)
+## func [MustRegister](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L97>)
 
 ```go
 func MustRegister[T any]()
@@ -565,7 +565,7 @@ This is useful when a database's schema was applied in bulk \(e.g., via ExecuteS
 Supports WithSeqDryRun \(report without stamping\), WithSeqTarget \(stamp up to a named migration\), and WithSeqLogger \(progress callback\).
 
 <a name="ToDict"></a>
-## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L221>)
+## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L218>)
 
 ```go
 func ToDict[T any](instance *T) (map[string]any, error)
@@ -574,7 +574,7 @@ func ToDict[T any](instance *T) (map[string]any, error)
 ToDict converts a registered model instance to a map\[string\]any using TypeDB attribute names as keys. Includes "\_iid" if set.
 
 <a name="ToInsertQuery"></a>
-## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L270>)
+## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L267>)
 
 ```go
 func ToInsertQuery[T any](instance *T) (string, error)
@@ -583,7 +583,7 @@ func ToInsertQuery[T any](instance *T) (string, error)
 ToInsertQuery generates a TypeQL insert query string for the given instance.
 
 <a name="ToMatchQuery"></a>
-## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L287>)
+## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L284>)
 
 ```go
 func ToMatchQuery[T any](instance *T) (string, error)
@@ -1981,7 +1981,7 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error)
 ExtractModelInfo analyzes a Go struct type and extracts its TypeDB model metadata. The struct must embed BaseEntity or BaseRelation to be a valid model.
 
 <a name="Lookup"></a>
-### func [Lookup](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L105>)
+### func [Lookup](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L104>)
 
 ```go
 func Lookup(typeName string) (*ModelInfo, bool)
@@ -1990,7 +1990,7 @@ func Lookup(typeName string) (*ModelInfo, bool)
 Lookup retrieves ModelInfo for a given TypeDB type name.
 
 <a name="LookupByGoName"></a>
-### func [LookupByGoName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L124>)
+### func [LookupByGoName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L123>)
 
 ```go
 func LookupByGoName(name string) (*ModelInfo, bool)
@@ -1999,7 +1999,7 @@ func LookupByGoName(name string) (*ModelInfo, bool)
 LookupByGoName retrieves ModelInfo based on the name of the Go struct.
 
 <a name="LookupType"></a>
-### func [LookupType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L113>)
+### func [LookupType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L112>)
 
 ```go
 func LookupType(t reflect.Type) (*ModelInfo, bool)
@@ -2008,7 +2008,7 @@ func LookupType(t reflect.Type) (*ModelInfo, bool)
 LookupType retrieves ModelInfo for a given Go reflect.Type.
 
 <a name="RegisteredTypes"></a>
-### func [RegisteredTypes](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L137>)
+### func [RegisteredTypes](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L136>)
 
 ```go
 func RegisteredTypes() []*ModelInfo
@@ -2017,7 +2017,7 @@ func RegisteredTypes() []*ModelInfo
 RegisteredTypes returns a slice containing ModelInfo for all registered types.
 
 <a name="ResolveType"></a>
-### func [ResolveType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L162>)
+### func [ResolveType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L161>)
 
 ```go
 func ResolveType(typeLabel string) (*ModelInfo, bool)
@@ -2026,7 +2026,7 @@ func ResolveType(typeLabel string) (*ModelInfo, bool)
 ResolveType maps a TypeDB type label to its registered ModelInfo.
 
 <a name="SubtypesOf"></a>
-### func [SubtypesOf](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L149>)
+### func [SubtypesOf](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L148>)
 
 ```go
 func SubtypesOf(typeName string) []*ModelInfo

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go 1.21+**
+- **Go 1.26+**
 - **Rust toolchain** (for the FFI driver) — install via [rustup](https://rustup.rs/)
 - **TypeDB 3.x server** (for integration tests) — run via Podman/Docker or install directly
 - **Podman or Docker** (optional, for running TypeDB in tests)
@@ -107,7 +107,7 @@ The project uses build tags to isolate CGo-dependent code:
 The `ast/`, `gotype/`, and `tqlgen/` packages compile and test without any build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
-# Unit tests (default, no tags needed) — 253 tests
+# Unit tests (default, no tags needed) — 354 tests
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests

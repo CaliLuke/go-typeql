@@ -94,11 +94,11 @@ func ParseTag(tag string) (FieldTag, error) {
 func parseCardinality(s string) (min *int, max *int, err error) {
 	// Handle shorthand: "0+" means 0..unbounded
 	if strings.HasSuffix(s, "+") {
-		v, err := strconv.Atoi(strings.TrimSuffix(s, "+"))
+		minV, err := strconv.Atoi(strings.TrimSuffix(s, "+"))
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid min value: %w", err)
 		}
-		return intPtr(v), nil, nil
+		return new(minV), nil, nil
 	}
 
 	// Handle range: "M..N" or "M.."
@@ -107,23 +107,19 @@ func parseCardinality(s string) (min *int, max *int, err error) {
 		return nil, nil, fmt.Errorf("expected format M..N or M.., got %q", s)
 	}
 
-	v, err := strconv.Atoi(parts[0])
+	minV, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid min value: %w", err)
 	}
-	minVal := intPtr(v)
 
 	if parts[1] == "" {
-		return minVal, nil, nil // unbounded max
+		return new(minV), nil, nil // unbounded max
 	}
 
-	v, err = strconv.Atoi(parts[1])
+	maxV, err := strconv.Atoi(parts[1])
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid max value: %w", err)
 	}
-	return minVal, intPtr(v), nil
+	return new(minV), new(maxV), nil
 }
 
-func intPtr(v int) *int {
-	return &v
-}

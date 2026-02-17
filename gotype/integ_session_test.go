@@ -110,7 +110,7 @@ func TestIntegration_MultipleSequentialTransactions(t *testing.T) {
 
 	names := []string{"Seq1", "Seq2", "Seq3"}
 	for i, name := range names {
-		assertInsert(t, ctx, mgr, &Person{Name: name, Email: name + "@example.com", Age: intPtr(20 + i)})
+		assertInsert(t, ctx, mgr, &Person{Name: name, Email: name + "@example.com", Age: new(20 + i)})
 	}
 
 	assertCount(t, ctx, mgr, 3)
