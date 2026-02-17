@@ -77,10 +77,30 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.3.0
+go get github.com/CaliLuke/go-typeql@v1.3.1
 ```
 
-The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires building the Rust FFI library — see the [Development Guide](docs/DEVELOPMENT.md).
+The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires the Rust FFI static library — you can either build it from source or use a prebuilt binary.
+
+### Prebuilt FFI library
+
+Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt static libraries for linux-amd64, darwin-amd64, and darwin-arm64.
+
+```bash
+# Download for your platform
+gh release download v1.3.1 -p 'libtypedb_go_ffi-linux-amd64.a' -R CaliLuke/go-typeql
+
+# Option A: place in standard lib path, build with typedb_prebuilt tag
+cp libtypedb_go_ffi-linux-amd64.a /usr/local/lib/libtypedb_go_ffi.a
+go test -tags "cgo,typedb,typedb_prebuilt" ./...
+
+# Option B: place in source tree (no extra build tag needed)
+mkdir -p driver/rust/target/release
+cp libtypedb_go_ffi-linux-amd64.a driver/rust/target/release/libtypedb_go_ffi.a
+go test -tags "cgo,typedb" ./...
+```
+
+To build from source instead, see the [Development Guide](docs/DEVELOPMENT.md).
 
 For a complete runnable example covering connect, schema, and CRUD, see the [Getting Started walkthrough](docs/GETTING_STARTED.md).
 
