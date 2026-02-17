@@ -23,7 +23,7 @@ func TestFormatValue(t *testing.T) {
 		{"float64", 3.14, "3.14"},
 		{"float32", float32(2.5), "2.5"},
 		{"nil", nil, "null"},
-		{"pointer to string", strPtr("test"), `"test"`},
+		{"pointer to string", new("test"), `"test"`},
 		{"nil pointer", (*string)(nil), "null"},
 		{"time date only", time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), "2024-01-15"},
 		{"time datetime", time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), "2024-01-15T10:30:00"},
@@ -39,6 +39,3 @@ func TestFormatValue(t *testing.T) {
 	}
 }
 
-func strPtr(s string) *string {
-	return &s
-}

@@ -14,7 +14,7 @@ import (
 	"github.com/CaliLuke/go-typeql/tqlgen"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func main() {
 	schemaFile := flag.String("schema", "", "Path to TypeQL schema file (required)")

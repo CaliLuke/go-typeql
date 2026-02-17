@@ -51,8 +51,8 @@ func TestRegister_RejectsReservedAttributeName(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for reserved attribute name 'label'")
 	}
-	var rwe *ReservedWordError
-	if !errors.As(err, &rwe) {
+	rwe, ok := errors.AsType[*ReservedWordError](err)
+	if !ok {
 		t.Fatalf("expected ReservedWordError, got %T: %v", err, err)
 	}
 	if rwe.Word != "label" {

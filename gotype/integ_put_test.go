@@ -18,7 +18,7 @@ func TestIntegration_Put_Entity_New(t *testing.T) {
 	ctx := context.Background()
 	mgr := gotype.NewManager[Person](db)
 
-	p := &Person{Name: "PutPerson", Email: "put@test.com", Age: intPtr(40)}
+	p := &Person{Name: "PutPerson", Email: "put@test.com", Age: new(40)}
 	if err := mgr.Put(ctx, p); err != nil {
 		t.Fatalf("Put new entity failed: %v", err)
 	}

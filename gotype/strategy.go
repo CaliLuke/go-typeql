@@ -475,15 +475,14 @@ func getIIDFromValue(v reflect.Value) string {
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		if !field.CanAddr() {
+	for _, fv := range v.Fields() {
+		if !fv.CanAddr() {
 			continue
 		}
-		if e, ok := field.Addr().Interface().(*BaseEntity); ok {
+		if e, ok := fv.Addr().Interface().(*BaseEntity); ok {
 			return e.GetIID()
 		}
-		if r, ok := field.Addr().Interface().(*BaseRelation); ok {
+		if r, ok := fv.Addr().Interface().(*BaseRelation); ok {
 			return r.GetIID()
 		}
 	}

@@ -29,9 +29,9 @@ func setupRelationQueryDB(t *testing.T) (
 	empMgr := gotype.NewManager[Employment](db)
 
 	// Create entities.
-	p1 := insertAndGet(t, ctx, personMgr, &Person{Name: "Ann", Email: "ann@rq.com", Age: intPtr(25)}, "name", "Ann")
-	p2 := insertAndGet(t, ctx, personMgr, &Person{Name: "Ben", Email: "ben@rq.com", Age: intPtr(35)}, "name", "Ben")
-	p3 := insertAndGet(t, ctx, personMgr, &Person{Name: "Cat", Email: "cat@rq.com", Age: intPtr(30)}, "name", "Cat")
+	p1 := insertAndGet(t, ctx, personMgr, &Person{Name: "Ann", Email: "ann@rq.com", Age: new(25)}, "name", "Ann")
+	p2 := insertAndGet(t, ctx, personMgr, &Person{Name: "Ben", Email: "ben@rq.com", Age: new(35)}, "name", "Ben")
+	p3 := insertAndGet(t, ctx, personMgr, &Person{Name: "Cat", Email: "cat@rq.com", Age: new(30)}, "name", "Cat")
 	c1 := insertAndGet(t, ctx, companyMgr, &Company{Name: "AlphaCo", Industry: "Tech"}, "name", "AlphaCo")
 	c2 := insertAndGet(t, ctx, companyMgr, &Company{Name: "BetaCo", Industry: "Finance"}, "name", "BetaCo")
 
@@ -194,7 +194,7 @@ func TestIntegration_Relation_UpdateOptionalAttr(t *testing.T) {
 	}
 
 	// Set optional to a value.
-	rels[0].Active = boolPtr(true)
+	rels[0].Active = new(true)
 	assertUpdate(t, ctx, memMgr, rels[0])
 
 	updated := assertCount(t, ctx, memMgr, 1)

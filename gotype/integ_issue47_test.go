@@ -27,10 +27,10 @@ func TestIntegration_UpdateMultipleNoneOptionals(t *testing.T) {
 	// Insert with all optional fields set.
 	assertInsert(t, ctx, mgr, &Profile{
 		Username: "issue47",
-		Bio:      stringPtr("A bio"),
-		Score:    float64Ptr(99.9),
-		Active:   boolPtr(true),
-		Level:    intPtr(5),
+		Bio:      new("A bio"),
+		Score:    new(99.9),
+		Active:   new(true),
+		Level:    new(5),
 	})
 
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"username": "issue47"})

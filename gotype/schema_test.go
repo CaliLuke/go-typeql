@@ -85,10 +85,10 @@ func TestFormatCardAnnotation(t *testing.T) {
 		want string
 	}{
 		{"nil nil", nil, nil, ""},
-		{"0 unbounded", intPtr(0), nil, "@card(0..)"},
-		{"1 5", intPtr(1), intPtr(5), "@card(1..5)"},
-		{"0 1", intPtr(0), intPtr(1), "@card(0..1)"},
-		{"2 unbounded", intPtr(2), nil, "@card(2..)"},
+		{"0 unbounded", new(0), nil, "@card(0..)"},
+		{"1 5", new(1), new(5), "@card(1..5)"},
+		{"0 1", new(0), new(1), "@card(0..1)"},
+		{"2 unbounded", new(2), nil, "@card(2..)"},
 	}
 
 	for _, tt := range tests {

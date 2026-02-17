@@ -22,11 +22,11 @@ func TestIntegration_UpdatePreservesOtherAttributes(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Diana", Email: "diana@test.com", Age: intPtr(30)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Diana", Email: "diana@test.com", Age: new(30)})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "Diana"})
 
 	// Update only age.
-	fetched.Age = intPtr(31)
+	fetched.Age = new(31)
 	assertUpdate(t, ctx, mgr, fetched)
 
 	// Verify email is preserved.
@@ -47,12 +47,12 @@ func TestIntegration_UpdateMultipleEntitiesSeparately(t *testing.T) {
 
 	mgr := gotype.NewManager[Person](db)
 
-	assertInsert(t, ctx, mgr, &Person{Name: "Grace", Email: "grace@test.com", Age: intPtr(100)})
-	assertInsert(t, ctx, mgr, &Person{Name: "Henry2", Email: "henry2@test.com", Age: intPtr(200)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Grace", Email: "grace@test.com", Age: new(100)})
+	assertInsert(t, ctx, mgr, &Person{Name: "Henry2", Email: "henry2@test.com", Age: new(200)})
 
 	// Update Grace only.
 	grace := assertGetOne(t, ctx, mgr, map[string]any{"name": "Grace"})
-	grace.Age = intPtr(150)
+	grace.Age = new(150)
 	assertUpdate(t, ctx, mgr, grace)
 
 	// Verify Grace updated.
@@ -82,8 +82,8 @@ func TestIntegration_UpdateOptional_MultipleAttrs(t *testing.T) {
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"username": "dave"})
 
 	// Set both bio and score.
-	fetched.Bio = stringPtr("A software developer")
-	fetched.Score = float64Ptr(95.5)
+	fetched.Bio = new("A software developer")
+	fetched.Score = new(95.5)
 	assertUpdate(t, ctx, mgr, fetched)
 
 	updated := assertGetOne(t, ctx, mgr, map[string]any{"username": "dave"})
@@ -107,7 +107,7 @@ func TestIntegration_UpdateOptional_ValueToNil(t *testing.T) {
 	mgr := gotype.NewManager[Profile](db)
 
 	// Insert with bio set.
-	assertInsert(t, ctx, mgr, &Profile{Username: "bob", Bio: stringPtr("old bio")})
+	assertInsert(t, ctx, mgr, &Profile{Username: "bob", Bio: new("old bio")})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"username": "bob"})
 
 	if fetched.Bio == nil || *fetched.Bio != "old bio" {
@@ -143,7 +143,7 @@ func TestIntegration_OptionalAttrLifecycle(t *testing.T) {
 	}
 
 	// 2. Add optional attr.
-	fetched.Bio = stringPtr("Ali's bio")
+	fetched.Bio = new("Ali's bio")
 	assertUpdate(t, ctx, mgr, fetched)
 
 	fetched2 := assertGetOne(t, ctx, mgr, map[string]any{"username": "alice"})

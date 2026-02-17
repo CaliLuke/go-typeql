@@ -38,8 +38,7 @@ func Register[T any]() error {
 	}
 
 	// Check for type: override in first field's tag
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for field := range t.Fields() {
 		tagStr := field.Tag.Get("typedb")
 		if tagStr == "" {
 			continue

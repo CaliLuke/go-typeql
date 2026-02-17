@@ -175,7 +175,7 @@ func TestToDict(t *testing.T) {
 	p := &testPersonModel{
 		Name:  "Alice",
 		Email: "alice@example.com",
-		Age:   intPtr(30),
+		Age:   new(30),
 	}
 	p.SetIID("0xABC")
 
@@ -247,7 +247,7 @@ func TestToInsertQuery(t *testing.T) {
 	p := &testPersonModel{
 		Name:  "Alice",
 		Email: "alice@example.com",
-		Age:   intPtr(30),
+		Age:   new(30),
 	}
 
 	q, err := ToInsertQuery(p)
