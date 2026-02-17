@@ -609,16 +609,23 @@ tqlgen -schema schema.tql -out models_gen.go -pkg models
 # Generate schema registry (type constants, parent maps, relation schemas, enum constants)
 tqlgen -schema schema.tql -registry -out registry_gen.go -pkg graph
 
+# Generate DTO structs (Out/Create/Patch) for HTTP APIs
+tqlgen -schema schema.tql -dto -out dto_gen.go -pkg dto
+
 # All flags
 tqlgen -schema <file>     # Required: path to .tql file
        -out <file>        # Output file (default: stdout)
        -pkg <name>        # Package name (default: models)
        -registry          # Generate registry instead of structs
+       -dto               # Generate DTO structs (Out/Create/Patch)
        -acronyms          # Go acronym conventions (default: true)
        -skip-abstract     # Skip abstract types (default: true)
        -enums             # Generate @values constants (default: true)
        -inherit           # Accumulate inherited owns (default: true)
        -schema-version <v> # Version string in header
+       -id-field <name>   # ID field name in Out DTOs (default: ID)
+       -strict-out        # Required fields non-pointer in Out structs
+       -skip-relation-out # Skip generating relation Out structs
 ```
 
 ### Programmatic API
@@ -642,6 +649,7 @@ regCfg := tqlgen.RegistryConfig{
     Enums:        true,
     TypePrefix:   "Type", // entity const prefix (default)
     RelPrefix:    "Rel",  // relation const prefix (default)
+    SchemaText:   schemaStr, // optional: enables SchemaHash in output
 }
 data := tqlgen.BuildRegistryData(schema, regCfg)
 err = tqlgen.RenderRegistry(os.Stdout, data)
@@ -657,30 +665,100 @@ annotations := tqlgen.ExtractAnnotations(string(raw))
 
 `BuildRegistryData` produces a `RegistryData` struct containing:
 
-| Field             | Type           | Description                                   |
-| ----------------- | -------------- | --------------------------------------------- |
-| EntityConstants   | []TypeConstCtx | `const TypePersona = "persona"`               |
-| RelationConstants | []TypeConstCtx | `const RelActs = "acts"`                      |
-| Enums             | []EnumCtx      | `const StatusProposed = "proposed"`           |
-| EntityParents     | []KVCtx        | `"persona": "artifact"`                       |
-| EntityAttributes  | []KVSliceCtx   | `"persona": {"name", "status", ...}` (sorted) |
-| AttrValueTypes    | []KVCtx        | `"name": "string"`                            |
-| AttrEnumValues    | []KVSliceCtx   | `"status": {"proposed", "accepted", ...}`     |
-| RelationSchema    | []RelSchemaCtx | Roles with player types per relation          |
-| RelationAttrs     | []KVSliceCtx   | Owned attributes per relation                 |
-| AllEntityTypes    | []string       | Sorted list of all entity types               |
-| AllRelationTypes  | []string       | Sorted list of all relation types             |
+| Field             | Type           | Description                                    |
+| ----------------- | -------------- | ---------------------------------------------- |
+| EntityConstants   | []TypeConstCtx | `const TypePersona = "persona"`                |
+| RelationConstants | []TypeConstCtx | `const RelActs = "acts"`                       |
+| Enums             | []EnumCtx      | `const StatusProposed = "proposed"`            |
+| EntityParents     | []KVCtx        | `"persona": "artifact"`                        |
+| EntityAttributes  | []KVSliceCtx   | `"persona": {"name", "status", ...}` (sorted)  |
+| AttrValueTypes    | []KVCtx        | `"name": "string"`                             |
+| AttrEnumValues    | []KVSliceCtx   | `"status": {"proposed", "accepted", ...}`      |
+| RelationSchema    | []RelSchemaCtx | Roles (N roles) with player types per relation |
+| RelationAttrs     | []KVSliceCtx   | Owned attributes per relation                  |
+| AllEntityTypes    | []string       | Sorted list of all entity types                |
+| AllRelationTypes  | []string       | Sorted list of all relation types              |
+| EntityKeys        | []KVSliceCtx   | `"person": {"name"}` — @key attributes         |
+| EntityAbstract    | []string       | Abstract entity names                          |
+| RelationAbstract  | []string       | Abstract relation names                        |
+| RelationParents   | []KVCtx        | `"acts-in": "participation"`                   |
+| SchemaHash        | string         | SHA256 prefix of schema source text            |
+| AttributeTypes    | []string       | Sorted list of all attribute type names        |
 
 Domain-specific items (display ID prefixes, business-logic defaults, helper functions) should be added by the consumer on top of `RegistryData`.
+
+The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstractEntity()`, `IsAbstractRelation()`, `GetRolePlayers()`, `GetEntityAttributes()`, `GetRelationAttributes()`.
 
 ### Features
 
 - Generates Go structs with `BaseEntity`/`BaseRelation` embedding and `typedb:"..."` tags
 - Generates string constants from `@values` constraints (`-enums`, on by default)
-- Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas
+- Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas, abstract tracking, key attributes, schema hash
+- DTO mode (`-dto`) outputs Out/Create/Patch struct variants for HTTP APIs
+- N-role relation support (not limited to binary relations)
 - Comment annotations: `# @key value`, `# @key(value)`, `# @key` above type definitions
 - Inheritance propagation: parent `owns`/`plays` merged into children
 - Configurable constant prefixes (`TypePrefix`, `RelPrefix`)
+
+---
+
+## DTO Generation (tqlgen -dto)
+
+Generate Out/Create/Patch struct variants for HTTP API layers from a TypeQL schema.
+
+### What It Generates
+
+For each non-abstract entity `Foo`:
+
+- `FooOut` — response struct: `ID string`, `Type string`, all attribute fields
+- `FooCreate` — create request: required fields non-pointer (`@key`, `@unique`, `@card(1+)`), optional as `*T`
+- `FooPatch` — partial update: all fields as `*T` (nil = don't update)
+
+For each non-abstract relation `Bar`:
+
+- `BarOut` — response: `ID string`, `Type string`, role player IIDs, owned attributes
+- `BarCreate` — request: role player IDs (required), owned attributes
+
+Plus interfaces: `EntityOut`, `EntityCreate`, `EntityPatch`, `RelationOut`, `RelationCreate` with `TypeName() string` method.
+
+### DTO Programmatic API
+
+```go
+dtoCfg := tqlgen.DTOConfig{
+    PackageName:  "dto",
+    UseAcronyms:  true,
+    SkipAbstract: true,
+    StrictOut:    false, // true = required fields non-pointer in Out
+    IDFieldName:  "ID",
+    // Optional: exclude specific types
+    ExcludeEntities:  []string{"internal-counter"},
+    ExcludeRelations: []string{"debug-link"},
+    // Optional: skip relation Out structs
+    SkipRelationOut: false,
+    // Optional: shared base structs for inheritance hierarchies
+    BaseStructs: []tqlgen.BaseStructConfig{{
+        SourceEntity:   "artifact",
+        BaseName:       "BaseArtifact",
+        InheritedAttrs: []string{"name", "status"},
+    }},
+    // Optional: per-field overrides
+    EntityFieldOverrides: []tqlgen.EntityFieldOverride{{
+        Entity: "person", Field: "email", Variant: "create",
+        Required: boolPtr(false), // make email optional in Create
+    }},
+}
+data := tqlgen.BuildDTOData(schema, dtoCfg)
+err := tqlgen.RenderDTO(os.Stdout, data)
+```
+
+### Base Struct Embedding
+
+When entities inherit from a common parent, use `BaseStructs` to generate shared embedded structs:
+
+```go
+// Generates: BaseArtifactOut, BaseArtifactCreate, BaseArtifactPatch
+// TaskOut embeds BaseArtifactOut and only declares its own fields
+```
 
 ---
 

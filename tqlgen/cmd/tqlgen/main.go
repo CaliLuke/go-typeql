@@ -27,6 +27,12 @@ func main() {
 	enums := flag.Bool("enums", true, "Generate string constants from @values constraints")
 	versionStr := flag.String("schema-version", "", "Schema version string (included in generated header)")
 	registry := flag.Bool("registry", false, "Generate schema registry instead of Go structs")
+	dto := flag.Bool("dto", false, "Generate DTO structs (Out/Create/Patch) for HTTP APIs")
+	idField := flag.String("id-field", "ID", "ID field name in Out DTOs (default: ID)")
+	strictOut := flag.Bool("strict-out", false, "Make required fields non-pointer in Out structs")
+	skipRelOut := flag.Bool("skip-relation-out", false, "Skip generating relation Out structs")
+	typedConsts := flag.Bool("typed-constants", false, "Generate typed string constants (EntityType, RelationType)")
+	jsonSchema := flag.Bool("json-schema", false, "Generate JSON schema fragment maps for OpenAPI/LLM use")
 
 	flag.Parse()
 
@@ -63,12 +69,38 @@ func main() {
 		w = os.Stdout
 	}
 
+	if *dto {
+		dtoCfg := tqlgen.DTOConfig{
+			PackageName:     *pkg,
+			UseAcronyms:     *acronyms,
+			SkipAbstract:    *skipAbstract,
+			IDFieldName:     *idField,
+			StrictOut:       *strictOut,
+			SkipRelationOut: *skipRelOut,
+		}
+		data := tqlgen.BuildDTOData(schema, dtoCfg)
+		if err := tqlgen.RenderDTO(w, data); err != nil {
+			fmt.Fprintf(os.Stderr, "error rendering DTOs: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if *registry {
+		schemaBytes, readErr := os.ReadFile(*schemaFile)
+		schemaText := ""
+		if readErr == nil {
+			schemaText = string(schemaBytes)
+		}
 		regCfg := tqlgen.RegistryConfig{
-			PackageName:  *pkg,
-			UseAcronyms:  *acronyms,
-			SkipAbstract: *skipAbstract,
-			Enums:        *enums,
+			PackageName:    *pkg,
+			UseAcronyms:    *acronyms,
+			SkipAbstract:   *skipAbstract,
+			Enums:          *enums,
+			SchemaText:     schemaText,
+			SchemaVersion:  *versionStr,
+			TypedConstants: *typedConsts,
+			JSONSchema:     *jsonSchema,
 		}
 		data := tqlgen.BuildRegistryData(schema, regCfg)
 		if err := tqlgen.RenderRegistry(w, data); err != nil {
