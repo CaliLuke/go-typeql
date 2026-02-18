@@ -68,6 +68,43 @@ func TestRegister_RejectsReservedAttributeName(t *testing.T) {
 // lowercase name happens to be a reserved word. In practice, this is rare,
 // so we test the IsReservedWord function coverage above.
 
+// --- ValidateIdentifier ---
+
+func TestValidateIdentifier_Valid(t *testing.T) {
+	valid := []string{"person", "my-entity", "name_attr", "_private", "a1b2"}
+	for _, name := range valid {
+		if err := ValidateIdentifier(name, "test"); err != nil {
+			t.Errorf("expected %q to be valid, got: %v", name, err)
+		}
+	}
+}
+
+func TestValidateIdentifier_Invalid(t *testing.T) {
+	tests := []struct {
+		name   string
+		reason string
+	}{
+		{"", "empty"},
+		{"123abc", "must start with"},
+		{"my entity", "invalid character"},
+		{"foo.bar", "invalid character"},
+		{"@attr", "must start with"},
+	}
+	for _, tt := range tests {
+		err := ValidateIdentifier(tt.name, "test")
+		if err == nil {
+			t.Errorf("expected %q to be invalid", tt.name)
+			continue
+		}
+		if tt.name != "" {
+			var iie *InvalidIdentifierError
+			if !errors.As(err, &iie) {
+				t.Errorf("expected InvalidIdentifierError for %q, got %T", tt.name, err)
+			}
+		}
+	}
+}
+
 func TestReservedWordError_Message(t *testing.T) {
 	err := &ReservedWordError{Word: "label", Context: "attribute"}
 	msg := err.Error()

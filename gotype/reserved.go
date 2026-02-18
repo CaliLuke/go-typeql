@@ -1,6 +1,10 @@
 package gotype
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+	"unicode"
+)
 
 // TypeQLReservedWords is the set of TypeQL reserved keywords that cannot be
 // used as type names, attribute names, or role names.
@@ -47,4 +51,46 @@ var TypeQLReservedWords = map[string]bool{
 // The check is case-insensitive.
 func IsReservedWord(name string) bool {
 	return TypeQLReservedWords[strings.ToLower(name)]
+}
+
+// ValidateIdentifier checks that a name is a valid TypeQL identifier.
+// Valid identifiers start with a letter or underscore and continue with
+// letters, digits, hyphens, or underscores. Returns nil if valid, or an
+// error describing the problem.
+func ValidateIdentifier(name, context string) error {
+	if name == "" {
+		return fmt.Errorf("empty %s name", context)
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !unicode.IsLetter(r) && r != '_' {
+				return &InvalidIdentifierError{
+					Name:    name,
+					Context: context,
+					Reason:  fmt.Sprintf("must start with a letter or underscore, got %q", r),
+				}
+			}
+		} else {
+			if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_' {
+				return &InvalidIdentifierError{
+					Name:    name,
+					Context: context,
+					Reason:  fmt.Sprintf("invalid character %q at position %d", r, i),
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// InvalidIdentifierError is returned when a name contains characters
+// not allowed in TypeQL identifiers.
+type InvalidIdentifierError struct {
+	Name    string
+	Context string
+	Reason  string
+}
+
+func (e *InvalidIdentifierError) Error() string {
+	return fmt.Sprintf("invalid %s name %q: %s", e.Context, e.Name, e.Reason)
 }

@@ -126,7 +126,7 @@ func RenderDTO(w io.Writer, data *DTOData) error
 RenderDTO writes a DTO Go file from DTOData.
 
 <a name="RenderLeafConstants"></a>
-## func [RenderLeafConstants](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L537>)
+## func [RenderLeafConstants](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L540>)
 
 ```go
 func RenderLeafConstants(w io.Writer, schema *ParsedSchema, cfg LeafConstantsConfig) error
@@ -135,7 +135,7 @@ func RenderLeafConstants(w io.Writer, schema *ParsedSchema, cfg LeafConstantsCon
 RenderLeafConstants writes a standalone leaf package containing only type, relation, and enum constants. This package has zero internal dependencies, making it safe to import from any package.
 
 <a name="RenderRegistry"></a>
-## func [RenderRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L520>)
+## func [RenderRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L523>)
 
 ```go
 func RenderRegistry(w io.Writer, data *RegistryData) error
@@ -438,7 +438,7 @@ type EntitySpec struct {
 ```
 
 <a name="EnumCtx"></a>
-## type [EnumCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L82>)
+## type [EnumCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L83>)
 
 EnumCtx holds enum constants derived from @values constraints.
 
@@ -447,7 +447,7 @@ type EnumCtx = enumCtx
 ```
 
 <a name="EnumValueCtx"></a>
-## type [EnumValueCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L85>)
+## type [EnumValueCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L86>)
 
 EnumValueCtx holds a single enum constant.
 
@@ -495,7 +495,7 @@ type FunctionSpec struct {
 ```
 
 <a name="JSONSchemaCtx"></a>
-## type [JSONSchemaCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L117-L121>)
+## type [JSONSchemaCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L119-L123>)
 
 JSONSchemaCtx holds a JSON schema fragment for a single type.
 
@@ -508,7 +508,7 @@ type JSONSchemaCtx struct {
 ```
 
 <a name="JSONSchemaPropCtx"></a>
-## type [JSONSchemaPropCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L124-L127>)
+## type [JSONSchemaPropCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L126-L129>)
 
 JSONSchemaPropCtx describes a single property in a JSON schema fragment.
 
@@ -520,7 +520,7 @@ type JSONSchemaPropCtx struct {
 ```
 
 <a name="KVCtx"></a>
-## type [KVCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L88-L90>)
+## type [KVCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L89-L91>)
 
 KVCtx is a simple key\-value pair.
 
@@ -531,7 +531,7 @@ type KVCtx struct {
 ```
 
 <a name="KVMapCtx"></a>
-## type [KVMapCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L111-L114>)
+## type [KVMapCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L113-L116>)
 
 KVMapCtx is a key with a map of string key\-value pairs \(for annotations\).
 
@@ -543,7 +543,7 @@ type KVMapCtx struct {
 ```
 
 <a name="KVSliceCtx"></a>
-## type [KVSliceCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L93-L96>)
+## type [KVSliceCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L94-L97>)
 
 KVSliceCtx is a key with multiple string values.
 
@@ -555,7 +555,7 @@ type KVSliceCtx struct {
 ```
 
 <a name="LeafConstantsConfig"></a>
-## type [LeafConstantsConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L525-L532>)
+## type [LeafConstantsConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L528-L535>)
 
 LeafConstantsConfig configures leaf constants package generation.
 
@@ -710,7 +710,7 @@ type RegexAnnot struct {
 ```
 
 <a name="RegistryConfig"></a>
-## type [RegistryConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L13-L36>)
+## type [RegistryConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L14-L37>)
 
 RegistryConfig specifies settings for generating a schema registry.
 
@@ -742,7 +742,7 @@ type RegistryConfig struct {
 ```
 
 <a name="RegistryData"></a>
-## type [RegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L39-L73>)
+## type [RegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L40-L74>)
 
 RegistryData holds all schema\-derived data for registry code generation.
 
@@ -785,7 +785,7 @@ type RegistryData struct {
 ```
 
 <a name="BuildRegistryData"></a>
-### func [BuildRegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L131>)
+### func [BuildRegistryData](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L133>)
 
 ```go
 func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData
@@ -794,7 +794,7 @@ func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData
 BuildRegistryData populates a RegistryData from a parsed schema. The schema should have AccumulateInheritance\(\) called before this.
 
 <a name="RelSchemaCtx"></a>
-## type [RelSchemaCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L105-L108>)
+## type [RelSchemaCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L107-L110>)
 
 RelSchemaCtx describes a relation's role schema with N roles.
 
@@ -917,7 +917,7 @@ func DefaultConfig() RenderConfig
 DefaultConfig returns a standard RenderConfig with sensible defaults.
 
 <a name="RoleCtx"></a>
-## type [RoleCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L99-L102>)
+## type [RoleCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L100-L104>)
 
 RoleCtx describes a single role in a relation: its name and which entity types can fill it.
 
@@ -925,6 +925,7 @@ RoleCtx describes a single role in a relation: its name and which entity types c
 type RoleCtx struct {
     RoleName    string
     PlayerTypes []string
+    Card        string // e.g. "1", "0..", "1.."
 }
 ```
 
@@ -1025,7 +1026,7 @@ type TQLFileSimple struct {
 ```
 
 <a name="TypeConstCtx"></a>
-## type [TypeConstCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L76-L79>)
+## type [TypeConstCtx](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L77-L80>)
 
 TypeConstCtx holds a Go constant name and its string value.
 

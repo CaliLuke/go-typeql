@@ -176,6 +176,98 @@ func (op RemoveRole) IsReversible() bool    { return false }
 func (op RemoveRole) IsDestructive() bool   { return true }
 func (op RemoveRole) RollbackTypeQL() string { return "" }
 
+// --- Role player operations ---
+
+// AddRolePlayer represents adding a plays clause (entity plays relation:role).
+type AddRolePlayer struct {
+	Entity   string
+	Relation string
+	Role     string
+}
+
+func (op AddRolePlayer) ToTypeQL() string {
+	return fmt.Sprintf("define %s plays %s:%s;", op.Entity, op.Relation, op.Role)
+}
+func (op AddRolePlayer) IsReversible() bool  { return true }
+func (op AddRolePlayer) IsDestructive() bool { return false }
+func (op AddRolePlayer) RollbackTypeQL() string {
+	return fmt.Sprintf("undefine %s plays %s:%s;", op.Entity, op.Relation, op.Role)
+}
+
+// RemoveRolePlayer removes a plays clause from an entity type.
+type RemoveRolePlayer struct {
+	Entity   string
+	Relation string
+	Role     string
+}
+
+func (op RemoveRolePlayer) ToTypeQL() string {
+	return fmt.Sprintf("undefine %s plays %s:%s;", op.Entity, op.Relation, op.Role)
+}
+func (op RemoveRolePlayer) IsReversible() bool    { return false }
+func (op RemoveRolePlayer) IsDestructive() bool   { return true }
+func (op RemoveRolePlayer) RollbackTypeQL() string { return "" }
+
+// --- Modify ownership ---
+
+// ModifyOwnership represents changing annotations on an existing owns clause.
+type ModifyOwnership struct {
+	Owner     string
+	Attribute string
+	OldAnnots string
+	NewAnnots string
+}
+
+func (op ModifyOwnership) ToTypeQL() string {
+	annots := ""
+	if op.NewAnnots != "" {
+		annots = " " + op.NewAnnots
+	}
+	return fmt.Sprintf("redefine %s owns %s%s;", op.Owner, op.Attribute, annots)
+}
+func (op ModifyOwnership) IsReversible() bool { return op.OldAnnots != "" }
+func (op ModifyOwnership) IsDestructive() bool { return false }
+func (op ModifyOwnership) RollbackTypeQL() string {
+	if op.OldAnnots == "" {
+		return ""
+	}
+	return fmt.Sprintf("redefine %s owns %s %s;", op.Owner, op.Attribute, op.OldAnnots)
+}
+
+// --- Rename attribute ---
+
+// RenameAttribute represents renaming an attribute type.
+// TypeDB has no native rename, so this generates a multi-step sequence:
+// 1. Define new attribute
+// 2. Reassign ownership from old to new
+// Note: data migration must be handled separately.
+type RenameAttribute struct {
+	OldName   string
+	NewName   string
+	ValueType string
+}
+
+func (op RenameAttribute) ToTypeQL() string {
+	return fmt.Sprintf("define attribute %s, value %s;", op.NewName, op.ValueType)
+}
+func (op RenameAttribute) IsReversible() bool  { return false }
+func (op RenameAttribute) IsDestructive() bool { return false }
+func (op RenameAttribute) RollbackTypeQL() string { return "" }
+
+// --- Arbitrary TypeQL ---
+
+// RunTypeQL executes arbitrary TypeQL as a migration step.
+// Provide Up for the forward migration and optionally Down for rollback.
+type RunTypeQL struct {
+	Up   string
+	Down string
+}
+
+func (op RunTypeQL) ToTypeQL() string         { return op.Up }
+func (op RunTypeQL) IsReversible() bool        { return op.Down != "" }
+func (op RunTypeQL) IsDestructive() bool       { return false }
+func (op RunTypeQL) RollbackTypeQL() string    { return op.Down }
+
 // BreakingChange describes a change that could cause data loss or schema errors.
 type BreakingChange struct {
 	Type   string // "removal", "type_change", "cardinality_change"

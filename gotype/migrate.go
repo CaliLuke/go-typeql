@@ -310,6 +310,70 @@ func MigrateFromEmpty(ctx context.Context, db *Database) error {
 	return db.ExecuteSchema(ctx, schema)
 }
 
+// SyncSchemaOption configures SyncSchema behavior.
+type SyncSchemaOption func(*syncSchemaConfig)
+
+type syncSchemaConfig struct {
+	force       bool
+	skipIfMatch bool
+}
+
+// WithForce enables destructive changes (removing types/attributes).
+func WithForce() SyncSchemaOption {
+	return func(c *syncSchemaConfig) { c.force = true }
+}
+
+// WithSkipIfExists skips the migration if the schema already matches.
+func WithSkipIfExists() SyncSchemaOption {
+	return func(c *syncSchemaConfig) { c.skipIfMatch = true }
+}
+
+// SyncSchema performs a one-shot schema synchronization: introspect current DB
+// schema, diff against registered Go models, and apply changes.
+// Use WithForce() to also apply destructive changes (removals).
+// Use WithSkipIfExists() to skip if the schema already matches.
+func SyncSchema(ctx context.Context, db *Database, opts ...SyncSchemaOption) (*SchemaDiff, error) {
+	cfg := syncSchemaConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
+
+	schemaStr, err := db.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("sync schema: fetch schema: %w", err)
+	}
+
+	current, err := IntrospectSchemaFromString(schemaStr)
+	if err != nil {
+		return nil, fmt.Errorf("sync schema: parse current schema: %w", err)
+	}
+
+	diff := DiffSchemaFromRegistry(current)
+
+	if cfg.skipIfMatch && diff.IsEmpty() && !diff.HasBreakingChanges() {
+		return diff, nil
+	}
+
+	if diff.IsEmpty() && (!cfg.force || !diff.HasBreakingChanges()) {
+		return diff, nil
+	}
+
+	var stmts []string
+	if cfg.force {
+		stmts = diff.GenerateMigrationWithOpts(WithDestructive())
+	} else {
+		stmts = diff.GenerateMigration()
+	}
+
+	for _, stmt := range stmts {
+		if err := db.ExecuteSchema(ctx, stmt); err != nil {
+			return diff, fmt.Errorf("sync schema: execute %q: %w", stmt, err)
+		}
+	}
+
+	return diff, nil
+}
+
 // --- Helpers ---
 
 // registryToParseSchema converts the registered types into a tqlgen.ParsedSchema

@@ -1,6 +1,7 @@
 package gotype
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -266,4 +267,21 @@ func TestSchemaDiff_Summary(t *testing.T) {
 	assertContains(t, summary, "add 1 entity")
 	assertContains(t, summary, "WARNING")
 	assertContains(t, summary, "old_thing")
+}
+
+// --- SyncSchema ---
+
+func TestSyncSchema_SkipIfMatch(t *testing.T) {
+	ClearRegistry()
+	// Empty registry vs empty DB → diff is empty → skip
+	conn := &mockConn{}
+	db := NewDatabase(conn, "test")
+
+	diff, err := SyncSchema(context.Background(), db, WithSkipIfExists())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !diff.IsEmpty() {
+		t.Error("expected empty diff")
+	}
 }

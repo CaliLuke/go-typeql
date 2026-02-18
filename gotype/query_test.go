@@ -709,6 +709,54 @@ func TestManager_GetByIID_NotFound(t *testing.T) {
 	}
 }
 
+// --- FunctionQuery ---
+
+func TestFunctionQuery_Build(t *testing.T) {
+	conn := &mockConn{}
+	db := NewDatabase(conn, "test_db")
+
+	q := NewFunctionQuery(db, "get_user_score").
+		Arg("Alice").
+		Arg(42)
+
+	built := q.Build()
+	assertContains(t, built, `let $result = get_user_score("Alice", 42)`)
+	assertContains(t, built, "return $result;")
+}
+
+func TestFunctionQuery_ArgRaw(t *testing.T) {
+	conn := &mockConn{}
+	db := NewDatabase(conn, "test_db")
+
+	q := NewFunctionQuery(db, "compute_total").
+		ArgRaw("$x").
+		Arg(1.5)
+
+	built := q.Build()
+	assertContains(t, built, "compute_total($x, 1.5)")
+}
+
+func TestFunctionQuery_Execute(t *testing.T) {
+	readTx := &mockTx{
+		responses: [][]map[string]any{
+			{{"result": float64(99)}},
+		},
+	}
+	conn := &mockConn{txs: []*mockTx{readTx}}
+	db := NewDatabase(conn, "test_db")
+
+	results, err := NewFunctionQuery(db, "my_func").
+		Arg("test").
+		Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	assertContains(t, readTx.queries[0], "my_func")
+}
+
 func TestQuery_Chaining(t *testing.T) {
 	registerTestTypes(t)
 

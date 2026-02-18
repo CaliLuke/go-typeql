@@ -197,23 +197,30 @@ type Operation interface {
 
 ### Additive Operations (non-destructive, reversible)
 
-| Type           | Fields                           | Description                               |
-| -------------- | -------------------------------- | ----------------------------------------- |
-| `AddAttribute` | `Name, ValueType`                | New attribute type definition             |
-| `AddEntity`    | `Name, Parent, Abstract, TypeQL` | New entity type definition                |
-| `AddRelation`  | `Name, Parent, Abstract, TypeQL` | New relation type definition              |
-| `AddOwnership` | `Owner, Attribute, Annots`       | New `owns` clause on existing type        |
-| `AddRole`      | `Relation, Role, Card`           | New `relates` clause on existing relation |
+| Type              | Fields                                   | Description                                    |
+| ----------------- | ---------------------------------------- | ---------------------------------------------- |
+| `AddAttribute`    | `Name, ValueType`                        | New attribute type definition                  |
+| `AddEntity`       | `Name, Parent, Abstract, TypeQL`         | New entity type definition                     |
+| `AddRelation`     | `Name, Parent, Abstract, TypeQL`         | New relation type definition                   |
+| `AddOwnership`    | `Owner, Attribute, Annots`               | New `owns` clause on existing type             |
+| `AddRole`         | `Relation, Role, Card`                   | New `relates` clause on existing relation      |
+| `AddRolePlayer`   | `Entity, Relation, Role`                 | New `plays` clause on entity                   |
+| `ModifyOwnership` | `Owner, Attribute, OldAnnots, NewAnnots` | Change annotations on existing `owns`          |
+| `RenameAttribute` | `OldName, NewName, ValueType`            | Define new attribute (data migration separate) |
+| `RunTypeQL`       | `Up, Down`                               | Arbitrary TypeQL migration step                |
+
+`ModifyOwnership` is reversible when `OldAnnots` is provided. `RenameAttribute` and `RunTypeQL` (without `Down`) are not reversible.
 
 ### Destructive Operations (irreversible)
 
-| Type              | Fields             | Description                               |
-| ----------------- | ------------------ | ----------------------------------------- |
-| `RemoveAttribute` | `Name`             | Remove an attribute type                  |
-| `RemoveEntity`    | `Name`             | Remove an entity type                     |
-| `RemoveRelation`  | `Name`             | Remove a relation type                    |
-| `RemoveOwnership` | `Owner, Attribute` | Remove an `owns` clause from a type       |
-| `RemoveRole`      | `Relation, Role`   | Remove a `relates` clause from a relation |
+| Type               | Fields                   | Description                               |
+| ------------------ | ------------------------ | ----------------------------------------- |
+| `RemoveAttribute`  | `Name`                   | Remove an attribute type                  |
+| `RemoveEntity`     | `Name`                   | Remove an entity type                     |
+| `RemoveRelation`   | `Name`                   | Remove a relation type                    |
+| `RemoveOwnership`  | `Owner, Attribute`       | Remove an `owns` clause from a type       |
+| `RemoveRole`       | `Relation, Role`         | Remove a `relates` clause from a relation |
+| `RemoveRolePlayer` | `Entity, Relation, Role` | Remove a `plays` clause from an entity    |
 
 All operation types implement the `Operation` interface with `ToTypeQL()`, `IsReversible()`, `IsDestructive()`, and `RollbackTypeQL()` methods.
 
@@ -256,6 +263,29 @@ type BreakingChange struct {
     Entity string // Affected type name
     Detail string // Human-readable description
 }
+```
+
+## SyncSchema
+
+One-shot schema synchronization that introspects, diffs, and applies in a single call:
+
+```go
+func SyncSchema(ctx context.Context, db *Database, opts ...SyncSchemaOption) (*SchemaDiff, error)
+```
+
+Options:
+
+| Option               | Description                               |
+| -------------------- | ----------------------------------------- |
+| `WithForce()`        | Also apply destructive changes (removals) |
+| `WithSkipIfExists()` | Skip migration if schema already matches  |
+
+```go
+// Skip if already up to date
+diff, err := gotype.SyncSchema(ctx, db, gotype.WithSkipIfExists())
+
+// Force destructive changes
+diff, err := gotype.SyncSchema(ctx, db, gotype.WithForce())
 ```
 
 ## Migration State Tracking
@@ -405,6 +435,25 @@ stamped, err := gotype.StampSequentialMigrations(ctx, db, migrations)
 // stamped: ["001_create_person", "002_add_email", ...]
 ```
 
+### Migration Checksum Validation
+
+Sequential migrations with `TQLStatements` (created via `TQLMigration`) are automatically checksummed using SHA-256. When `RunSequentialMigrations` encounters an already-applied migration whose checksum doesn't match the recorded value, it returns a `ChecksumMismatchError`:
+
+```go
+type ChecksumMismatchError struct {
+    Name     string
+    Expected string // recorded checksum
+    Actual   string // current checksum
+}
+```
+
+This prevents accidentally modifying migration files after they've been applied. Custom migrations (with Go `Up`/`Down` functions instead of `TQLStatements`) have no checksum and are not validated.
+
+```go
+// Compute a checksum manually
+checksum := gotype.MigrationChecksum(migration)
+```
+
 ### SeqMigrationError
 
 ```go
@@ -437,6 +486,7 @@ Returned when a migration's `Up` or `Down` function fails. Supports `errors.Unwr
 | Production deploys         | `MigrateWithState`           | Diffs + state tracking. Skips already-applied migrations. Recommended. |
 | Custom schema source       | `MigrateWithStateFromSchema` | Same as above but you provide the schema string.                       |
 | Dry run / inspection       | `DiffSchemaFromRegistry`     | Returns the diff without applying anything.                            |
+| One-shot sync              | `SyncSchema`                 | Introspect + diff + apply in one call. Options for force/skip.         |
 | File-based migrations      | `RunSequentialMigrations`    | Ordered, named migrations from TypeQL statements. Supports rollback.   |
 
 ### Development workflow

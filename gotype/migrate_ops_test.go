@@ -175,6 +175,102 @@ func TestGenerateMigrationWithOpts_Additive(t *testing.T) {
 	}
 }
 
+// --- New operation types ---
+
+func TestAddRolePlayer_ToTypeQL(t *testing.T) {
+	op := AddRolePlayer{Entity: "person", Relation: "employment", Role: "employee"}
+	got := op.ToTypeQL()
+	if got != "define person plays employment:employee;" {
+		t.Errorf("got %q", got)
+	}
+	if !op.IsReversible() {
+		t.Error("should be reversible")
+	}
+	if op.IsDestructive() {
+		t.Error("should not be destructive")
+	}
+	rollback := op.RollbackTypeQL()
+	if !strings.Contains(rollback, "undefine") {
+		t.Errorf("expected undefine in rollback, got %q", rollback)
+	}
+}
+
+func TestRemoveRolePlayer_ToTypeQL(t *testing.T) {
+	op := RemoveRolePlayer{Entity: "person", Relation: "employment", Role: "employee"}
+	got := op.ToTypeQL()
+	if got != "undefine person plays employment:employee;" {
+		t.Errorf("got %q", got)
+	}
+	if op.IsReversible() {
+		t.Error("should not be reversible")
+	}
+	if !op.IsDestructive() {
+		t.Error("should be destructive")
+	}
+}
+
+func TestModifyOwnership_ToTypeQL(t *testing.T) {
+	op := ModifyOwnership{Owner: "person", Attribute: "email", OldAnnots: "@card(0..1)", NewAnnots: "@card(1..1)"}
+	got := op.ToTypeQL()
+	if got != "redefine person owns email @card(1..1);" {
+		t.Errorf("got %q", got)
+	}
+	if !op.IsReversible() {
+		t.Error("should be reversible when OldAnnots provided")
+	}
+	rollback := op.RollbackTypeQL()
+	if !strings.Contains(rollback, "@card(0..1)") {
+		t.Errorf("expected old annots in rollback, got %q", rollback)
+	}
+}
+
+func TestModifyOwnership_NotReversibleWithoutOld(t *testing.T) {
+	op := ModifyOwnership{Owner: "person", Attribute: "email", NewAnnots: "@unique"}
+	if op.IsReversible() {
+		t.Error("should not be reversible without OldAnnots")
+	}
+	if op.RollbackTypeQL() != "" {
+		t.Error("rollback should be empty without OldAnnots")
+	}
+}
+
+func TestRenameAttribute_ToTypeQL(t *testing.T) {
+	op := RenameAttribute{OldName: "email", NewName: "email-address", ValueType: "string"}
+	got := op.ToTypeQL()
+	if got != "define attribute email-address, value string;" {
+		t.Errorf("got %q", got)
+	}
+	if op.IsReversible() {
+		t.Error("should not be reversible")
+	}
+	if op.IsDestructive() {
+		t.Error("should not be destructive")
+	}
+}
+
+func TestRunTypeQL_ToTypeQL(t *testing.T) {
+	op := RunTypeQL{Up: "define attribute foo, value string;", Down: "undefine attribute foo;"}
+	if op.ToTypeQL() != "define attribute foo, value string;" {
+		t.Errorf("got %q", op.ToTypeQL())
+	}
+	if !op.IsReversible() {
+		t.Error("should be reversible when Down provided")
+	}
+	if op.RollbackTypeQL() != "undefine attribute foo;" {
+		t.Errorf("got %q", op.RollbackTypeQL())
+	}
+}
+
+func TestRunTypeQL_NotReversibleWithoutDown(t *testing.T) {
+	op := RunTypeQL{Up: "define attribute foo, value string;"}
+	if op.IsReversible() {
+		t.Error("should not be reversible without Down")
+	}
+	if op.IsDestructive() {
+		t.Error("should not be destructive")
+	}
+}
+
 func TestGenerateMigrationWithOpts_Destructive(t *testing.T) {
 	diff := &SchemaDiff{
 		AddAttributes: []AttrChange{{Name: "email", ValueType: "string"}},

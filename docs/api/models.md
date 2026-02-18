@@ -146,3 +146,4 @@ See `GetByIIDPolymorphic` and `GetByIIDPolymorphicAny` in the [CRUD docs](crud.m
 - **ModelInfo** holds all extracted metadata for a registered type: Go type, kind (entity/relation), TypeDB name, fields, roles, key fields. You can look up fields by Go name or TypeDB attribute name.
 - **ModelStrategy** is the internal strategy pattern (`entityStrategy` / `relationStrategy`) that builds TypeQL strings for different type kinds. You don't interact with it directly.
 - **Reserved words**: 111 TypeQL keywords are checked case-insensitively during registration. Using one as a type or attribute name produces a `ReservedWordError`.
+- **Identifier validation**: Type names, attribute names, and role names are validated during registration. Valid identifiers start with a letter or underscore and contain only letters, digits, hyphens, or underscores. Invalid identifiers produce an `InvalidIdentifierError`. Use `ValidateIdentifier(name, context)` to check programmatically.

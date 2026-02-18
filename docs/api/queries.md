@@ -64,9 +64,32 @@ gotype.NotHasAttr("phone") // attribute does not exist
 ```go
 gotype.ByIID("0x123")  // match by TypeDB internal ID
 
+// Match multiple IIDs in a single OR query
+gotype.IIDIn("0x123", "0x456", "0x789")
+
 // For relations: filter by role player attributes
 gotype.RolePlayer("employee", gotype.Eq("name", "Alice"))
 ```
+
+### Computed Expressions
+
+Use `Computed` with `ArithmeticExpr` and `BuiltinFuncExpr` to filter on computed values:
+
+```go
+// Filter where price * quantity > 100
+gotype.Computed("total",
+    gotype.ArithmeticExpr("e", "price", "*", "quantity"),
+    ">", 100.0)
+
+// Filter where abs(balance) > 1000
+gotype.Computed("abs_bal",
+    gotype.BuiltinFuncExpr("abs", "$e__balance"),
+    ">", 1000.0)
+```
+
+`ArithmeticExpr` supports operators: `+`, `-`, `*`, `/`, `%`, `^`.
+
+`BuiltinFuncExpr` wraps TypeQL built-in functions: `abs`, `ceil`, `floor`, `round`, `length`, `max`, `min`.
 
 ### Boolean Composition
 
@@ -163,6 +186,32 @@ results, _ := persons.Query().
     )
 // results["active"]["count_name"] = 5.0
 // results["inactive"]["count_name"] = 2.0
+```
+
+## Function Queries
+
+Call TypeDB schema functions (defined with `fun`) using `FunctionQuery`:
+
+```go
+fq := gotype.NewFunctionQuery(db, "get_user_score").
+    Arg("Alice").
+    Arg(42)
+
+// Build the TypeQL string
+query := fq.Build()
+// let $result = get_user_score("Alice", 42);
+// return $result;
+
+// Or execute directly
+results, err := fq.Execute(ctx)
+```
+
+Use `ArgRaw` for pre-formatted expressions like variable references:
+
+```go
+fq := gotype.NewFunctionQuery(db, "compute_total").
+    ArgRaw("$x").
+    Arg(1.5)
 ```
 
 ## Complete Example

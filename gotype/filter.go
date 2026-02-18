@@ -266,6 +266,31 @@ func ByIID(iid string) Filter {
 	return &IIDFilter{IID: iid}
 }
 
+// IIDInFilter matches any of multiple internal IDs using an OR pattern.
+type IIDInFilter struct {
+	IIDs []string
+}
+
+// ToPatterns generates TypeQL patterns for matching multiple IIDs.
+func (f *IIDInFilter) ToPatterns(varName string) []string {
+	if len(f.IIDs) == 0 {
+		return []string{fmt.Sprintf("$%s iid 0xFFFFFFFFFFFFFFFF;", varName)}
+	}
+	if len(f.IIDs) == 1 {
+		return []string{fmt.Sprintf("$%s iid %s;", varName, f.IIDs[0])}
+	}
+	var branches []string
+	for _, iid := range f.IIDs {
+		branches = append(branches, fmt.Sprintf("{ $%s iid %s; }", varName, iid))
+	}
+	return []string{strings.Join(branches, " or ") + ";"}
+}
+
+// IIDIn creates a filter matching any of the specified internal IDs.
+func IIDIn(iids ...string) Filter {
+	return &IIDInFilter{IIDs: iids}
+}
+
 // --- Boolean combinators ---
 
 // AndFilter combines multiple filters with AND (conjunction).
@@ -387,6 +412,50 @@ func (f *RolePlayerFilter) ToPatterns(varName string) []string {
 // satisfies the inner filter.
 func RolePlayer(roleName string, inner Filter) Filter {
 	return &RolePlayerFilter{RoleName: roleName, Inner: inner}
+}
+
+// --- Computed expression filters ---
+
+// ComputedFilter uses a let-assignment to compute a value and compare it.
+// Generates: let $computed = <expr>; $computed <op> <value>;
+type ComputedFilter struct {
+	// VarName is the name for the computed variable (without $).
+	VarName string
+	// Expr is the TypeQL expression to compute (e.g., "$e__price * $e__quantity").
+	Expr string
+	// Op is the comparison operator (==, !=, >, <, >=, <=).
+	Op string
+	// Value is the comparison target.
+	Value any
+}
+
+// ToPatterns generates TypeQL let-assignment and comparison patterns.
+func (f *ComputedFilter) ToPatterns(varName string) []string {
+	computedVar := sanitizeVar(f.VarName)
+	return []string{
+		fmt.Sprintf("let $%s = %s;", computedVar, f.Expr),
+		fmt.Sprintf("$%s %s %s;", computedVar, f.Op, FormatValue(f.Value)),
+	}
+}
+
+// Computed creates a filter that assigns a computed expression to a variable
+// and compares it using the given operator.
+func Computed(varName, expr, op string, value any) Filter {
+	return &ComputedFilter{VarName: varName, Expr: expr, Op: op, Value: value}
+}
+
+// ArithmeticExpr builds a TypeQL arithmetic expression string from two attribute
+// references and an operator. Useful with Computed filter.
+func ArithmeticExpr(varName, leftAttr, op, rightAttr string) string {
+	left := sanitizeVar(varName + "__" + leftAttr)
+	right := sanitizeVar(varName + "__" + rightAttr)
+	return fmt.Sprintf("$%s %s $%s", left, op, right)
+}
+
+// BuiltinFuncExpr builds a TypeQL function call expression string.
+// Useful with Computed filter.
+func BuiltinFuncExpr(funcName string, args ...string) string {
+	return fmt.Sprintf("%s(%s)", funcName, strings.Join(args, ", "))
 }
 
 // --- Helpers ---

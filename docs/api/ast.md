@@ -162,6 +162,47 @@ reduceStr, _ := c.Compile(reduce)
 // reduce $avg = mean($age);
 ```
 
+### Arithmetic Expressions
+
+```go
+// Build: ($price * $quantity)
+arith := ast.ArithmeticValue{
+    Left:     "$price",
+    Operator: "*",
+    Right:    "$quantity",
+}
+```
+
+Supported operators: `+`, `-`, `*`, `/`, `%`, `^`.
+
+### Function Calls
+
+```go
+// Build: abs($balance)
+funcCall := ast.FunctionCallValue{
+    Function: "abs",
+    Args:     []any{"$balance"},
+}
+
+// Build: round($score, 2)
+round := ast.FuncCall("round", "$score", ast.Long(2))
+```
+
+### Let Assignments
+
+Computed variable bindings in match clauses:
+
+```go
+matchLet := ast.MatchLetClause{
+    Assignments: []ast.LetAssignment{
+        {
+            Variables:  []string{"$total"},
+            Expression: ast.ArithmeticValue{Left: "$price", Operator: "*", Right: "$qty"},
+        },
+    },
+}
+```
+
 ### Insert Relation
 
 ```go

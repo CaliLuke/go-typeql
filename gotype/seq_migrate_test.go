@@ -2,6 +2,7 @@ package gotype
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -975,6 +976,72 @@ func TestStampSequentialMigrations_DryRunLogsStatements(t *testing.T) {
 	// 1 "stamp" + 2 statement lines
 	if len(logged) != 3 {
 		t.Errorf("expected 3 log messages, got %d: %v", len(logged), logged)
+	}
+}
+
+// --- MigrationChecksum ---
+
+func TestMigrationChecksum_TQLMigration(t *testing.T) {
+	m := TQLMigration("001", []string{"define attribute name, value string;"}, []string{"undefine attribute name;"})
+	cs := MigrationChecksum(m)
+	if len(cs) != 64 {
+		t.Errorf("expected 64-char hex, got %d: %q", len(cs), cs)
+	}
+	// Deterministic
+	if cs != MigrationChecksum(m) {
+		t.Error("expected deterministic checksum")
+	}
+}
+
+func TestMigrationChecksum_NilStatements(t *testing.T) {
+	m := SequentialMigration{Name: "001", Up: func(ctx context.Context, db *Database) error { return nil }}
+	cs := MigrationChecksum(m)
+	if cs != "" {
+		t.Errorf("expected empty checksum for nil Statements, got %q", cs)
+	}
+}
+
+func TestMigrationChecksum_DifferentStatements(t *testing.T) {
+	m1 := TQLMigration("001", []string{"define attribute name, value string;"}, nil)
+	m2 := TQLMigration("001", []string{"define attribute email, value string;"}, nil)
+	if MigrationChecksum(m1) == MigrationChecksum(m2) {
+		t.Error("different statements should produce different checksums")
+	}
+}
+
+func TestChecksumMismatchError(t *testing.T) {
+	err := &ChecksumMismatchError{
+		Name:     "001_init",
+		Expected: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+		Actual:   "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "001_init") {
+		t.Errorf("expected migration name in error: %s", msg)
+	}
+	if !strings.Contains(msg, "checksum mismatch") {
+		t.Errorf("expected 'checksum mismatch' in error: %s", msg)
+	}
+}
+
+func TestRunSequentialMigrations_ChecksumMismatch(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "001_init"},
+			"applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"},
+			"checksum":   map[string]any{"value": "wrongchecksum1234567890123456789012345678901234567890abcd"}}},
+	}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001_init", []string{"define attribute name, value string;"}, nil)
+	_, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m})
+	if err == nil {
+		t.Fatal("expected checksum mismatch error")
+	}
+	var csErr *ChecksumMismatchError
+	if !errors.As(err, &csErr) {
+		t.Fatalf("expected ChecksumMismatchError, got %T: %v", err, err)
 	}
 }
 

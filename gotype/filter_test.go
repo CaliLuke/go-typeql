@@ -218,3 +218,78 @@ func TestSanitizeVar_Hyphens(t *testing.T) {
 	// But NOT in the attribute name in the has clause
 	assertContains(t, joined, "has start-date")
 }
+
+// --- IIDIn filter ---
+
+func TestIIDIn_Single(t *testing.T) {
+	f := IIDIn("0x1234")
+	patterns := f.ToPatterns("e")
+	if len(patterns) != 1 {
+		t.Fatalf("expected 1 pattern, got %d", len(patterns))
+	}
+	if patterns[0] != "$e iid 0x1234;" {
+		t.Errorf("got %q", patterns[0])
+	}
+}
+
+func TestIIDIn_Multiple(t *testing.T) {
+	f := IIDIn("0x1234", "0x5678", "0x9abc")
+	patterns := f.ToPatterns("e")
+	if len(patterns) != 1 {
+		t.Fatalf("expected 1 pattern, got %d", len(patterns))
+	}
+	joined := patterns[0]
+	assertContains(t, joined, "{ $e iid 0x1234; }")
+	assertContains(t, joined, "{ $e iid 0x5678; }")
+	assertContains(t, joined, " or ")
+}
+
+// --- Computed / Arithmetic / Builtin ---
+
+func TestComputedFilter(t *testing.T) {
+	f := Computed("total", "$e__price * $e__quantity", ">", 100.0)
+	patterns := f.ToPatterns("e")
+	if len(patterns) != 2 {
+		t.Fatalf("expected 2 patterns, got %d", len(patterns))
+	}
+	assertContains(t, patterns[0], "let $total = $e__price * $e__quantity;")
+	assertContains(t, patterns[1], "$total > ")
+}
+
+func TestArithmeticExpr(t *testing.T) {
+	expr := ArithmeticExpr("e", "price", "*", "quantity")
+	if expr != "$e__price * $e__quantity" {
+		t.Errorf("got %q", expr)
+	}
+}
+
+func TestArithmeticExpr_Hyphens(t *testing.T) {
+	expr := ArithmeticExpr("e", "unit-price", "+", "shipping-cost")
+	if expr != "$e__unit_price + $e__shipping_cost" {
+		t.Errorf("got %q", expr)
+	}
+}
+
+func TestBuiltinFuncExpr(t *testing.T) {
+	expr := BuiltinFuncExpr("abs", "$e__balance")
+	if expr != "abs($e__balance)" {
+		t.Errorf("got %q", expr)
+	}
+}
+
+func TestBuiltinFuncExpr_MultiArgs(t *testing.T) {
+	expr := BuiltinFuncExpr("round", "$e__score", "2")
+	if expr != "round($e__score, 2)" {
+		t.Errorf("got %q", expr)
+	}
+}
+
+func TestIIDIn_Empty(t *testing.T) {
+	f := IIDIn()
+	patterns := f.ToPatterns("e")
+	if len(patterns) != 1 {
+		t.Fatalf("expected 1 pattern, got %d", len(patterns))
+	}
+	// Empty IIDIn should produce an impossible match
+	assertContains(t, patterns[0], "0xFFFFFFFFFFFFFFFF")
+}

@@ -120,6 +120,72 @@ func TestBuildRegistryData_RelationSchema(t *testing.T) {
 	}
 }
 
+func TestBuildRegistryData_RelationSchemaCard(t *testing.T) {
+	schema := &ParsedSchema{
+		Entities: []EntitySpec{
+			{Name: "person", Plays: []PlaysSpec{{Relation: "marriage", Role: "spouse"}}},
+		},
+		Relations: []RelationSpec{
+			{Name: "marriage", Relates: []RelatesSpec{
+				{Role: "spouse", Card: "2"},
+			}},
+		},
+	}
+	data := BuildRegistryData(schema, RegistryConfig{PackageName: "g"})
+	if len(data.RelationSchema) != 1 {
+		t.Fatalf("expected 1 relation schema, got %d", len(data.RelationSchema))
+	}
+	role := data.RelationSchema[0].Roles[0]
+	if role.Card != "2" {
+		t.Errorf("expected Card=%q, got %q", "2", role.Card)
+	}
+}
+
+func TestCardMin(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"", 0},
+		{"1", 1},
+		{"0..1", 0},
+		{"1..", 1},
+		{"0..", 0},
+		{"2", 2},
+		{"2..5", 2},
+		{"bad", 0},
+	}
+	for _, tc := range tests {
+		got := cardMin(tc.input)
+		if got != tc.want {
+			t.Errorf("cardMin(%q) = %d, want %d", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestRenderRegistry_MinCard(t *testing.T) {
+	schema := &ParsedSchema{
+		Entities: []EntitySpec{
+			{Name: "person", Plays: []PlaysSpec{{Relation: "marriage", Role: "spouse"}}},
+		},
+		Relations: []RelationSpec{
+			{Name: "marriage", Relates: []RelatesSpec{
+				{Role: "spouse", Card: "1.."},
+			}},
+		},
+	}
+	data := BuildRegistryData(schema, RegistryConfig{PackageName: "test"})
+	var buf strings.Builder
+	if err := RenderRegistry(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	// The generated code should contain MinCard=1 for the "spouse" role
+	if !strings.Contains(out, `"spouse", []string{"person"}, 1`) {
+		t.Errorf("expected MinCard=1 for spouse role in output, got:\n%s", out)
+	}
+}
+
 func TestBuildRegistryData_RelationSchemaThreeRoles(t *testing.T) {
 	schema := &ParsedSchema{
 		Entities: []EntitySpec{

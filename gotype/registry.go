@@ -61,11 +61,19 @@ func Register[T any]() error {
 	if IsReservedWord(info.TypeName) {
 		return &ReservedWordError{Word: info.TypeName, Context: kindStr}
 	}
+	if err := ValidateIdentifier(info.TypeName, kindStr); err != nil {
+		return err
+	}
 
-	// Validate attribute names against reserved words
+	// Validate attribute names against reserved words and identifiers
 	for _, fi := range info.Fields {
 		if fi.Tag.Name != "" && IsReservedWord(fi.Tag.Name) {
 			return &ReservedWordError{Word: fi.Tag.Name, Context: "attribute"}
+		}
+		if fi.Tag.Name != "" {
+			if err := ValidateIdentifier(fi.Tag.Name, "attribute"); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -74,6 +82,11 @@ func Register[T any]() error {
 		for _, fi := range info.Fields {
 			if fi.Tag.RoleName != "" && IsReservedWord(fi.Tag.RoleName) {
 				return &ReservedWordError{Word: fi.Tag.RoleName, Context: "role"}
+			}
+			if fi.Tag.RoleName != "" {
+				if err := ValidateIdentifier(fi.Tag.RoleName, "role"); err != nil {
+					return err
+				}
 			}
 		}
 	}

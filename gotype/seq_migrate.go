@@ -242,6 +242,24 @@ func RunSequentialMigrations(ctx context.Context, db *Database, migrations []Seq
 		return nil, fmt.Errorf("seq migration: query applied: %w", err)
 	}
 
+	// Validate checksums of already-applied migrations
+	for _, m := range sorted {
+		rec, ok := applied[m.Name]
+		if !ok {
+			continue
+		}
+		if rec.Checksum != "" {
+			current := MigrationChecksum(m)
+			if current != "" && current != rec.Checksum {
+				return nil, &ChecksumMismatchError{
+					Name:     m.Name,
+					Expected: rec.Checksum,
+					Actual:   current,
+				}
+			}
+		}
+	}
+
 	// Determine pending
 	var pending []SequentialMigration
 	for _, m := range sorted {
@@ -275,7 +293,8 @@ func RunSequentialMigrations(ctx context.Context, db *Database, migrations []Seq
 		if err := m.Up(ctx, db); err != nil {
 			return appliedNames, &SeqMigrationError{Name: m.Name, Cause: err}
 		}
-		if err := state.Record(ctx, m.Name); err != nil {
+		checksum := MigrationChecksum(m)
+		if err := state.Record(ctx, m.Name, checksum); err != nil {
 			return appliedNames, fmt.Errorf("seq migration: record %q: %w", m.Name, err)
 		}
 		appliedNames = append(appliedNames, m.Name)
@@ -354,7 +373,8 @@ func StampSequentialMigrations(ctx context.Context, db *Database, migrations []S
 
 	var stampedNames []string
 	for _, m := range pending {
-		if err := state.Record(ctx, m.Name); err != nil {
+		checksum := MigrationChecksum(m)
+		if err := state.Record(ctx, m.Name, checksum); err != nil {
 			return stampedNames, fmt.Errorf("seq stamp: record %q: %w", m.Name, err)
 		}
 		stampedNames = append(stampedNames, m.Name)
@@ -385,10 +405,10 @@ func SeqMigrationStatus(ctx context.Context, db *Database, migrations []Sequenti
 	infos := make([]SeqMigrationInfo, len(sorted))
 	for i, m := range sorted {
 		info := SeqMigrationInfo{Name: m.Name}
-		if at, ok := applied[m.Name]; ok {
+		if rec, ok := applied[m.Name]; ok {
 			info.Applied = true
-			if !at.IsZero() {
-				info.AppliedAt = at.Format("2006-01-02T15:04:05Z")
+			if !rec.AppliedAt.IsZero() {
+				info.AppliedAt = rec.AppliedAt.Format("2006-01-02T15:04:05Z")
 			}
 		}
 		infos[i] = info
