@@ -248,7 +248,7 @@ func (m *Manager[T]) updateInstanceInTx(tx Tx, instance *T) error {
 // the match and delete clauses so missing optional attributes are skipped.
 func buildBatchUpdate(typeName, iid string, delAttrs, insHas []string) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("match\n$e isa %s, iid %s;\n", typeName, iid))
+	fmt.Fprintf(&b, "match\n$e isa %s, iid %s;\n", typeName, iid)
 
 	// Try-match each old attribute (try block needs inner ; and outer ;)
 	for i, attr := range delAttrs {
@@ -265,7 +265,7 @@ func buildBatchUpdate(typeName, iid string, delAttrs, insHas []string) string {
 
 	// Insert new values
 	if len(insHas) > 0 {
-		b.WriteString(fmt.Sprintf("insert $e %s;", strings.Join(insHas, ", ")))
+		fmt.Fprintf(&b, "insert $e %s;", strings.Join(insHas, ", "))
 	}
 
 	return b.String()

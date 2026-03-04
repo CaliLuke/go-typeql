@@ -55,6 +55,49 @@ The builders are organized by category:
 - **Statements**: `IsaStmt`, `HasStmt`, `RelationStmt`, `DeleteHas`
 - **Fetch Items**: `FetchAttr`, `FetchAttrPath`, `FetchVar`, `FetchFunc`
 
+## High-Level Fluent Builder
+
+For common application patterns, use `FluentQuery` helpers that wrap the AST:
+
+```go
+query := ast.FluentMatch("n", "user_story").
+    Has("display_id", "US-1").
+    Set("status", "done").
+    Fetch("n", "name", "status")
+
+typeql, err := query.Build()
+if err != nil {
+    // handle compile error
+}
+```
+
+The fluent API supports:
+
+- `FluentMatch(var, type)` for entity-first query composition
+- `MatchFunction(name, args...)` for TypeDB function calls via `match let`
+- `MatchByIdentifier(identifier, attr, matcher)` for ID-agnostic matching
+- `Set(attr, value)` for standard Match-Delete-Insert attribute updates
+- `DeleteThing()`, `Fetch(...)`, `Select(...)`
+- `Sort(...)`, `Offset(...)`, `Limit(...)` on output stages only
+- `Nodes()` for AST inspection before compilation
+- Immutable chaining (each call returns a new builder)
+
+Stage types:
+
+- `MatchStage` → matching/mutation stage
+- `MatchResultStage` → output/pagination stage (after `Fetch` or `Select`)
+- `FunctionStage` → function call setup
+- `FunctionResultStage` → output/pagination stage (after `Select`)
+
+## CRUD/Query Templates
+
+The `ast` package now includes reusable templates for common operations:
+
+- `UpdateAttribute(var, type, attr, value) (string, error)`
+- `DeleteArtifact(identifier, type) (string, error)`
+- `DeleteArtifactWithOptions(identifier, type, DeleteArtifactOptions) (string, error)`
+- `PaginatedSearch(types, PaginatedSearchOptions) (string, error)` (`Sort` supports `name` and `-name`)
+
 ## Compiling to TypeQL
 
 The `Compiler` converts AST nodes to TypeQL strings. It accepts any `QueryNode` and dispatches by type:

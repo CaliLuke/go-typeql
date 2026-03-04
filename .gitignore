@@ -8,3 +8,4 @@ driver/rust/target/
 
 # OS files
 .DS_Store
+reference

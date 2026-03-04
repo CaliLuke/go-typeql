@@ -16,9 +16,13 @@ It decouples query construction from string formatting, providing a structured w
 
 ## Index
 
+- [func DeleteArtifact\(identifier, typeName string\) \(string, error\)](<#DeleteArtifact>)
+- [func DeleteArtifactWithOptions\(identifier, typeName string, opts DeleteArtifactOptions\) \(string, error\)](<#DeleteArtifactWithOptions>)
 - [func EscapeString\(s string\) string](<#EscapeString>)
 - [func FormatGoValue\(value any\) string](<#FormatGoValue>)
 - [func FormatLiteral\(val any, valueType string\) string](<#FormatLiteral>)
+- [func PaginatedSearch\(types \[\]string, opts PaginatedSearchOptions\) \(string, error\)](<#PaginatedSearch>)
+- [func UpdateAttribute\(varName, typeName, attrName string, value any\) \(string, error\)](<#UpdateAttribute>)
 - [type AggregateExpr](<#AggregateExpr>)
 - [type ArithmeticValue](<#ArithmeticValue>)
 - [type AttributePattern](<#AttributePattern>)
@@ -27,6 +31,7 @@ It decouples query construction from string formatting, providing a structured w
   - [func \(c \*Compiler\) Compile\(node QueryNode\) \(string, error\)](<#Compiler.Compile>)
   - [func \(c \*Compiler\) CompileBatch\(nodes \[\]QueryNode, operation string\) \(string, error\)](<#Compiler.CompileBatch>)
 - [type Constraint](<#Constraint>)
+- [type DeleteArtifactOptions](<#DeleteArtifactOptions>)
 - [type DeleteClause](<#DeleteClause>)
   - [func Delete\(statements ...Statement\) DeleteClause](<#Delete>)
 - [type DeleteHasStatement](<#DeleteHasStatement>)
@@ -53,13 +58,26 @@ It decouples query construction from string formatting, providing a structured w
   - [func \(f FetchVariable\) FetchKey\(\) string](<#FetchVariable.FetchKey>)
 - [type FetchWildcard](<#FetchWildcard>)
   - [func \(f FetchWildcard\) FetchKey\(\) string](<#FetchWildcard.FetchKey>)
+- [type FunctionBuilder](<#FunctionBuilder>)
+  - [func \(b FunctionBuilder\) Select\(vars ...string\) FunctionResultStage](<#FunctionBuilder.Select>)
 - [type FunctionCallValue](<#FunctionCallValue>)
   - [func FuncCall\(funcName string, args ...any\) FunctionCallValue](<#FuncCall>)
+- [type FunctionOutputBuilder](<#FunctionOutputBuilder>)
+  - [func \(b FunctionOutputBuilder\) Build\(\) \(string, error\)](<#FunctionOutputBuilder.Build>)
+  - [func \(b FunctionOutputBuilder\) Limit\(count int\) FunctionResultStage](<#FunctionOutputBuilder.Limit>)
+  - [func \(b FunctionOutputBuilder\) Nodes\(\) \[\]QueryNode](<#FunctionOutputBuilder.Nodes>)
+  - [func \(b FunctionOutputBuilder\) Offset\(count int\) FunctionResultStage](<#FunctionOutputBuilder.Offset>)
+  - [func \(b FunctionOutputBuilder\) Select\(vars ...string\) FunctionResultStage](<#FunctionOutputBuilder.Select>)
+  - [func \(b FunctionOutputBuilder\) Sort\(variable, direction string\) FunctionResultStage](<#FunctionOutputBuilder.Sort>)
+- [type FunctionResultStage](<#FunctionResultStage>)
+- [type FunctionStage](<#FunctionStage>)
+  - [func MatchFunction\(funcName string, args ...any\) FunctionStage](<#MatchFunction>)
 - [type HasConstraint](<#HasConstraint>)
   - [func Has\(attrName string, value any\) HasConstraint](<#Has>)
 - [type HasPattern](<#HasPattern>)
 - [type HasStatement](<#HasStatement>)
   - [func HasStmt\(subjectVar, attrName string, value Value\) HasStatement](<#HasStmt>)
+- [type IdentifierMatcher](<#IdentifierMatcher>)
 - [type IidConstraint](<#IidConstraint>)
   - [func Iid\(iid string\) IidConstraint](<#Iid>)
 - [type IidPattern](<#IidPattern>)
@@ -79,15 +97,39 @@ It decouples query construction from string formatting, providing a structured w
   - [func Lit\(value any, valueType string\) LiteralValue](<#Lit>)
   - [func Long\(n int64\) LiteralValue](<#Long>)
   - [func Str\(s string\) LiteralValue](<#Str>)
+- [type MatchBuilder](<#MatchBuilder>)
+  - [func \(b MatchBuilder\) Build\(\) \(string, error\)](<#MatchBuilder.Build>)
+  - [func \(b MatchBuilder\) DeleteThing\(\) MatchStage](<#MatchBuilder.DeleteThing>)
+  - [func \(b MatchBuilder\) Fetch\(varName string, attrNames ...string\) MatchResultStage](<#MatchBuilder.Fetch>)
+  - [func \(b MatchBuilder\) Has\(attrName string, value any\) MatchStage](<#MatchBuilder.Has>)
+  - [func \(b MatchBuilder\) Iid\(iid string\) MatchStage](<#MatchBuilder.Iid>)
+  - [func \(b MatchBuilder\) MatchByIdentifier\(identifier, attrName string, matcher IdentifierMatcher\) MatchStage](<#MatchBuilder.MatchByIdentifier>)
+  - [func \(b MatchBuilder\) Nodes\(\) \[\]QueryNode](<#MatchBuilder.Nodes>)
+  - [func \(b MatchBuilder\) Select\(vars ...string\) MatchResultStage](<#MatchBuilder.Select>)
+  - [func \(b MatchBuilder\) Set\(attrName string, value any\) MatchStage](<#MatchBuilder.Set>)
 - [type MatchClause](<#MatchClause>)
   - [func Match\(patterns ...Pattern\) MatchClause](<#Match>)
 - [type MatchLetClause](<#MatchLetClause>)
+- [type MatchOutputBuilder](<#MatchOutputBuilder>)
+  - [func \(b MatchOutputBuilder\) Build\(\) \(string, error\)](<#MatchOutputBuilder.Build>)
+  - [func \(b MatchOutputBuilder\) Fetch\(varName string, attrNames ...string\) MatchResultStage](<#MatchOutputBuilder.Fetch>)
+  - [func \(b MatchOutputBuilder\) Limit\(count int\) MatchResultStage](<#MatchOutputBuilder.Limit>)
+  - [func \(b MatchOutputBuilder\) Nodes\(\) \[\]QueryNode](<#MatchOutputBuilder.Nodes>)
+  - [func \(b MatchOutputBuilder\) Offset\(count int\) MatchResultStage](<#MatchOutputBuilder.Offset>)
+  - [func \(b MatchOutputBuilder\) Select\(vars ...string\) MatchResultStage](<#MatchOutputBuilder.Select>)
+  - [func \(b MatchOutputBuilder\) Sort\(variable, direction string\) MatchResultStage](<#MatchOutputBuilder.Sort>)
+- [type MatchResultStage](<#MatchResultStage>)
+- [type MatchStage](<#MatchStage>)
+  - [func FluentMatch\(varName, typeName string\) MatchStage](<#FluentMatch>)
 - [type NotPattern](<#NotPattern>)
 - [type OffsetClause](<#OffsetClause>)
   - [func Offset\(count int\) OffsetClause](<#Offset>)
 - [type OrPattern](<#OrPattern>)
   - [func Or\(alternatives ...\[\]Pattern\) OrPattern](<#Or>)
+- [type PaginatedSearchOptions](<#PaginatedSearchOptions>)
 - [type Pattern](<#Pattern>)
+- [type PrefixIdentifierMatcher](<#PrefixIdentifierMatcher>)
+  - [func \(m PrefixIdentifierMatcher\) IsIID\(identifier string\) bool](<#PrefixIdentifierMatcher.IsIID>)
 - [type PutClause](<#PutClause>)
   - [func Put\(statements ...Statement\) PutClause](<#Put>)
 - [type QueryNode](<#QueryNode>)
@@ -115,6 +157,24 @@ It decouples query construction from string formatting, providing a structured w
   - [func Cmp\(variable, operator string, value any\) ValueComparisonPattern](<#Cmp>)
 
 
+<a name="DeleteArtifact"></a>
+## func [DeleteArtifact](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L401>)
+
+```go
+func DeleteArtifact(identifier, typeName string) (string, error)
+```
+
+DeleteArtifact builds a delete query that matches by IID or fallback attribute.
+
+<a name="DeleteArtifactWithOptions"></a>
+## func [DeleteArtifactWithOptions](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L406>)
+
+```go
+func DeleteArtifactWithOptions(identifier, typeName string, opts DeleteArtifactOptions) (string, error)
+```
+
+DeleteArtifactWithOptions builds a delete query with custom identifier matching options.
+
 <a name="EscapeString"></a>
 ## func [EscapeString](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L525>)
 
@@ -141,6 +201,24 @@ func FormatLiteral(val any, valueType string) string
 ```
 
 FormatLiteral formats a Go value as a TypeQL literal string.
+
+<a name="PaginatedSearch"></a>
+## func [PaginatedSearch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L427>)
+
+```go
+func PaginatedSearch(types []string, opts PaginatedSearchOptions) (string, error)
+```
+
+PaginatedSearch builds a standard typed search with sorting and pagination/fetch options.
+
+<a name="UpdateAttribute"></a>
+## func [UpdateAttribute](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L394>)
+
+```go
+func UpdateAttribute(varName, typeName, attrName string, value any) (string, error)
+```
+
+UpdateAttribute builds the standard Match\-Delete\-Insert sequence for one attribute update.
 
 <a name="AggregateExpr"></a>
 ## type [AggregateExpr](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L539-L546>)
@@ -238,6 +316,19 @@ Constraint is the marker interface for constraints applied to variables in a pat
 type Constraint interface {
     QueryNode
     // contains filtered or unexported methods
+}
+```
+
+<a name="DeleteArtifactOptions"></a>
+## type [DeleteArtifactOptions](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L30-L34>)
+
+DeleteArtifactOptions configures DeleteArtifact matching behavior.
+
+```go
+type DeleteArtifactOptions struct {
+    VarName string
+    IDAttr  string
+    Matcher IdentifierMatcher
 }
 ```
 
@@ -540,6 +631,26 @@ func (f FetchWildcard) FetchKey() string
 
 FetchKey returns the output key for the wildcard.
 
+<a name="FunctionBuilder"></a>
+## type [FunctionBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L173-L175>)
+
+FunctionBuilder is the concrete immutable pre\-output builder for function queries.
+
+```go
+type FunctionBuilder struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="FunctionBuilder.Select"></a>
+### func \(FunctionBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L342>)
+
+```go
+func (b FunctionBuilder) Select(vars ...string) FunctionResultStage
+```
+
+Select transitions function query to output stage.
+
 <a name="FunctionCallValue"></a>
 ## type [FunctionCallValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L21-L26>)
 
@@ -562,6 +673,107 @@ func FuncCall(funcName string, args ...any) FunctionCallValue
 ```
 
 FuncCall creates a FunctionCallValue with the given function name and arguments.
+
+<a name="FunctionOutputBuilder"></a>
+## type [FunctionOutputBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L178-L180>)
+
+FunctionOutputBuilder is the concrete immutable output\-stage builder for function queries.
+
+```go
+type FunctionOutputBuilder struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="FunctionOutputBuilder.Build"></a>
+### func \(FunctionOutputBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L389>)
+
+```go
+func (b FunctionOutputBuilder) Build() (string, error)
+```
+
+Build compiles the fluent query into TypeQL.
+
+<a name="FunctionOutputBuilder.Limit"></a>
+### func \(FunctionOutputBuilder\) [Limit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L368>)
+
+```go
+func (b FunctionOutputBuilder) Limit(count int) FunctionResultStage
+```
+
+Limit configures a limit clause.
+
+<a name="FunctionOutputBuilder.Nodes"></a>
+### func \(FunctionOutputBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L384>)
+
+```go
+func (b FunctionOutputBuilder) Nodes() []QueryNode
+```
+
+Nodes returns the compiled AST node sequence before string compilation.
+
+<a name="FunctionOutputBuilder.Offset"></a>
+### func \(FunctionOutputBuilder\) [Offset](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L376>)
+
+```go
+func (b FunctionOutputBuilder) Offset(count int) FunctionResultStage
+```
+
+Offset configures an offset clause.
+
+<a name="FunctionOutputBuilder.Select"></a>
+### func \(FunctionOutputBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L351>)
+
+```go
+func (b FunctionOutputBuilder) Select(vars ...string) FunctionResultStage
+```
+
+Select adds additional selected variables in output stage.
+
+<a name="FunctionOutputBuilder.Sort"></a>
+### func \(FunctionOutputBuilder\) [Sort](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L360>)
+
+```go
+func (b FunctionOutputBuilder) Sort(variable, direction string) FunctionResultStage
+```
+
+Sort configures a sort clause.
+
+<a name="FunctionResultStage"></a>
+## type [FunctionResultStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L153-L160>)
+
+FunctionResultStage is the output stage for function queries.
+
+```go
+type FunctionResultStage interface {
+    Select(vars ...string) FunctionResultStage
+    Sort(variable, direction string) FunctionResultStage
+    Limit(count int) FunctionResultStage
+    Offset(count int) FunctionResultStage
+    Build() (string, error)
+    Nodes() []QueryNode
+}
+```
+
+<a name="FunctionStage"></a>
+## type [FunctionStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L148-L150>)
+
+FunctionStage is the pre\-output stage for function\-based match\-let queries.
+
+```go
+type FunctionStage interface {
+    Select(vars ...string) FunctionResultStage
+}
+```
+
+<a name="MatchFunction"></a>
+### func [MatchFunction](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L192>)
+
+```go
+func MatchFunction(funcName string, args ...any) FunctionStage
+```
+
+MatchFunction starts a fluent function query compiled as match\-let.
 
 <a name="HasConstraint"></a>
 ## type [HasConstraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L86-L91>)
@@ -626,6 +838,23 @@ func HasStmt(subjectVar, attrName string, value Value) HasStatement
 ```
 
 HasStmt creates a HasStatement for the given subject variable, attribute name, and value. The value must be a Value type \(use Str\(\), Long\(\), etc. to create literal values\).
+
+<a name="IdentifierMatcher"></a>
+## type [IdentifierMatcher](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L9-L11>)
+
+IdentifierMatcher determines whether an identifier should be treated as an IID.
+
+```go
+type IdentifierMatcher interface {
+    IsIID(identifier string) bool
+}
+```
+
+<a name="DefaultIdentifierMatcher"></a>DefaultIdentifierMatcher treats values prefixed with "0x" as TypeDB IIDs.
+
+```go
+var DefaultIdentifierMatcher IdentifierMatcher = PrefixIdentifierMatcher{Prefix: "0x"}
+```
 
 <a name="IidConstraint"></a>
 ## type [IidConstraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L77-L80>)
@@ -834,6 +1063,98 @@ func Str(s string) LiteralValue
 
 Str creates a string LiteralValue.
 
+<a name="MatchBuilder"></a>
+## type [MatchBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L163-L165>)
+
+MatchBuilder is the concrete immutable builder for entity\-first match queries.
+
+```go
+type MatchBuilder struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="MatchBuilder.Build"></a>
+### func \(MatchBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L284>)
+
+```go
+func (b MatchBuilder) Build() (string, error)
+```
+
+Build compiles the fluent query into TypeQL.
+
+<a name="MatchBuilder.DeleteThing"></a>
+### func \(MatchBuilder\) [DeleteThing](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L253>)
+
+```go
+func (b MatchBuilder) DeleteThing() MatchStage
+```
+
+DeleteThing deletes the primary matched variable.
+
+<a name="MatchBuilder.Fetch"></a>
+### func \(MatchBuilder\) [Fetch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L260>)
+
+```go
+func (b MatchBuilder) Fetch(varName string, attrNames ...string) MatchResultStage
+```
+
+Fetch fetches one or more attributes from a variable.
+
+<a name="MatchBuilder.Has"></a>
+### func \(MatchBuilder\) [Has](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L218>)
+
+```go
+func (b MatchBuilder) Has(attrName string, value any) MatchStage
+```
+
+Has adds a has constraint to the primary matched variable.
+
+<a name="MatchBuilder.Iid"></a>
+### func \(MatchBuilder\) [Iid](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L225>)
+
+```go
+func (b MatchBuilder) Iid(iid string) MatchStage
+```
+
+Iid adds an iid constraint to the primary matched variable.
+
+<a name="MatchBuilder.MatchByIdentifier"></a>
+### func \(MatchBuilder\) [MatchByIdentifier](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L232>)
+
+```go
+func (b MatchBuilder) MatchByIdentifier(identifier, attrName string, matcher IdentifierMatcher) MatchStage
+```
+
+MatchByIdentifier matches by IID \(as determined by matcher\) or falls back to attribute matching.
+
+<a name="MatchBuilder.Nodes"></a>
+### func \(MatchBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L279>)
+
+```go
+func (b MatchBuilder) Nodes() []QueryNode
+```
+
+Nodes returns the compiled AST node sequence before string compilation.
+
+<a name="MatchBuilder.Select"></a>
+### func \(MatchBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L270>)
+
+```go
+func (b MatchBuilder) Select(vars ...string) MatchResultStage
+```
+
+Select adds a select clause with projected variables.
+
+<a name="MatchBuilder.Set"></a>
+### func \(MatchBuilder\) [Set](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L243>)
+
+```go
+func (b MatchBuilder) Set(attrName string, value any) MatchStage
+```
+
+Set emits a standard Match\-Delete\-Insert sequence for updating one attribute.
+
 <a name="MatchClause"></a>
 ## type [MatchClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L322-L325>)
 
@@ -866,6 +1187,125 @@ type MatchLetClause struct {
     Assignments []LetAssignment
 }
 ```
+
+<a name="MatchOutputBuilder"></a>
+## type [MatchOutputBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L168-L170>)
+
+MatchOutputBuilder is the concrete immutable output\-stage builder for match queries.
+
+```go
+type MatchOutputBuilder struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="MatchOutputBuilder.Build"></a>
+### func \(MatchOutputBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L337>)
+
+```go
+func (b MatchOutputBuilder) Build() (string, error)
+```
+
+Build compiles the fluent query into TypeQL.
+
+<a name="MatchOutputBuilder.Fetch"></a>
+### func \(MatchOutputBuilder\) [Fetch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L289>)
+
+```go
+func (b MatchOutputBuilder) Fetch(varName string, attrNames ...string) MatchResultStage
+```
+
+Fetch adds fetch attributes in output stage.
+
+<a name="MatchOutputBuilder.Limit"></a>
+### func \(MatchOutputBuilder\) [Limit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L316>)
+
+```go
+func (b MatchOutputBuilder) Limit(count int) MatchResultStage
+```
+
+Limit configures a limit clause in output stage.
+
+<a name="MatchOutputBuilder.Nodes"></a>
+### func \(MatchOutputBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L332>)
+
+```go
+func (b MatchOutputBuilder) Nodes() []QueryNode
+```
+
+Nodes returns the compiled AST node sequence before string compilation.
+
+<a name="MatchOutputBuilder.Offset"></a>
+### func \(MatchOutputBuilder\) [Offset](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L324>)
+
+```go
+func (b MatchOutputBuilder) Offset(count int) MatchResultStage
+```
+
+Offset configures an offset clause in output stage.
+
+<a name="MatchOutputBuilder.Select"></a>
+### func \(MatchOutputBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L299>)
+
+```go
+func (b MatchOutputBuilder) Select(vars ...string) MatchResultStage
+```
+
+Select adds a select clause with projected variables in output stage.
+
+<a name="MatchOutputBuilder.Sort"></a>
+### func \(MatchOutputBuilder\) [Sort](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L308>)
+
+```go
+func (b MatchOutputBuilder) Sort(variable, direction string) MatchResultStage
+```
+
+Sort configures a sort clause in output stage.
+
+<a name="MatchResultStage"></a>
+## type [MatchResultStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L137-L145>)
+
+MatchResultStage is the output stage for match queries. It supports fetch/select output shaping and pagination/sorting.
+
+```go
+type MatchResultStage interface {
+    Fetch(varName string, attrNames ...string) MatchResultStage
+    Select(vars ...string) MatchResultStage
+    Sort(variable, direction string) MatchResultStage
+    Limit(count int) MatchResultStage
+    Offset(count int) MatchResultStage
+    Build() (string, error)
+    Nodes() []QueryNode
+}
+```
+
+<a name="MatchStage"></a>
+## type [MatchStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L123-L133>)
+
+MatchStage is the pre\-output stage for match queries. It supports matching/mutation operations and can transition to MatchResultStage.
+
+```go
+type MatchStage interface {
+    Has(attrName string, value any) MatchStage
+    Iid(iid string) MatchStage
+    MatchByIdentifier(identifier, attrName string, matcher IdentifierMatcher) MatchStage
+    Set(attrName string, value any) MatchStage
+    DeleteThing() MatchStage
+    Fetch(varName string, attrNames ...string) MatchResultStage
+    Select(vars ...string) MatchResultStage
+    Build() (string, error)
+    Nodes() []QueryNode
+}
+```
+
+<a name="FluentMatch"></a>
+### func [FluentMatch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L183>)
+
+```go
+func FluentMatch(varName, typeName string) MatchStage
+```
+
+FluentMatch starts a fluent query with a primary matched variable/type.
 
 <a name="NotPattern"></a>
 ## type [NotPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L196-L199>)
@@ -921,6 +1361,22 @@ func Or(alternatives ...[]Pattern) OrPattern
 
 Or creates an OrPattern from multiple pattern alternatives. Each alternative is a slice of patterns that must all match.
 
+<a name="PaginatedSearchOptions"></a>
+## type [PaginatedSearchOptions](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L37-L44>)
+
+PaginatedSearchOptions configures PaginatedSearch output and pagination behavior.
+
+```go
+type PaginatedSearchOptions struct {
+    VarName        string
+    Limit          int
+    Offset         int
+    Sort           string // "name" for asc, "-name" for desc
+    FetchIIDKey    string
+    FetchEntityKey string
+}
+```
+
 <a name="Pattern"></a>
 ## type [Pattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L110-L113>)
 
@@ -932,6 +1388,26 @@ type Pattern interface {
     // contains filtered or unexported methods
 }
 ```
+
+<a name="PrefixIdentifierMatcher"></a>
+## type [PrefixIdentifierMatcher](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L14-L16>)
+
+PrefixIdentifierMatcher considers values with the configured prefix as IIDs.
+
+```go
+type PrefixIdentifierMatcher struct {
+    Prefix string
+}
+```
+
+<a name="PrefixIdentifierMatcher.IsIID"></a>
+### func \(PrefixIdentifierMatcher\) [IsIID](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L19>)
+
+```go
+func (m PrefixIdentifierMatcher) IsIID(identifier string) bool
+```
+
+IsIID reports whether identifier matches the configured IID prefix.
 
 <a name="PutClause"></a>
 ## type [PutClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L380-L383>)
