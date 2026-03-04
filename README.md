@@ -117,35 +117,13 @@ go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 ## Debugging hangs
 
-Enable debug logs only when needed:
-
-```bash
-export TYPEDB_GO_DEBUG=1
-export TYPEDB_GO_DEBUG_RUST=1
-# Optional tuning:
-export TYPEDB_GO_DEBUG_SLOW_MS=2000
-export TYPEDB_GO_DEBUG_TX_OPEN_WARN=64
-export TYPEDB_GO_DEBUG_TX_QUERY_WARN=32
-```
-
-Expected log keys:
-
-- `tx_id`, `db`, `tx_type`
-- `query_op` (`match|insert|delete|update|define|undefine|fetch|reduce|other`)
-- `query_fingerprint` (stable short hash, no raw query text)
-- `elapsed_ms`, `deadline_remaining_ms` (for `QueryWithContext`)
-- in-flight gauges: `active`, `high_water`, `warn_threshold`
-
-Quick interpretation:
-
-- Stuck before `tx.open` finishes: connection/auth/open path issue.
-- `tx.open` completes but `tx.query` does not: query execution path is blocked/hanging.
-- Large `tx.query_inflight` or `tx.open_inflight` high-water: likely contention or leak.
+See the dedicated guide: [Debugging Hangs](docs/DEBUGGING_HANGS.md).
 
 ## Docs
 
 - [Development Guide](docs/DEVELOPMENT.md) — building, project structure, Rust FFI, contributing
 - [Testing Guide](docs/TESTING.md) — test strategy, mocks, integration test infrastructure
+- [Debugging Hangs](docs/DEBUGGING_HANGS.md) — debug flags, log keys, startup-hang diagnostics
 - [API Reference](docs/api/README.md) — models, CRUD, queries, filters, schema, migration, code generator
 
 ## Requirements
