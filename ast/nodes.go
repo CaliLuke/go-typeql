@@ -341,6 +341,8 @@ func (LetAssignment) queryNode() {}
 
 // MatchLetClause represents a 'match' clause using 'let' assignments.
 type MatchLetClause struct {
+	// Patterns are optional match patterns evaluated before let assignments.
+	Patterns []Pattern
 	// Assignments are the let assignments in the clause.
 	Assignments []LetAssignment
 }
@@ -444,8 +446,8 @@ type FetchAttribute struct {
 	AttrName string
 }
 
-func (FetchAttribute) queryNode()       {}
-func (FetchAttribute) fetchItem()       {}
+func (FetchAttribute) queryNode() {}
+func (FetchAttribute) fetchItem() {}
 
 // FetchKey returns the output key for the attribute.
 func (f FetchAttribute) FetchKey() string { return f.Key }
@@ -458,8 +460,8 @@ type FetchVariable struct {
 	Var string
 }
 
-func (FetchVariable) queryNode()       {}
-func (FetchVariable) fetchItem()       {}
+func (FetchVariable) queryNode() {}
+func (FetchVariable) fetchItem() {}
 
 // FetchKey returns the output key for the variable.
 func (f FetchVariable) FetchKey() string { return f.Key }
@@ -474,8 +476,8 @@ type FetchAttributeList struct {
 	AttrName string
 }
 
-func (FetchAttributeList) queryNode()       {}
-func (FetchAttributeList) fetchItem()       {}
+func (FetchAttributeList) queryNode() {}
+func (FetchAttributeList) fetchItem() {}
 
 // FetchKey returns the output key for the attribute list.
 func (f FetchAttributeList) FetchKey() string { return f.Key }
@@ -490,8 +492,8 @@ type FetchFunction struct {
 	Var string
 }
 
-func (FetchFunction) queryNode()       {}
-func (FetchFunction) fetchItem()       {}
+func (FetchFunction) queryNode() {}
+func (FetchFunction) fetchItem() {}
 
 // FetchKey returns the output key for the function result.
 func (f FetchFunction) FetchKey() string { return f.Key }
@@ -504,8 +506,8 @@ type FetchWildcard struct {
 	Var string
 }
 
-func (FetchWildcard) queryNode()       {}
-func (FetchWildcard) fetchItem()       {}
+func (FetchWildcard) queryNode() {}
+func (FetchWildcard) fetchItem() {}
 
 // FetchKey returns the output key for the wildcard.
 func (f FetchWildcard) FetchKey() string { return f.Key }
@@ -518,8 +520,8 @@ type FetchNestedWildcard struct {
 	Var string
 }
 
-func (FetchNestedWildcard) queryNode()       {}
-func (FetchNestedWildcard) fetchItem()       {}
+func (FetchNestedWildcard) queryNode() {}
+func (FetchNestedWildcard) fetchItem() {}
 
 // FetchKey returns the output key for the nested wildcard.
 func (f FetchNestedWildcard) FetchKey() string { return f.Key }

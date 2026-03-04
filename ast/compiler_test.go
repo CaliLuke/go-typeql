@@ -508,6 +508,21 @@ func TestCompiler_MatchLetClause(t *testing.T) {
 			},
 			want: "match\nlet $x = iid($p);",
 		},
+		{
+			name: "patterns and let assignment",
+			node: MatchLetClause{
+				Patterns: []Pattern{
+					Entity("$target", "artifact", Has("display_id", Str("A-123"))),
+				},
+				Assignments: []LetAssignment{
+					{
+						Variables:  []string{"$did"},
+						Expression: FunctionCallValue{Function: "display_id", Args: []any{"$target"}},
+					},
+				},
+			},
+			want: "match\n$target isa artifact, has display_id \"A-123\";\nlet $did = display_id($target);",
+		},
 	}
 
 	for _, tt := range tests {

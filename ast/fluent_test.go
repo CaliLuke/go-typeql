@@ -187,3 +187,71 @@ func TestFluentBuilders_Nodes(t *testing.T) {
 		t.Fatalf("third node should be LimitClause, got %T", nodes[2])
 	}
 }
+
+func TestFluentPatterns_LetStream_SelectBuild(t *testing.T) {
+	query, err := FluentPatterns(
+		Entity("$target", "artifact", Has("display_id", Str("A-123"))),
+	).Let(LetAssignment{
+		Variables:  []string{"$iid_t", "$iid_o", "$did_t", "$did_o", "$rel_label", "$role_t", "$role_o"},
+		Expression: FuncCall("get_edges_for_node", "$target"),
+		IsStream:   true,
+	}).
+		Select("$iid_t", "$iid_o", "$did_t", "$did_o", "$rel_label", "$role_t", "$role_o").
+		Build()
+	if err != nil {
+		t.Fatalf("build error: %v", err)
+	}
+
+	if !strings.Contains(query, `$target isa artifact, has display_id "A-123"`) {
+		t.Fatalf("expected pattern in match-let clause, got:\n%s", query)
+	}
+	if !strings.Contains(query, "let $iid_t, $iid_o, $did_t, $did_o, $rel_label, $role_t, $role_o in get_edges_for_node($target);") {
+		t.Fatalf("expected stream let assignment, got:\n%s", query)
+	}
+	if !strings.Contains(query, "select $iid_t, $iid_o, $did_t, $did_o, $rel_label, $role_t, $role_o;") {
+		t.Fatalf("expected select clause, got:\n%s", query)
+	}
+}
+
+func TestFluentPatterns_WhereOrAndExplicitMutationStatements(t *testing.T) {
+	query, err := FluentPatterns(
+		Entity("$n", "artifact"),
+	).Where(
+		Relation("$r", "edge", []RolePlayer{
+			Role("from", "$n"),
+			Role("to", "$other"),
+		}),
+	).Or(
+		[]Pattern{Entity("$other", "task")},
+		[]Pattern{Entity("$other", "user-story")},
+	).
+		DeleteHas("$old_status", "$n").
+		InsertHas("$n", "status", "done").
+		Build()
+	if err != nil {
+		t.Fatalf("build error: %v", err)
+	}
+
+	if !strings.Contains(query, "$r isa edge (from: $n, to: $other)") {
+		t.Fatalf("expected relation pattern in where clause, got:\n%s", query)
+	}
+	if !strings.Contains(query, "{ $other isa task; } or { $other isa user-story; }") {
+		t.Fatalf("expected or alternatives, got:\n%s", query)
+	}
+	if !strings.Contains(query, "delete\n$old_status of $n;") {
+		t.Fatalf("expected explicit delete-has statement, got:\n%s", query)
+	}
+	if !strings.Contains(query, "insert\n$n has status \"done\";") {
+		t.Fatalf("expected explicit insert has statement, got:\n%s", query)
+	}
+}
+
+func TestFluentBuilders_BuildNodesAlias(t *testing.T) {
+	nodes := FluentPatterns(Entity("$n", "task")).Select("n").Limit(2).BuildNodes()
+	if len(nodes) != 3 {
+		t.Fatalf("expected 3 nodes (match + select + limit), got %d", len(nodes))
+	}
+	if _, ok := nodes[0].(MatchClause); !ok {
+		t.Fatalf("first node should be MatchClause, got %T", nodes[0])
+	}
+}

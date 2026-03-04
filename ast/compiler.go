@@ -155,6 +155,14 @@ func (c *Compiler) compileClause(clause Clause) (string, error) {
 }
 
 func (c *Compiler) compileMatchLet(clause MatchLetClause) (string, error) {
+	lines := make([]string, 0, len(clause.Patterns)+len(clause.Assignments))
+	for _, pattern := range clause.Patterns {
+		compiled, err := c.compilePattern(pattern)
+		if err != nil {
+			return "", err
+		}
+		lines = append(lines, compiled)
+	}
 	assignments := make([]string, 0, len(clause.Assignments))
 	for _, a := range clause.Assignments {
 		compiled, err := c.compileLetAssignment(a)
@@ -163,7 +171,8 @@ func (c *Compiler) compileMatchLet(clause MatchLetClause) (string, error) {
 		}
 		assignments = append(assignments, compiled)
 	}
-	return "match\n" + strings.Join(assignments, ";\n") + ";", nil
+	lines = append(lines, assignments...)
+	return "match\n" + strings.Join(lines, ";\n") + ";", nil
 }
 
 func (c *Compiler) compileLetAssignment(a LetAssignment) (string, error) {

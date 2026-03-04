@@ -85,10 +85,12 @@ func (s fluentState) clone() fluentState {
 
 func (s fluentState) nodes() []QueryNode {
 	nodes := make([]QueryNode, 0, 8)
-	if len(s.matchLet) > 0 {
-		nodes = append(nodes, MatchLetClause{Assignments: s.matchLet})
-	} else if len(s.matchPatterns) > 0 {
-		nodes = append(nodes, Match(s.matchPatterns...))
+	if len(s.matchLet) > 0 || len(s.matchPatterns) > 0 {
+		if len(s.matchLet) > 0 {
+			nodes = append(nodes, MatchLetClause{Patterns: s.matchPatterns, Assignments: s.matchLet})
+		} else {
+			nodes = append(nodes, Match(s.matchPatterns...))
+		}
 	}
 	if len(s.deleteStatements) > 0 {
 		nodes = append(nodes, Delete(s.deleteStatements...))
@@ -124,12 +126,18 @@ type MatchStage interface {
 	Has(attrName string, value any) MatchStage
 	Iid(iid string) MatchStage
 	MatchByIdentifier(identifier, attrName string, matcher IdentifierMatcher) MatchStage
+	Where(patterns ...Pattern) MatchStage
+	Or(alternatives ...[]Pattern) MatchStage
+	Let(assignments ...LetAssignment) MatchStage
 	Set(attrName string, value any) MatchStage
+	DeleteHas(attrVar, ownerVar string) MatchStage
+	InsertHas(ownerVar, attrName string, value any) MatchStage
 	DeleteThing() MatchStage
 	Fetch(varName string, attrNames ...string) MatchResultStage
 	Select(vars ...string) MatchResultStage
 	Build() (string, error)
 	Nodes() []QueryNode
+	BuildNodes() []QueryNode
 }
 
 // MatchResultStage is the output stage for match queries.
@@ -142,6 +150,7 @@ type MatchResultStage interface {
 	Offset(count int) MatchResultStage
 	Build() (string, error)
 	Nodes() []QueryNode
+	BuildNodes() []QueryNode
 }
 
 // FunctionStage is the pre-output stage for function-based match-let queries.
@@ -157,6 +166,7 @@ type FunctionResultStage interface {
 	Offset(count int) FunctionResultStage
 	Build() (string, error)
 	Nodes() []QueryNode
+	BuildNodes() []QueryNode
 }
 
 // MatchBuilder is the concrete immutable builder for entity-first match queries.
@@ -185,6 +195,14 @@ func FluentMatch(varName, typeName string) MatchStage {
 	return MatchBuilder{state: fluentState{
 		mainVar:       v,
 		matchPatterns: []Pattern{Entity(v, typeName)},
+	}}
+}
+
+// FluentPatterns starts a fluent query from arbitrary match patterns.
+func FluentPatterns(patterns ...Pattern) MatchStage {
+	return MatchBuilder{state: fluentState{
+		mainVar:       inferMainVar(patterns),
+		matchPatterns: append([]Pattern(nil), patterns...),
 	}}
 }
 
@@ -239,6 +257,27 @@ func (b MatchBuilder) MatchByIdentifier(identifier, attrName string, matcher Ide
 	return b.Has(attrName, identifier)
 }
 
+// Where appends arbitrary patterns to the match clause.
+func (b MatchBuilder) Where(patterns ...Pattern) MatchStage {
+	next := b.state.clone()
+	next.matchPatterns = append(next.matchPatterns, patterns...)
+	return MatchBuilder{state: next}
+}
+
+// Or appends an or-pattern with alternatives to the match clause.
+func (b MatchBuilder) Or(alternatives ...[]Pattern) MatchStage {
+	next := b.state.clone()
+	next.matchPatterns = append(next.matchPatterns, Or(alternatives...))
+	return MatchBuilder{state: next}
+}
+
+// Let appends let assignments to the match clause.
+func (b MatchBuilder) Let(assignments ...LetAssignment) MatchStage {
+	next := b.state.clone()
+	next.matchLet = append(next.matchLet, assignments...)
+	return MatchBuilder{state: next}
+}
+
 // Set emits a standard Match-Delete-Insert sequence for updating one attribute.
 func (b MatchBuilder) Set(attrName string, value any) MatchStage {
 	next := b.state.clone()
@@ -246,6 +285,32 @@ func (b MatchBuilder) Set(attrName string, value any) MatchStage {
 	next.matchPatterns = append(next.matchPatterns, HasPattern{ThingVar: next.mainVar, AttrType: attrName, AttrVar: oldVar})
 	next.deleteStatements = append(next.deleteStatements, DeleteHas(oldVar, next.mainVar))
 	next.insertStatements = append(next.insertStatements, HasStmt(next.mainVar, attrName, ValueFromGo(value)))
+	return MatchBuilder{state: next}
+}
+
+// DeleteHas emits an explicit delete-has statement.
+func (b MatchBuilder) DeleteHas(attrVar, ownerVar string) MatchStage {
+	next := b.state.clone()
+	attr := ensureVar(attrVar)
+	if attrVar == "" {
+		attr = "$old"
+	}
+	owner := ensureVar(ownerVar)
+	if ownerVar == "" {
+		owner = next.mainVar
+	}
+	next.deleteStatements = append(next.deleteStatements, DeleteHas(attr, owner))
+	return MatchBuilder{state: next}
+}
+
+// InsertHas emits an explicit has insert statement.
+func (b MatchBuilder) InsertHas(ownerVar, attrName string, value any) MatchStage {
+	next := b.state.clone()
+	owner := ensureVar(ownerVar)
+	if ownerVar == "" {
+		owner = next.mainVar
+	}
+	next.insertStatements = append(next.insertStatements, HasStmt(owner, attrName, ValueFromGo(value)))
 	return MatchBuilder{state: next}
 }
 
@@ -278,6 +343,11 @@ func (b MatchBuilder) Select(vars ...string) MatchResultStage {
 // Nodes returns the compiled AST node sequence before string compilation.
 func (b MatchBuilder) Nodes() []QueryNode {
 	return b.state.nodes()
+}
+
+// BuildNodes returns the compiled AST node sequence before string compilation.
+func (b MatchBuilder) BuildNodes() []QueryNode {
+	return b.Nodes()
 }
 
 // Build compiles the fluent query into TypeQL.
@@ -333,6 +403,11 @@ func (b MatchOutputBuilder) Nodes() []QueryNode {
 	return b.state.nodes()
 }
 
+// BuildNodes returns the compiled AST node sequence before string compilation.
+func (b MatchOutputBuilder) BuildNodes() []QueryNode {
+	return b.Nodes()
+}
+
 // Build compiles the fluent query into TypeQL.
 func (b MatchOutputBuilder) Build() (string, error) {
 	return b.state.build()
@@ -383,6 +458,11 @@ func (b FunctionOutputBuilder) Offset(count int) FunctionResultStage {
 // Nodes returns the compiled AST node sequence before string compilation.
 func (b FunctionOutputBuilder) Nodes() []QueryNode {
 	return b.state.nodes()
+}
+
+// BuildNodes returns the compiled AST node sequence before string compilation.
+func (b FunctionOutputBuilder) BuildNodes() []QueryNode {
+	return b.Nodes()
 }
 
 // Build compiles the fluent query into TypeQL.
@@ -488,6 +568,30 @@ func (s *fluentState) addPatternConstraint(constraint Constraint) {
 	}
 	first.Constraints = append(first.Constraints, constraint)
 	s.matchPatterns[0] = first
+}
+
+func inferMainVar(patterns []Pattern) string {
+	for _, pattern := range patterns {
+		switch p := pattern.(type) {
+		case EntityPattern:
+			if p.Variable != "" {
+				return p.Variable
+			}
+		case RelationPattern:
+			if p.Variable != "" {
+				return p.Variable
+			}
+		case HasPattern:
+			if p.ThingVar != "" {
+				return p.ThingVar
+			}
+		case ValueComparisonPattern:
+			if p.Var != "" {
+				return p.Var
+			}
+		}
+	}
+	return "$n"
 }
 
 func ensureVar(v string) string {

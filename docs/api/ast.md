@@ -74,12 +74,16 @@ if err != nil {
 The fluent API supports:
 
 - `FluentMatch(var, type)` for entity-first query composition
+- `FluentPatterns(patterns...)` for arbitrary pattern-first composition
 - `MatchFunction(name, args...)` for TypeDB function calls via `match let`
 - `MatchByIdentifier(identifier, attr, matcher)` for ID-agnostic matching
+- `Where(patterns...)`, `Or(alternatives...)` for composing complex constraints
+- `Let(assignments...)` including stream assignments via `LetAssignment{IsStream: true}`
 - `Set(attr, value)` for standard Match-Delete-Insert attribute updates
+- `DeleteHas(attrVar, ownerVar)`, `InsertHas(ownerVar, attr, value)` for explicit mutation clauses
 - `DeleteThing()`, `Fetch(...)`, `Select(...)`
 - `Sort(...)`, `Offset(...)`, `Limit(...)` on output stages only
-- `Nodes()` for AST inspection before compilation
+- `Nodes()` / `BuildNodes()` for AST inspection before compilation
 - Immutable chaining (each call returns a new builder)
 
 Stage types:
