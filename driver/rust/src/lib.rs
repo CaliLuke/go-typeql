@@ -7,8 +7,8 @@
 
 use std::ffi::{c_char, CStr, CString};
 use std::ptr::null_mut;
-use std::sync::Once;
-use std::time::Duration;
+use std::sync::{Once, OnceLock};
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
@@ -115,6 +115,63 @@ pub extern "C" fn typedb_init_logging() {
     INIT.call_once(|| {});
 }
 
+fn rust_debug_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        let value = std::env::var("TYPEDB_GO_DEBUG_RUST")
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase();
+        matches!(value.as_str(), "1" | "true" | "yes" | "on" | "debug")
+    })
+}
+
+fn rust_debug_log(event: &str, fields: Vec<(&'static str, String)>) {
+    if !rust_debug_enabled() {
+        return;
+    }
+    let mut msg = format!("typedb_go_rust.{}", event);
+    for (key, value) in fields {
+        msg.push(' ');
+        msg.push_str(key);
+        msg.push('=');
+        msg.push_str(&value);
+    }
+    eprintln!("{}", msg);
+}
+
+fn rust_debug_log_timed(event: &str, start: Instant, mut fields: Vec<(&'static str, String)>) {
+    if !rust_debug_enabled() {
+        return;
+    }
+    fields.push(("elapsed_ms", start.elapsed().as_millis().to_string()));
+    rust_debug_log(event, fields);
+}
+
+fn query_op(query: &str) -> String {
+    let first = query
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_matches(';')
+        .to_lowercase();
+    match first.as_str() {
+        "match" | "insert" | "delete" | "update" | "define" | "undefine" | "fetch" | "reduce" => first,
+        _ => "other".to_string(),
+    }
+}
+
+fn query_fingerprint(query: &str) -> String {
+    const OFFSET: u64 = 14695981039346656037;
+    const PRIME: u64 = 1099511628211;
+    let mut hash = OFFSET;
+    for b in query.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(PRIME);
+    }
+    format!("{:016x}", hash)
+}
+
 // ---------------------------------------------------------------------------
 // Credentials
 // ---------------------------------------------------------------------------
@@ -182,11 +239,34 @@ pub extern "C" fn typedb_driver_open(
     options: *const DriverOptions,
     err_out: *mut *mut c_char,
 ) -> *mut TypeDBDriver {
+    let start = Instant::now();
+    let address_value = c_str(address).to_string();
+    rust_debug_log(
+        "ffi.typedb_driver_open.enter",
+        vec![("address", address_value.clone())],
+    );
+
     let creds = unsafe { &*credentials };
     let opts = unsafe { &*options };
     match TypeDBDriver::new_with_description(c_str(address), creds.clone(), opts.clone(), "go") {
-        Ok(driver) => Box::into_raw(Box::new(driver)),
+        Ok(driver) => {
+            rust_debug_log_timed(
+                "ffi.typedb_driver_open.exit",
+                start,
+                vec![("address", address_value), ("result", "ok".to_string())],
+            );
+            Box::into_raw(Box::new(driver))
+        }
         Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_driver_open.exit",
+                start,
+                vec![
+                    ("address", address_value),
+                    ("result", "error".to_string()),
+                    ("error", e.to_string()),
+                ],
+            );
             set_error(err_out, e);
             null_mut()
         }
@@ -409,6 +489,16 @@ pub extern "C" fn typedb_transaction_open(
     options: *const TransactionOptions,
     err_out: *mut *mut c_char,
 ) -> *mut Transaction {
+    let start = Instant::now();
+    let db_name = c_str(database_name).to_string();
+    rust_debug_log(
+        "ffi.typedb_transaction_open.enter",
+        vec![
+            ("db", db_name.clone()),
+            ("tx_type", transaction_type.to_string()),
+        ],
+    );
+
     let d = unsafe { &*driver };
     let tt = to_transaction_type(transaction_type);
     let opts = if options.is_null() {
@@ -417,8 +507,29 @@ pub extern "C" fn typedb_transaction_open(
         unsafe { *(&*options) }
     };
     match d.transaction_with_options(c_str(database_name), tt, opts) {
-        Ok(txn) => Box::into_raw(Box::new(txn)),
+        Ok(txn) => {
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_open.exit",
+                start,
+                vec![
+                    ("db", db_name),
+                    ("tx_type", transaction_type.to_string()),
+                    ("result", "ok".to_string()),
+                ],
+            );
+            Box::into_raw(Box::new(txn))
+        }
         Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_open.exit",
+                start,
+                vec![
+                    ("db", db_name),
+                    ("tx_type", transaction_type.to_string()),
+                    ("result", "error".to_string()),
+                    ("error", e.to_string()),
+                ],
+            );
             set_error(err_out, e);
             null_mut()
         }
@@ -447,6 +558,19 @@ pub extern "C" fn typedb_transaction_query(
     out_len: *mut usize,
     err_out: *mut *mut c_char,
 ) -> *mut u8 {
+    let start = Instant::now();
+    let query_text = c_str(query);
+    let op = query_op(query_text);
+    let fingerprint = query_fingerprint(query_text);
+    rust_debug_log(
+        "ffi.typedb_transaction_query.enter",
+        vec![
+            ("query_op", op.clone()),
+            ("query_fingerprint", fingerprint.clone()),
+            ("query_len", query_text.len().to_string()),
+        ],
+    );
+
     let t = unsafe { &*txn };
     let opts = if options.is_null() {
         QueryOptions::new()
@@ -458,14 +582,50 @@ pub extern "C" fn typedb_transaction_query(
     let answer: QueryAnswer = match promise.resolve() {
         Ok(a) => a,
         Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_query.exit",
+                start,
+                vec![
+                    ("query_op", op.clone()),
+                    ("query_fingerprint", fingerprint.clone()),
+                    ("query_len", query_text.len().to_string()),
+                    ("result", "error".to_string()),
+                    ("error", e.to_string()),
+                ],
+            );
             set_error(err_out, e);
             return null_mut();
         }
     };
 
     match collect_answer_to_msgpack(answer) {
-        Ok(bytes) => vec_to_raw(bytes, out_len),
+        Ok(bytes) => {
+            let rows_or_bytes = bytes.len();
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_query.exit",
+                start,
+                vec![
+                    ("query_op", op),
+                    ("query_fingerprint", fingerprint),
+                    ("query_len", query_text.len().to_string()),
+                    ("result", "ok".to_string()),
+                    ("bytes", rows_or_bytes.to_string()),
+                ],
+            );
+            vec_to_raw(bytes, out_len)
+        }
         Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_query.exit",
+                start,
+                vec![
+                    ("query_op", op),
+                    ("query_fingerprint", fingerprint),
+                    ("query_len", query_text.len().to_string()),
+                    ("result", "error".to_string()),
+                    ("error", e.clone()),
+                ],
+            );
             set_error(err_out, e);
             null_mut()
         }
@@ -557,32 +717,80 @@ fn collect_answer_to_values(answer: QueryAnswer) -> Result<Vec<serde_json::Value
 /// Commit the transaction and free it.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_commit(txn: *mut Transaction, err_out: *mut *mut c_char) {
+    let start = Instant::now();
+    rust_debug_log("ffi.typedb_transaction_commit.enter", vec![]);
     if txn.is_null() {
+        rust_debug_log_timed(
+            "ffi.typedb_transaction_commit.exit",
+            start,
+            vec![("result", "nil_txn".to_string())],
+        );
         return;
     }
     let t = unsafe { Box::from_raw(txn) };
     if let Err(e) = t.commit().resolve() {
+        rust_debug_log_timed(
+            "ffi.typedb_transaction_commit.exit",
+            start,
+            vec![("result", "error".to_string()), ("error", e.to_string())],
+        );
         set_error(err_out, e);
+        return;
     }
+    rust_debug_log_timed(
+        "ffi.typedb_transaction_commit.exit",
+        start,
+        vec![("result", "ok".to_string())],
+    );
 }
 
 /// Rollback the transaction.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_rollback(txn: *const Transaction, err_out: *mut *mut c_char) {
+    let start = Instant::now();
+    rust_debug_log("ffi.typedb_transaction_rollback.enter", vec![]);
     if txn.is_null() {
+        rust_debug_log_timed(
+            "ffi.typedb_transaction_rollback.exit",
+            start,
+            vec![("result", "nil_txn".to_string())],
+        );
         return;
     }
     let t = unsafe { &*txn };
     if let Err(e) = t.rollback().resolve() {
+        rust_debug_log_timed(
+            "ffi.typedb_transaction_rollback.exit",
+            start,
+            vec![("result", "error".to_string()), ("error", e.to_string())],
+        );
         set_error(err_out, e);
+        return;
     }
+    rust_debug_log_timed(
+        "ffi.typedb_transaction_rollback.exit",
+        start,
+        vec![("result", "ok".to_string())],
+    );
 }
 
 /// Close and free the transaction without committing.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_close(txn: *mut Transaction) {
+    let start = Instant::now();
+    rust_debug_log("ffi.typedb_transaction_close.enter", vec![]);
     if !txn.is_null() {
-        unsafe { drop(Box::from_raw(txn)) }
+        unsafe { drop(Box::from_raw(txn)) };
+        rust_debug_log_timed(
+            "ffi.typedb_transaction_close.exit",
+            start,
+            vec![("result", "ok".to_string())],
+        );
+        return;
     }
+    rust_debug_log_timed(
+        "ffi.typedb_transaction_close.exit",
+        start,
+        vec![("result", "nil_txn".to_string())],
+    );
 }
-

@@ -77,7 +77,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.5.0
+go get github.com/CaliLuke/go-typeql@v1.5.1
 ```
 
 The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires the Rust FFI static library — you can either build it from source or use a prebuilt binary.
@@ -88,7 +88,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 
 ```bash
 # Download for your platform
-gh release download v1.3.1 -p 'libtypedb_go_ffi-linux-amd64.a' -R CaliLuke/go-typeql
+gh release download v1.5.1 -p 'libtypedb_go_ffi-linux-amd64.a' -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 cp libtypedb_go_ffi-linux-amd64.a /usr/local/lib/libtypedb_go_ffi.a
@@ -107,13 +107,40 @@ For a complete runnable example covering connect, schema, and CRUD, see the [Get
 ## Running tests
 
 ```bash
-# Unit tests (392 tests, no database needed)
+# Unit tests (395 tests, no database needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (needs TypeDB on port 1729)
 podman compose up -d
 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
+
+## Debugging hangs
+
+Enable debug logs only when needed:
+
+```bash
+export TYPEDB_GO_DEBUG=1
+export TYPEDB_GO_DEBUG_RUST=1
+# Optional tuning:
+export TYPEDB_GO_DEBUG_SLOW_MS=2000
+export TYPEDB_GO_DEBUG_TX_OPEN_WARN=64
+export TYPEDB_GO_DEBUG_TX_QUERY_WARN=32
+```
+
+Expected log keys:
+
+- `tx_id`, `db`, `tx_type`
+- `query_op` (`match|insert|delete|update|define|undefine|fetch|reduce|other`)
+- `query_fingerprint` (stable short hash, no raw query text)
+- `elapsed_ms`, `deadline_remaining_ms` (for `QueryWithContext`)
+- in-flight gauges: `active`, `high_water`, `warn_threshold`
+
+Quick interpretation:
+
+- Stuck before `tx.open` finishes: connection/auth/open path issue.
+- `tx.open` completes but `tx.query` does not: query execution path is blocked/hanging.
+- Large `tx.query_inflight` or `tx.open_inflight` high-water: likely contention or leak.
 
 ## Docs
 

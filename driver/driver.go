@@ -11,6 +11,7 @@ package driver
 import "C"
 import (
 	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -26,8 +27,12 @@ const (
 	Schema TransactionType = 2
 )
 
-func init() {
-	C.typedb_init_logging()
+var loggingInitOnce sync.Once
+
+func ensureLoggingInitialized() {
+	loggingInitOnce.Do(func() {
+		C.typedb_init_logging()
+	})
 }
 
 // Driver represents an active connection to a TypeDB server.
@@ -47,6 +52,9 @@ func Open(address, username, password string) (*Driver, error) {
 // If tlsEnabled is true, it establishes an encrypted connection.
 // tlsRootCA can optionally specify a path to a custom root certificate authority.
 func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA string) (*Driver, error) {
+	ensureLoggingInitialized()
+	start := time.Now()
+	logFFIDebug("driver.open.start", "address", address, "tls_enabled", tlsEnabled, "has_tls_ca", tlsRootCA != "")
 
 	cAddr := C.CString(address)
 	defer C.free(unsafe.Pointer(cAddr))
@@ -59,6 +67,7 @@ func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA 
 
 	creds := C.typedb_credentials_new(cUser, cPass)
 	if creds == nil {
+		logFFIDuration("driver.open", start, "address", address, "result", "error", "error_type", "nil_credentials")
 		return nil, ErrNilPointer
 	}
 	defer C.typedb_credentials_drop(creds)
@@ -73,8 +82,10 @@ func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA 
 	opts := C.typedb_driver_options_new(C.bool(tlsEnabled), cCA, &optsErr)
 	if opts == nil {
 		if err := getError(optsErr); err != nil {
+			logFFIDuration("driver.open", start, "address", address, "result", "error", "error", err.Error())
 			return nil, err
 		}
+		logFFIDuration("driver.open", start, "address", address, "result", "error", "error_type", "nil_driver_options")
 		return nil, ErrNilPointer
 	}
 	defer C.typedb_driver_options_drop(opts)
@@ -83,11 +94,14 @@ func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA 
 	ptr := C.typedb_driver_open(cAddr, creds, opts, &openErr)
 	if ptr == nil {
 		if err := getError(openErr); err != nil {
+			logFFIDuration("driver.open", start, "address", address, "result", "error", "error", err.Error())
 			return nil, err
 		}
+		logFFIDuration("driver.open", start, "address", address, "result", "error", "error_type", "nil_driver_ptr")
 		return nil, ErrNilPointer
 	}
 
+	logFFIDuration("driver.open", start, "address", address, "result", "ok")
 	return &Driver{ptr: ptr}, nil
 }
 
@@ -106,8 +120,10 @@ func (d *Driver) Close() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.ptr != nil {
+		start := time.Now()
 		C.typedb_driver_close(d.ptr)
 		d.ptr = nil
+		logFFIDuration("driver.close", start, "result", "ok")
 	}
 }
 
@@ -118,10 +134,13 @@ func (d *Driver) Transaction(databaseName string, txnType TransactionType) (*Tra
 
 // TransactionWithOptions opens a new transaction with the given options.
 func (d *Driver) TransactionWithOptions(databaseName string, txnType TransactionType, opts *TransactionOptions) (*Transaction, error) {
+	start := time.Now()
+	txID := nextTxID()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if d.ptr == nil {
+		logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", ErrNotConnected.Error())
 		return nil, ErrNotConnected
 	}
 
@@ -137,12 +156,15 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 	ptr := C.typedb_transaction_open(d.ptr, cName, C.int(txnType), cOpts, &txErr)
 	if ptr == nil {
 		if err := getError(txErr); err != nil {
+			logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", err.Error())
 			return nil, err
 		}
+		logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error_type", "nil_tx_ptr")
 		return nil, ErrNilPointer
 	}
 
-	return &Transaction{ptr: ptr}, nil
+	logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "ok")
+	return newTransaction(ptr, txID, databaseName, txnType), nil
 }
 
 // Databases returns a DatabaseManager for this connection.
