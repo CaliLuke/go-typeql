@@ -136,12 +136,12 @@ func setIID(v reflect.Value, iid string) {
 		if !fv.CanAddr() {
 			continue
 		}
-		addr := fv.Addr().Interface()
-		if e, ok := addr.(*BaseEntity); ok {
+		addr := fv.Addr()
+		if e, ok := reflect.TypeAssert[*BaseEntity](addr); ok {
 			e.SetIID(iid)
 			return
 		}
-		if r, ok := addr.(*BaseRelation); ok {
+		if r, ok := reflect.TypeAssert[*BaseRelation](addr); ok {
 			r.SetIID(iid)
 			return
 		}

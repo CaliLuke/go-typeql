@@ -729,11 +729,11 @@ func setIIDOn[T any](instance *T, iid string) {
 		if !fv.CanAddr() {
 			continue
 		}
-		if e, ok := fv.Addr().Interface().(*BaseEntity); ok {
+		if e, ok := reflect.TypeAssert[*BaseEntity](fv.Addr()); ok {
 			e.SetIID(iid)
 			return
 		}
-		if r, ok := fv.Addr().Interface().(*BaseRelation); ok {
+		if r, ok := reflect.TypeAssert[*BaseRelation](fv.Addr()); ok {
 			r.SetIID(iid)
 			return
 		}

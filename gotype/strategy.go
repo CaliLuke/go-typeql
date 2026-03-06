@@ -479,10 +479,10 @@ func getIIDFromValue(v reflect.Value) string {
 		if !fv.CanAddr() {
 			continue
 		}
-		if e, ok := fv.Addr().Interface().(*BaseEntity); ok {
+		if e, ok := reflect.TypeAssert[*BaseEntity](fv.Addr()); ok {
 			return e.GetIID()
 		}
-		if r, ok := fv.Addr().Interface().(*BaseRelation); ok {
+		if r, ok := reflect.TypeAssert[*BaseRelation](fv.Addr()); ok {
 			return r.GetIID()
 		}
 	}

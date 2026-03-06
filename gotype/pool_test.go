@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -248,48 +249,47 @@ func TestConnPool_DeadConnectionDiscarded(t *testing.T) {
 }
 
 func TestConnPool_ConcurrentAccess(t *testing.T) {
-	var connID atomic.Int32
-	factory := func() (Conn, error) {
-		id := connID.Add(1)
-		return newPoolMockConn(int(id)), nil
-	}
+	synctest.Test(t, func(t *testing.T) {
+		var connID atomic.Int32
+		factory := func() (Conn, error) {
+			id := connID.Add(1)
+			return newPoolMockConn(int(id)), nil
+		}
 
-	config := PoolConfig{MinSize: 2, MaxSize: 10}
-	pool, err := NewConnPool(config, factory)
-	if err != nil {
-		t.Fatalf("NewConnPool failed: %v", err)
-	}
-	defer pool.Close()
+		config := PoolConfig{MinSize: 2, MaxSize: 10}
+		pool, err := NewConnPool(config, factory)
+		if err != nil {
+			t.Fatalf("NewConnPool failed: %v", err)
+		}
+		defer pool.Close()
 
-	ctx := context.Background()
-	var wg sync.WaitGroup
+		ctx := context.Background()
+		var wg sync.WaitGroup
 
-	// Spawn 20 goroutines that each get and put a connection
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			conn, err := pool.Get(ctx)
-			if err != nil {
-				t.Errorf("Get failed: %v", err)
-				return
-			}
-			// Simulate some work
-			time.Sleep(10 * time.Millisecond)
-			pool.Put(conn)
-		}()
-	}
+		// Spawn 20 goroutines that each get and put a connection.
+		for i := 0; i < 20; i++ {
+			wg.Go(func() {
+				conn, err := pool.Get(ctx)
+				if err != nil {
+					t.Errorf("Get failed: %v", err)
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+				pool.Put(conn)
+			})
+		}
 
-	wg.Wait()
+		wg.Wait()
 
-	stats := pool.Stats()
-	if stats.InUse != 0 {
-		t.Errorf("Expected all connections returned, got InUse=%d", stats.InUse)
-	}
+		stats := pool.Stats()
+		if stats.InUse != 0 {
+			t.Errorf("Expected all connections returned, got InUse=%d", stats.InUse)
+		}
 
-	if stats.Total > 10 {
-		t.Errorf("Expected max 10 total connections, got %d", stats.Total)
-	}
+		if stats.Total > 10 {
+			t.Errorf("Expected max 10 total connections, got %d", stats.Total)
+		}
+	})
 }
 
 func TestConnPool_ContextCancellation(t *testing.T) {
@@ -353,101 +353,179 @@ func TestConnPool_Close(t *testing.T) {
 }
 
 func TestConnPool_IdleTimeout(t *testing.T) {
-	connID := 0
-	var createdConns []*poolMockConn
-	factory := func() (Conn, error) {
-		connID++
-		mc := newPoolMockConn(connID)
-		createdConns = append(createdConns, mc)
-		return mc, nil
-	}
+	synctest.Test(t, func(t *testing.T) {
+		connID := 0
+		var createdConns []*poolMockConn
+		factory := func() (Conn, error) {
+			connID++
+			mc := newPoolMockConn(connID)
+			createdConns = append(createdConns, mc)
+			return mc, nil
+		}
 
-	config := PoolConfig{
-		MinSize:     2,
-		MaxSize:     5,
-		IdleTimeout: 100 * time.Millisecond,
-	}
-	pool, err := NewConnPool(config, factory)
-	if err != nil {
-		t.Fatalf("NewConnPool failed: %v", err)
-	}
-	defer pool.Close()
+		config := PoolConfig{
+			MinSize:     2,
+			MaxSize:     5,
+			IdleTimeout: 100 * time.Millisecond,
+		}
+		pool, err := NewConnPool(config, factory)
+		if err != nil {
+			t.Fatalf("NewConnPool failed: %v", err)
+		}
+		defer pool.Close()
 
-	ctx := context.Background()
+		ctx := context.Background()
 
-	// Create 3 additional connections (total 5)
-	conn1, _ := pool.Get(ctx)
-	conn2, _ := pool.Get(ctx)
-	conn3, _ := pool.Get(ctx)
+		// Create 3 additional connections (total 5).
+		conn1, _ := pool.Get(ctx)
+		conn2, _ := pool.Get(ctx)
+		conn3, _ := pool.Get(ctx)
 
-	// Return them all
-	pool.Put(conn1)
-	pool.Put(conn2)
-	pool.Put(conn3)
+		// Return them all.
+		pool.Put(conn1)
+		pool.Put(conn2)
+		pool.Put(conn3)
 
-	// Wait for idle timeout + cleaner cycle
-	time.Sleep(200 * time.Millisecond)
+		// Advance the fake clock through the idle timeout and cleaner tick.
+		time.Sleep(200 * time.Millisecond)
+		synctest.Wait()
 
-	stats := pool.Stats()
-	// Should have cleaned down to MinSize (2)
-	if stats.Available < 2 {
-		t.Errorf("Expected at least MinSize (2) connections after cleanup, got %d", stats.Available)
-	}
-	if stats.Available > 3 {
-		t.Errorf("Expected idle connections cleaned up, got %d available", stats.Available)
-	}
+		stats := pool.Stats()
+		if stats.Available < 2 {
+			t.Errorf("Expected at least MinSize (2) connections after cleanup, got %d", stats.Available)
+		}
+		if stats.Available > 3 {
+			t.Errorf("Expected idle connections cleaned up, got %d available", stats.Available)
+		}
+	})
 }
 
 func TestConnPool_WaitQueue(t *testing.T) {
-	factory := func() (Conn, error) {
-		return newPoolMockConn(1), nil
+	synctest.Test(t, func(t *testing.T) {
+		factory := func() (Conn, error) {
+			return newPoolMockConn(1), nil
+		}
+
+		config := PoolConfig{MinSize: 0, MaxSize: 1, WaitTimeout: 500 * time.Millisecond}
+		pool, err := NewConnPool(config, factory)
+		if err != nil {
+			t.Fatalf("NewConnPool failed: %v", err)
+		}
+		defer pool.Close()
+
+		ctx := context.Background()
+
+		// Get the only connection.
+		conn1, _ := pool.Get(ctx)
+
+		var wg sync.WaitGroup
+		var conn2 Conn
+		var getErr error
+
+		wg.Go(func() {
+			conn2, getErr = pool.Get(ctx)
+		})
+
+		// Wait until the goroutine is blocked in the pool wait queue.
+		synctest.Wait()
+
+		stats := pool.Stats()
+		if stats.Waiting != 1 {
+			t.Errorf("Expected 1 waiting goroutine, got %d", stats.Waiting)
+		}
+
+		// Return connection - should satisfy waiter.
+		pool.Put(conn1)
+		wg.Wait()
+
+		if getErr != nil {
+			t.Errorf("Waiter Get failed: %v", getErr)
+		}
+
+		if conn2 == nil {
+			t.Error("Waiter did not receive connection")
+		}
+
+		pool.Put(conn2)
+	})
+}
+
+func TestConnPool_CloseUnblocksWaiterWithErrPoolClosed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		factory := func() (Conn, error) {
+			return newPoolMockConn(1), nil
+		}
+
+		config := PoolConfig{MinSize: 0, MaxSize: 1, WaitTimeout: time.Second}
+		pool, err := NewConnPool(config, factory)
+		if err != nil {
+			t.Fatalf("NewConnPool failed: %v", err)
+		}
+
+		conn, err := pool.Get(context.Background())
+		if err != nil {
+			t.Fatalf("initial Get failed: %v", err)
+		}
+
+		var wg sync.WaitGroup
+		var gotConn Conn
+		var gotErr error
+
+		wg.Go(func() {
+			gotConn, gotErr = pool.Get(context.Background())
+		})
+
+		synctest.Wait()
+		pool.Close()
+		wg.Wait()
+
+		if gotConn != nil {
+			t.Errorf("expected nil connection after pool close, got %#v", gotConn)
+		}
+		if gotErr != ErrPoolClosed {
+			t.Errorf("expected ErrPoolClosed, got %v", gotErr)
+		}
+
+		conn.Close()
+	})
+}
+
+func TestConnPool_PutDoesNotHandOffAfterClose(t *testing.T) {
+	pool := &ConnPool{
+		waitQueue: make([]*poolWaiter, 0, 1),
 	}
 
-	config := PoolConfig{MinSize: 0, MaxSize: 1, WaitTimeout: 500 * time.Millisecond}
-	pool, err := NewConnPool(config, factory)
-	if err != nil {
-		t.Fatalf("NewConnPool failed: %v", err)
+	waiter := &poolWaiter{
+		result: make(chan poolWaitResult),
+		done:   make(chan struct{}),
 	}
-	defer pool.Close()
+	pool.waitQueue = append(pool.waitQueue, waiter)
 
-	ctx := context.Background()
-
-	// Get the only connection
-	conn1, _ := pool.Get(ctx)
+	conn := newPoolMockConn(1)
 
 	var wg sync.WaitGroup
-	var conn2 Conn
-	var getErr error
+	wg.Go(func() {
+		pool.Put(conn)
+	})
 
-	// Spawn goroutine to wait for connection
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		conn2, getErr = pool.Get(ctx)
-	}()
-
-	// Give it time to enter wait queue
-	time.Sleep(50 * time.Millisecond)
-
-	stats := pool.Stats()
-	if stats.Waiting != 1 {
-		t.Errorf("Expected 1 waiting goroutine, got %d", stats.Waiting)
+	result := <-waiter.result
+	if result.conn != conn {
+		t.Fatalf("Put handed off unexpected connection: got %#v want %#v", result.conn, conn)
 	}
 
-	// Return connection - should satisfy waiter
-	pool.Put(conn1)
-
+	pool.Close()
+	result.accepted <- false
 	wg.Wait()
 
-	if getErr != nil {
-		t.Errorf("Waiter Get failed: %v", getErr)
+	if !pool.closed {
+		t.Fatal("expected pool to be closed")
 	}
-
-	if conn2 == nil {
-		t.Error("Waiter did not receive connection")
+	if !conn.closed.Load() {
+		t.Fatal("expected connection to be closed after close wins the race")
 	}
-
-	pool.Put(conn2)
+	if stats := pool.Stats(); stats.Waiting != 0 || stats.Available != 0 {
+		t.Fatalf("expected no queued or available connections after close, got %+v", stats)
+	}
 }
 
 func TestNewDatabaseWithPool(t *testing.T) {

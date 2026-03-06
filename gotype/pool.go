@@ -35,11 +35,11 @@ type ConnPool struct {
 	config      PoolConfig
 	connFactory func() (Conn, error) // factory function to create new connections
 
-	mu          sync.Mutex
-	conns       []pooledConn // available connections
-	numOpen     int          // total open connections (available + in-use)
-	waitQueue   []chan Conn  // waiting goroutines
-	closed      bool
+	mu        sync.Mutex
+	conns     []pooledConn  // available connections
+	numOpen   int           // total open connections (available + in-use)
+	waitQueue []*poolWaiter // waiting goroutines
+	closed    bool
 
 	stopCleaner chan struct{} // signal to stop the idle connection cleaner
 	cleanerDone chan struct{} // signal that cleaner has stopped
@@ -47,8 +47,19 @@ type ConnPool struct {
 
 // pooledConn tracks a connection and its idle time.
 type pooledConn struct {
-	conn     Conn
+	conn      Conn
 	idleSince time.Time
+}
+
+type poolWaitResult struct {
+	conn     Conn
+	err      error
+	accepted chan bool
+}
+
+type poolWaiter struct {
+	result chan poolWaitResult
+	done   chan struct{}
 }
 
 var (
@@ -70,7 +81,7 @@ func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, er
 		config:      config,
 		connFactory: factory,
 		conns:       make([]pooledConn, 0, config.MaxSize),
-		waitQueue:   make([]chan Conn, 0),
+		waitQueue:   make([]*poolWaiter, 0),
 		stopCleaner: make(chan struct{}),
 		cleanerDone: make(chan struct{}),
 	}
@@ -145,7 +156,10 @@ func (p *ConnPool) Get(ctx context.Context) (Conn, error) {
 	}
 
 	// Pool is at max capacity - must wait for a connection
-	waiter := make(chan Conn, 1)
+	waiter := &poolWaiter{
+		result: make(chan poolWaitResult),
+		done:   make(chan struct{}),
+	}
 	p.waitQueue = append(p.waitQueue, waiter)
 	p.mu.Unlock()
 
@@ -158,18 +172,23 @@ func (p *ConnPool) Get(ctx context.Context) (Conn, error) {
 	}
 
 	select {
-	case conn := <-waiter:
-		return conn, nil
-	case <-waitCtx.Done():
-		// Remove ourselves from wait queue
+	case result := <-waiter.result:
+		if result.err != nil {
+			return nil, result.err
+		}
 		p.mu.Lock()
-		for i, w := range p.waitQueue {
-			if w == waiter {
-				p.waitQueue = append(p.waitQueue[:i], p.waitQueue[i+1:]...)
-				break
-			}
+		closed := p.closed
+		if result.accepted != nil {
+			result.accepted <- !closed
 		}
 		p.mu.Unlock()
+		if closed {
+			return nil, ErrPoolClosed
+		}
+		return result.conn, nil
+	case <-waitCtx.Done():
+		close(waiter.done)
+		p.removeWaiter(waiter)
 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -186,9 +205,9 @@ func (p *ConnPool) Put(conn Conn) {
 	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if p.closed {
+		p.mu.Unlock()
 		conn.Close()
 		return
 	}
@@ -197,24 +216,38 @@ func (p *ConnPool) Put(conn Conn) {
 	if !conn.IsOpen() {
 		conn.Close()
 		p.numOpen--
+		p.mu.Unlock()
 		return
 	}
 
 	// Try to satisfy a waiting goroutine first
-	if len(p.waitQueue) > 0 {
+	for len(p.waitQueue) > 0 {
 		waiter := p.waitQueue[0]
 		p.waitQueue = p.waitQueue[1:]
+		accepted := make(chan bool)
+		p.mu.Unlock()
 		select {
-		case waiter <- conn:
-			// Successfully handed off to waiter
-			return
-		default:
-			// Waiter timed out or cancelled, fall through to return to pool
+		case waiter.result <- poolWaitResult{conn: conn, accepted: accepted}:
+			if <-accepted {
+				// Successfully handed off to waiter.
+				return
+			}
+			p.mu.Lock()
+			if p.closed {
+				p.mu.Unlock()
+				conn.Close()
+				return
+			}
+			// Close won the race; try the next waiter or return to the pool.
+		case <-waiter.done:
+			p.mu.Lock()
+			// Waiter timed out or was already notified, try the next one.
 		}
 	}
 
 	// Return connection to pool
 	p.conns = append(p.conns, pooledConn{conn: conn, idleSince: time.Now()})
+	p.mu.Unlock()
 }
 
 // Close closes all connections in the pool and prevents new connections from being acquired.
@@ -237,17 +270,34 @@ func (p *ConnPool) Close() {
 	}
 	p.conns = nil
 
-	// Notify waiting goroutines
-	for _, waiter := range p.waitQueue {
-		close(waiter)
-	}
+	waiters := p.waitQueue
 	p.waitQueue = nil
 
 	p.mu.Unlock()
 
+	// Notify waiting goroutines after releasing the lock so an in-flight waiter can receive.
+	for _, waiter := range waiters {
+		select {
+		case waiter.result <- poolWaitResult{err: ErrPoolClosed}:
+		case <-waiter.done:
+		}
+	}
+
 	// Wait for cleaner to stop
 	if p.config.IdleTimeout > 0 {
 		<-p.cleanerDone
+	}
+}
+
+func (p *ConnPool) removeWaiter(waiter *poolWaiter) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for i, w := range p.waitQueue {
+		if w == waiter {
+			p.waitQueue = append(p.waitQueue[:i], p.waitQueue[i+1:]...)
+			return
+		}
 	}
 }
 

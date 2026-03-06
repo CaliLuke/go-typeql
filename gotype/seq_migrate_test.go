@@ -705,12 +705,14 @@ type errMockTx struct {
 	err error
 }
 
-func (m *errMockTx) Query(string) ([]map[string]any, error)                         { return nil, m.err }
-func (m *errMockTx) QueryWithContext(_ context.Context, q string) ([]map[string]any, error) { return m.Query(q) }
-func (m *errMockTx) Commit() error                                                  { return nil }
-func (m *errMockTx) Rollback() error                                                { return nil }
-func (m *errMockTx) Close()                                                         {}
-func (m *errMockTx) IsOpen() bool                                                   { return true }
+func (m *errMockTx) Query(string) ([]map[string]any, error) { return nil, m.err }
+func (m *errMockTx) QueryWithContext(_ context.Context, q string) ([]map[string]any, error) {
+	return m.Query(q)
+}
+func (m *errMockTx) Commit() error   { return nil }
+func (m *errMockTx) Rollback() error { return nil }
+func (m *errMockTx) Close()          {}
+func (m *errMockTx) IsOpen() bool    { return true }
 
 // errMockConn returns errMockTx instances that fail.
 type errMockConn struct {
@@ -730,7 +732,7 @@ func (m *errMockConn) Transaction(_ string, txType int) (Tx, error) {
 	return &mockTx{}, nil
 }
 
-func (m *errMockConn) Schema(string) (string, error)        { return "", nil }
+func (m *errMockConn) Schema(string) (string, error)         { return "", nil }
 func (m *errMockConn) DatabaseCreate(string) error           { return nil }
 func (m *errMockConn) DatabaseDelete(string) error           { return nil }
 func (m *errMockConn) DatabaseContains(string) (bool, error) { return true, nil }
@@ -1039,8 +1041,7 @@ func TestRunSequentialMigrations_ChecksumMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected checksum mismatch error")
 	}
-	var csErr *ChecksumMismatchError
-	if !errors.As(err, &csErr) {
+	if _, ok := errors.AsType[*ChecksumMismatchError](err); !ok {
 		t.Fatalf("expected ChecksumMismatchError, got %T: %v", err, err)
 	}
 }

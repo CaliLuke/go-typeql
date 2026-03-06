@@ -34,8 +34,6 @@ golangci-lint run ./...         # Comprehensive linter (50+ checks)
 
 **Linting is mandatory** — all code must pass `go vet`, `golangci-lint`, and `~/go/bin/staticcheck` before committing.
 
-**TODO:** `.golangci.yml` disables SA4006 because golangci-lint 2.9.0's bundled staticcheck doesn't support Go 1.26 `new(val)` syntax (false positives). Standalone staticcheck v0.7.0 handles it correctly. When golangci-lint bundles staticcheck >= v0.7.0, remove the `-SA4006` exclusion from `.golangci.yml`.
-
 **Common issues to avoid:**
 
 - Unused variables, functions, or struct fields

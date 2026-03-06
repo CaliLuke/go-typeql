@@ -149,12 +149,9 @@ func TestIntegration_ConnectionPool_ConcurrentQueries(t *testing.T) {
 	queriesPerWorker := 5
 
 	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
 		workerID := i
 
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for j := 0; j < queriesPerWorker; j++ {
 				// Query all persons
 				persons, err := mgr.All(ctx)
@@ -175,7 +172,7 @@ func TestIntegration_ConnectionPool_ConcurrentQueries(t *testing.T) {
 				// Small delay between queries
 				time.Sleep(10 * time.Millisecond)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -269,20 +266,18 @@ func TestIntegration_ConnectionPool_Transactions(t *testing.T) {
 	// Test: Multiple concurrent transactions
 	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-
+		i := i
+		wg.Go(func() {
 			person := &poolTestPerson{
-				Email: fmt.Sprintf("txtest%d@pool.test", id),
-				Name:  fmt.Sprintf("TxTest %d", id),
-				Age:   30 + id,
+				Email: fmt.Sprintf("txtest%d@pool.test", i),
+				Name:  fmt.Sprintf("TxTest %d", i),
+				Age:   30 + i,
 			}
 
 			if err := mgr.Insert(ctx, person); err != nil {
-				t.Errorf("Concurrent insert %d failed: %v", id, err)
+				t.Errorf("Concurrent insert %d failed: %v", i, err)
 			}
-		}(i)
+		})
 	}
 
 	wg.Wait()

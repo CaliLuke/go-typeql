@@ -97,8 +97,7 @@ func TestValidateIdentifier_Invalid(t *testing.T) {
 			continue
 		}
 		if tt.name != "" {
-			var iie *InvalidIdentifierError
-			if !errors.As(err, &iie) {
+			if _, ok := errors.AsType[*InvalidIdentifierError](err); !ok {
 				t.Errorf("expected InvalidIdentifierError for %q, got %T", tt.name, err)
 			}
 		}

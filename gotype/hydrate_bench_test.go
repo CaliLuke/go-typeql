@@ -37,7 +37,7 @@ func BenchmarkHydrate_100Rows(b *testing.B) {
 	mgr := &Manager[benchEntity]{info: info}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := mgr.hydrateResults(results)
 		if err != nil {
 			b.Fatal(err)
@@ -68,7 +68,7 @@ func BenchmarkHydrate_1000Rows(b *testing.B) {
 	mgr := &Manager[benchEntity]{info: info}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := mgr.hydrateResults(results)
 		if err != nil {
 			b.Fatal(err)
@@ -99,7 +99,7 @@ func BenchmarkHydrate_10000Rows(b *testing.B) {
 	mgr := &Manager[benchEntity]{info: info}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := mgr.hydrateResults(results)
 		if err != nil {
 			b.Fatal(err)
@@ -123,7 +123,7 @@ func BenchmarkHydrate_SingleRow(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var entity benchEntity
 		err := Hydrate(&entity, result)
 		if err != nil {
