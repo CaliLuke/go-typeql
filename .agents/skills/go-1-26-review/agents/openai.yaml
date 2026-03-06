@@ -1,0 +1,4 @@
+interface:
+  display_name: "Go 1.26 Review"
+  short_description: "Review Go code for Go 1.26 upgrade and refactor opportunities."
+  default_prompt: "Use this skill to review Go code for places to adopt Go 1.26 features, tooling, and library improvements during refactors or code reviews."
