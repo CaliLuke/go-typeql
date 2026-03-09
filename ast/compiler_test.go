@@ -716,6 +716,39 @@ func TestCompiler_TypelessRelation(t *testing.T) {
 			want: "match\n$r isa friendship (friend: $a, friend: $b);",
 		},
 		{
+			name: "strict typed relation with role players",
+			node: MatchClause{
+				Patterns: []Pattern{
+					RelationPattern{
+						Variable: "$r",
+						TypeName: "friendship",
+						IsStrict: true,
+						RolePlayers: []RolePlayer{
+							{Role: "friend", PlayerVar: "$a"},
+							{Role: "friend", PlayerVar: "$b"},
+						},
+					},
+				},
+			},
+			want: "match\n$r isa! friendship (friend: $a, friend: $b);",
+		},
+		{
+			name: "strict anonymous typed relation with role players",
+			node: MatchClause{
+				Patterns: []Pattern{
+					RelationPattern{
+						TypeName: "friendship",
+						IsStrict: true,
+						RolePlayers: []RolePlayer{
+							{Role: "friend", PlayerVar: "$a"},
+							{Role: "friend", PlayerVar: "$b"},
+						},
+					},
+				},
+			},
+			want: "match\n(friend: $a, friend: $b) isa! friendship;",
+		},
+		{
 			name: "typed relation without role players",
 			node: MatchClause{
 				Patterns: []Pattern{

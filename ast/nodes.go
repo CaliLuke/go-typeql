@@ -133,6 +133,8 @@ type RelationPattern struct {
 	Variable string
 	// TypeName is the name of the relation type.
 	TypeName string
+	// IsStrict indicates whether to use strict type checking (isa!).
+	IsStrict bool
 	// RolePlayers defines the participants in the relation.
 	RolePlayers []RolePlayer
 	// Constraints are additional constraints applied to the relation.

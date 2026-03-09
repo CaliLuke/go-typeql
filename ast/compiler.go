@@ -225,14 +225,26 @@ func (c *Compiler) compilePattern(pattern Pattern) (string, error) {
 
 			// Build the base pattern
 			if p.TypeName != "" {
+				op := "isa"
+				if p.IsStrict {
+					op = "isa!"
+				}
 				// Typed relation
 				if len(regularRoles) > 0 {
 					// $r isa type (regular: $x, regular: $y)
 					rolesStr := "(" + strings.Join(regularRoles, ", ") + ")"
-					parts = []string{fmt.Sprintf("%s isa %s %s", p.Variable, p.TypeName, rolesStr)}
+					if p.Variable != "" {
+						parts = []string{fmt.Sprintf("%s %s %s %s", p.Variable, op, p.TypeName, rolesStr)}
+					} else {
+						parts = []string{fmt.Sprintf("%s %s %s", rolesStr, op, p.TypeName)}
+					}
 				} else {
 					// $r isa type (no regular roles, only links)
-					parts = []string{fmt.Sprintf("%s isa %s", p.Variable, p.TypeName)}
+					if p.Variable != "" {
+						parts = []string{fmt.Sprintf("%s %s %s", p.Variable, op, p.TypeName)}
+					} else {
+						parts = []string{fmt.Sprintf("%s %s", op, p.TypeName)}
+					}
 				}
 			} else {
 				// Typeless relation
@@ -250,7 +262,15 @@ func (c *Compiler) compilePattern(pattern Pattern) (string, error) {
 			parts = append(parts, linksClauses...)
 		} else {
 			if p.TypeName != "" {
-				parts = []string{fmt.Sprintf("%s isa %s", p.Variable, p.TypeName)}
+				op := "isa"
+				if p.IsStrict {
+					op = "isa!"
+				}
+				if p.Variable != "" {
+					parts = []string{fmt.Sprintf("%s %s %s", p.Variable, op, p.TypeName)}
+				} else {
+					parts = []string{fmt.Sprintf("%s %s", op, p.TypeName)}
+				}
 			} else {
 				parts = []string{p.Variable}
 			}
