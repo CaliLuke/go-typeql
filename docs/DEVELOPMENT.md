@@ -60,7 +60,7 @@ make build-rust
 # This runs: cd driver/rust && cargo build --release
 ```
 
-`go get` only downloads the source tree. It does not create the Rust archive inside the checked out module or module cache. If you want to compile or test packages that import `driver/`, you must run `make build-rust` in that module tree first, or use a prebuilt archive with the `typedb_prebuilt` build tag.
+`go get` only downloads the source tree. It does not create the Rust archive inside the checked out module or module cache. If you want to compile or test packages that import `driver/`, you must run `make build-rust` in that module tree first, or use a prebuilt archive with the `typedb_prebuilt` build tag. Release archives are published for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`.
 
 After building, you can compile Go code with driver support:
 

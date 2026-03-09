@@ -6,6 +6,7 @@ package driver
 #cgo LDFLAGS: -ltypedb_go_ffi -ldl -lpthread -lm
 #cgo darwin LDFLAGS: -framework Security -framework CoreFoundation
 #cgo LDFLAGS: -L/usr/local/lib
+#cgo darwin,arm64 LDFLAGS: -L/opt/homebrew/lib
 #include "typedb_ffi.h"
 */
 import "C"
