@@ -11,7 +11,7 @@ The benchmark harness is now institutionalized in the repo:
 - `make bench`
 - benchmark history stored in `benchmarks/benchmarks.sqlite`
 - baseline run: `run 1`
-- latest optimized run before the next pass in this document: `run 5`
+- latest optimized run before the next pass in this document: `run 6`
 
 Measured gains from `run 1` to `run 3`:
 
@@ -21,8 +21,8 @@ Measured gains from `run 1` to `run 3`:
 | `BenchmarkHydrate_1000Rows` | `-67.15%` | `-65.75%` | `-85.72%` |
 | `BenchmarkHydrate_100Rows` | `-67.07%` | `-65.93%` | `-85.67%` |
 | `BenchmarkHydrate_SingleRow` | `-50.69%` | `-66.67%` | `-85.71%` |
-| `BenchmarkCompiler_CompileBatch` | `-21.80%` | `+4.90%` | `-28.57%` |
-| `BenchmarkCompiler_FormatGoValue` | `-14.95%` | `0.00%` | `-20.00%` |
+| `BenchmarkCompiler_CompileBatch` | `-38.58%` | `-0.32%` | `-52.86%` |
+| `BenchmarkCompiler_FormatGoValue` | `-12.39%` | `0.00%` | `-20.00%` |
 | `BenchmarkExtractModelInfo_Entity` | `-8.20%` | `-10.46%` | `-4.35%` |
 | `BenchmarkExtractModelInfo_Relation` | `+0.34%` | `+8.72%` | `-4.00%` |
 
@@ -34,6 +34,7 @@ What has already been addressed:
 - Roleless hydration no longer allocates cycle-detection state.
 - Common scalar field types now use typed setter fast paths instead of the generic `reflect.ValueOf(converted)` path.
 - `FormatLiteral`, `FormatGoValue`, and parts of `CompileBatch` / fetch compilation now use cheaper formatting paths.
+- Relation-pattern, constraint, and several statement formatting paths now avoid a large amount of `fmt.Sprintf` churn.
 - Benchmark recording, comparison, and persistence are first-class parts of the repo workflow.
 
 What remains open is no longer “easy big wins everywhere”; it is concentrated in hydration’s remaining generic reflection path and, secondarily, compiler recursive string construction.

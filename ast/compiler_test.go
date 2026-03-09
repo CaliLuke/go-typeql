@@ -749,6 +749,38 @@ func TestCompiler_TypelessRelation(t *testing.T) {
 			want: "match\n(friend: $a, friend: $b) isa! friendship;",
 		},
 		{
+			name: "anonymous typed relation with role players and constraint",
+			node: MatchClause{
+				Patterns: []Pattern{
+					RelationPattern{
+						TypeName: "friendship",
+						RolePlayers: []RolePlayer{
+							{Role: "friend", PlayerVar: "$a"},
+							{Role: "friend", PlayerVar: "$b"},
+						},
+						Constraints: []Constraint{
+							IidConstraint{IID: "0xabc"},
+						},
+					},
+				},
+			},
+			want: "match\n(friend: $a, friend: $b) isa friendship, iid 0xabc;",
+		},
+		{
+			name: "anonymous typeless relation with regular roles",
+			node: MatchClause{
+				Patterns: []Pattern{
+					RelationPattern{
+						RolePlayers: []RolePlayer{
+							{Role: "friend", PlayerVar: "$a"},
+							{Role: "friend", PlayerVar: "$b"},
+						},
+					},
+				},
+			},
+			want: "match\n(friend: $a, friend: $b);",
+		},
+		{
 			name: "typed relation without role players",
 			node: MatchClause{
 				Patterns: []Pattern{
@@ -775,6 +807,21 @@ func TestCompiler_TypelessRelation(t *testing.T) {
 				},
 			},
 			want: "match\n$r isa task-depends-on, links ($a), links ($b);",
+		},
+		{
+			name: "anonymous typed relation with only links role players",
+			node: MatchClause{
+				Patterns: []Pattern{
+					RelationPattern{
+						TypeName: "task-depends-on",
+						RolePlayers: []RolePlayer{
+							{Role: "links", PlayerVar: "$a"},
+							{Role: "links", PlayerVar: "$b"},
+						},
+					},
+				},
+			},
+			want: "match\nisa task-depends-on, links ($a), links ($b);",
 		},
 		{
 			name: "relation with mixed links and regular roles",
@@ -810,6 +857,19 @@ func TestCompiler_TypelessRelation(t *testing.T) {
 				},
 			},
 			want: "match\n$r, links ($a), iid 0xabc;",
+		},
+		{
+			name: "anonymous typeless relation with constraint only",
+			node: MatchClause{
+				Patterns: []Pattern{
+					RelationPattern{
+						Constraints: []Constraint{
+							IidConstraint{IID: "0xabc"},
+						},
+					},
+				},
+			},
+			want: "match\niid 0xabc;",
 		},
 	}
 

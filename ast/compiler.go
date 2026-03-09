@@ -228,94 +228,20 @@ func (c *Compiler) compilePattern(pattern Pattern) (string, error) {
 		return b.String(), nil
 
 	case RelationPattern:
-		var parts []string
-		if len(p.RolePlayers) > 0 {
-			// Separate links roles from regular roles
-			// In match patterns, "links" is a keyword and requires special syntax:
-			//   links ($var) instead of (links: $var)
-			var linksClauses []string
-			var regularRoles []string
-			for _, rp := range p.RolePlayers {
-				if rp.Role == "links" {
-					linksClauses = append(linksClauses, fmt.Sprintf("links (%s)", rp.PlayerVar))
-				} else {
-					regularRoles = append(regularRoles, fmt.Sprintf("%s: %s", rp.Role, rp.PlayerVar))
-				}
-			}
-
-			// Build the base pattern
-			if p.TypeName != "" {
-				op := "isa"
-				if p.IsStrict {
-					op = "isa!"
-				}
-				// Typed relation
-				if len(regularRoles) > 0 {
-					// $r isa type (regular: $x, regular: $y)
-					rolesStr := "(" + strings.Join(regularRoles, ", ") + ")"
-					if p.Variable != "" {
-						parts = []string{fmt.Sprintf("%s %s %s %s", p.Variable, op, p.TypeName, rolesStr)}
-					} else {
-						parts = []string{fmt.Sprintf("%s %s %s", rolesStr, op, p.TypeName)}
-					}
-				} else {
-					// $r isa type (no regular roles, only links)
-					if p.Variable != "" {
-						parts = []string{fmt.Sprintf("%s %s %s", p.Variable, op, p.TypeName)}
-					} else {
-						parts = []string{fmt.Sprintf("%s %s", op, p.TypeName)}
-					}
-				}
-			} else {
-				// Typeless relation
-				if len(regularRoles) > 0 {
-					// $r (regular: $x, regular: $y)
-					rolesStr := "(" + strings.Join(regularRoles, ", ") + ")"
-					parts = []string{fmt.Sprintf("%s %s", p.Variable, rolesStr)}
-				} else {
-					// $r (no regular roles, only links)
-					parts = []string{p.Variable}
-				}
-			}
-
-			// Add links clauses as separate parts
-			parts = append(parts, linksClauses...)
-		} else {
-			if p.TypeName != "" {
-				op := "isa"
-				if p.IsStrict {
-					op = "isa!"
-				}
-				if p.Variable != "" {
-					parts = []string{fmt.Sprintf("%s %s %s", p.Variable, op, p.TypeName)}
-				} else {
-					parts = []string{fmt.Sprintf("%s %s", op, p.TypeName)}
-				}
-			} else {
-				parts = []string{p.Variable}
-			}
-		}
-		for _, constraint := range p.Constraints {
-			s, err := c.compileConstraint(constraint)
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, s)
-		}
-		return strings.Join(parts, ", "), nil
+		return c.compileRelationPattern(p)
 
 	case SubTypePattern:
-		return fmt.Sprintf("%s sub %s", p.Variable, p.ParentType), nil
+		return p.Variable + " sub " + p.ParentType, nil
 
 	case HasPattern:
-		return fmt.Sprintf("%s has %s %s", p.ThingVar, p.AttrType, p.AttrVar), nil
+		return p.ThingVar + " has " + p.AttrType + " " + p.AttrVar, nil
 
 	case ValueComparisonPattern:
 		valStr, err := c.compileValueOrString(p.Value)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s %s %s", p.Var, p.Operator, valStr), nil
+		return p.Var + " " + p.Operator + " " + valStr, nil
 
 	case NotPattern:
 		subPatterns := make([]string, 0, len(p.Patterns))
@@ -327,7 +253,7 @@ func (c *Compiler) compilePattern(pattern Pattern) (string, error) {
 			subPatterns = append(subPatterns, s)
 		}
 		inner := strings.Join(subPatterns, "; ")
-		return fmt.Sprintf("not { %s; }", inner), nil
+		return "not { " + inner + "; }", nil
 
 	case OrPattern:
 		blocks := make([]string, 0, len(p.Alternatives))
@@ -341,21 +267,21 @@ func (c *Compiler) compilePattern(pattern Pattern) (string, error) {
 				subPatterns = append(subPatterns, s)
 			}
 			blockContent := strings.Join(subPatterns, "; ")
-			blocks = append(blocks, fmt.Sprintf("{ %s; }", blockContent))
+			blocks = append(blocks, "{ "+blockContent+"; }")
 		}
 		return strings.Join(blocks, " or "), nil
 
 	case IidPattern:
-		return fmt.Sprintf("%s iid %s", p.Variable, p.IID), nil
+		return p.Variable + " iid " + p.IID, nil
 
 	case AttributePattern:
-		parts := []string{fmt.Sprintf("%s isa %s", p.Variable, p.TypeName)}
+		parts := []string{p.Variable + " isa " + p.TypeName}
 		if p.Value != nil {
 			valStr, err := c.compileValue(p.Value)
 			if err != nil {
 				return "", err
 			}
-			parts = append(parts, fmt.Sprintf("%s %s", p.Variable, valStr))
+			parts = append(parts, p.Variable+" "+valStr)
 		}
 		return strings.Join(parts, "; "), nil
 
@@ -376,10 +302,10 @@ func (c *Compiler) compileStatement(stmt Statement) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s has %s %s", s.SubjectVar, s.AttrName, valStr), nil
+		return s.SubjectVar + " has " + s.AttrName + " " + valStr, nil
 
 	case IsaStatement:
-		return fmt.Sprintf("%s isa %s", s.Variable, s.TypeName), nil
+		return s.Variable + " isa " + s.TypeName, nil
 
 	case RelationStatement:
 		roleParts := make([]string, 0, len(s.RolePlayers))
@@ -412,7 +338,7 @@ func (c *Compiler) compileStatement(stmt Statement) (string, error) {
 		return s.Variable, nil
 
 	case DeleteHasStatement:
-		return fmt.Sprintf("%s of %s", s.AttrVar, s.OwnerVar), nil
+		return s.AttrVar + " of " + s.OwnerVar, nil
 
 	case RawStatement:
 		return s.Content, nil
@@ -434,14 +360,14 @@ func (c *Compiler) compileConstraint(constraint Constraint) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("has %s %s", cn.AttrName, valStr), nil
+		return "has " + cn.AttrName + " " + valStr, nil
 
 	case IsaConstraint:
 		op := "isa"
 		if cn.Strict {
 			op = "isa!"
 		}
-		return fmt.Sprintf("%s %s", op, cn.TypeName), nil
+		return op + " " + cn.TypeName, nil
 
 	default:
 		return "", fmt.Errorf("unknown constraint type: %T", constraint)
@@ -493,6 +419,94 @@ func (c *Compiler) compileValueOrString(v any) (string, error) {
 	}
 }
 
+func (c *Compiler) compileRelationPattern(p RelationPattern) (string, error) {
+	op := "isa"
+	if p.IsStrict {
+		op = "isa!"
+	}
+
+	regularRoles := make([]RolePlayer, 0, len(p.RolePlayers))
+	linkRoles := make([]RolePlayer, 0, len(p.RolePlayers))
+	for _, rp := range p.RolePlayers {
+		if rp.Role == "links" {
+			linkRoles = append(linkRoles, rp)
+		} else {
+			regularRoles = append(regularRoles, rp)
+		}
+	}
+
+	var b strings.Builder
+	switch {
+	case p.TypeName != "" && len(regularRoles) > 0:
+		if p.Variable != "" {
+			b.WriteString(p.Variable)
+			b.WriteByte(' ')
+			b.WriteString(op)
+			b.WriteByte(' ')
+			b.WriteString(p.TypeName)
+			b.WriteByte(' ')
+			appendRelationRoles(&b, regularRoles)
+		} else {
+			appendRelationRoles(&b, regularRoles)
+			b.WriteByte(' ')
+			b.WriteString(op)
+			b.WriteByte(' ')
+			b.WriteString(p.TypeName)
+		}
+	case p.TypeName != "":
+		if p.Variable != "" {
+			b.WriteString(p.Variable)
+			b.WriteByte(' ')
+		}
+		b.WriteString(op)
+		b.WriteByte(' ')
+		b.WriteString(p.TypeName)
+	case len(regularRoles) > 0:
+		if p.Variable != "" {
+			b.WriteString(p.Variable)
+			b.WriteByte(' ')
+		}
+		appendRelationRoles(&b, regularRoles)
+	default:
+		b.WriteString(p.Variable)
+	}
+
+	for _, rp := range linkRoles {
+		if b.Len() > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("links (")
+		b.WriteString(rp.PlayerVar)
+		b.WriteByte(')')
+	}
+
+	for _, constraint := range p.Constraints {
+		s, err := c.compileConstraint(constraint)
+		if err != nil {
+			return "", err
+		}
+		if b.Len() > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(s)
+	}
+
+	return b.String(), nil
+}
+
+func appendRelationRoles(b *strings.Builder, roles []RolePlayer) {
+	b.WriteByte('(')
+	for i, rp := range roles {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(rp.Role)
+		b.WriteString(": ")
+		b.WriteString(rp.PlayerVar)
+	}
+	b.WriteByte(')')
+}
+
 // --- Fetch Items ---
 
 func (c *Compiler) compileFetchItem(item any) (string, error) {
@@ -530,7 +544,7 @@ func (c *Compiler) compileReduceAssignment(a ReduceAssignment) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s = %s", a.Variable, exprStr), nil
+	return a.Variable + " = " + exprStr, nil
 }
 
 // FormatLiteral formats a Go value as a TypeQL literal string.
