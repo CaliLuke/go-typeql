@@ -111,7 +111,7 @@ The project uses build tags to isolate CGo-dependent code:
 The `ast/`, `gotype/`, and `tqlgen/` packages compile and test without any build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
-# Unit tests (default, no tags needed) — 397 tests
+# Unit tests (default, no tags needed) — 399 tests
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests

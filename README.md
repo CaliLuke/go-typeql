@@ -77,7 +77,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.6.1
+go get github.com/CaliLuke/go-typeql@v1.7.0
 ```
 
 The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires the Rust FFI static library. `go get` only downloads the source tree; it does not build or provision `libtypedb_go_ffi.a` for you. Before building or testing code that imports `driver/`, you must either build the Rust library from source in the module tree or install a prebuilt archive.
@@ -118,7 +118,7 @@ For a complete runnable example covering connect, schema, and CRUD, see the [Get
 ## Running tests
 
 ```bash
-# Unit tests (397 tests, no database needed)
+# Unit tests (399 tests, no database needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (needs TypeDB on port 1729)
