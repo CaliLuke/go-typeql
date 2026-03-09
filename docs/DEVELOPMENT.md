@@ -54,11 +54,13 @@ gotype/
 The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface.
 
 ```bash
-# Build the static library (driver/rust/target/release/libtypedb_ffi.a)
+# Build the static library (driver/rust/target/release/libtypedb_go_ffi.a)
 make build-rust
 
 # This runs: cd driver/rust && cargo build --release
 ```
+
+`go get` only downloads the source tree. It does not create the Rust archive inside the checked out module or module cache. If you want to compile or test packages that import `driver/`, you must run `make build-rust` in that module tree first, or use a prebuilt archive with the `typedb_prebuilt` build tag.
 
 After building, you can compile Go code with driver support:
 
@@ -107,7 +109,7 @@ The project uses build tags to isolate CGo-dependent code:
 The `ast/`, `gotype/`, and `tqlgen/` packages compile and test without any build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
-# Unit tests (default, no tags needed) — 354 tests
+# Unit tests (default, no tags needed) — 397 tests
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests

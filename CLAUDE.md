@@ -9,7 +9,7 @@ Go ORM for TypeDB 3.x. Wraps the Rust driver via CGo FFI. Module: `github.com/Ca
 ## Commands
 
 ```bash
-# Unit tests (395 tests, no DB or CGo needed)
+# Unit tests (397 tests, no DB or CGo needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Single test
@@ -124,7 +124,7 @@ Do NOT add `Co-Authored-By` lines to commit messages.
 
 ## Releasing a New Version
 
-Use `/release-checks <version>` to run the full 13-step release checklist (tests, coverage, linting, docs, tagging, changelog, pkg.go.dev verification). See `.claude/skills/release-checks.md`.
+Use `/release-checks <version>` to run the full 13-step release checklist (tests, coverage, `go vet`, `golangci-lint`, `staticcheck`, docs, Rust artifact verification, tagging, changelog, pkg.go.dev verification). See `.claude/skills/release-checks.md`.
 
 ## Container Runtime
 

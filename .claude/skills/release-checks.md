@@ -24,9 +24,15 @@ If `$ARGUMENTS` is empty, ask the user what version to release.
 
 ```bash
 go test ./ast/... ./gotype/... ./tqlgen/...
+make build-rust
 podman compose up -d
 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
+
+This step must prove both release surfaces still work:
+
+- The pure-Go packages (`ast/`, `gotype/`, `tqlgen/`) still pass from a clean checkout.
+- The CGo driver still links after producing `driver/rust/target/release/libtypedb_go_ffi.a`.
 
 ## 3. Check test coverage
 
@@ -42,6 +48,7 @@ Review any significant uncovered paths in new/changed code. No hard threshold, b
 ```bash
 go vet ./...
 golangci-lint run ./...
+~/go/bin/staticcheck ./...
 ```
 
 ## 5. Verify go.mod is tidy
@@ -73,13 +80,19 @@ go test ./ast/... ./gotype/... ./tqlgen/... -v 2>&1 | grep -c "^--- PASS"
 
 Update the number in the comment at the top of the Commands section in CLAUDE.md.
 
-## 8. Update version in README.md
+## 8. Update installation and release docs
 
-The `go get` install command pins a version — update it to the new version:
+Update every user-facing version reference and artifact instruction:
 
 ```bash
 go get github.com/CaliLuke/go-typeql@<version>
 ```
+
+Specifically verify:
+
+- `README.md` uses the new version in both `go get` and `gh release download` examples.
+- Driver docs still reference the correct archive name: `libtypedb_go_ffi.a`.
+- Docs clearly state that `go get` downloads source only; it does not build the Rust archive automatically.
 
 ## 9. Commit outstanding changes
 
@@ -106,10 +119,16 @@ Edit the release notes with a human-written summary: new features, new types/fun
 gh release edit <version> --notes "..."
 ```
 
-## 13. Verify on pkg.go.dev
+## 13. Verify published assets and pkg.go.dev
 
 Visit `https://pkg.go.dev/github.com/CaliLuke/go-typeql@<version>`. Force indexing if needed:
 
 ```bash
 GOPROXY=https://proxy.golang.org GO111MODULE=on go get github.com/CaliLuke/go-typeql@<version>
 ```
+
+Also verify the GitHub release contains the expected Rust static libraries and that their names match the documented install flow:
+
+- `libtypedb_go_ffi-linux-amd64.a`
+- `libtypedb_go_ffi-darwin-amd64.a`
+- `libtypedb_go_ffi-darwin-arm64.a`

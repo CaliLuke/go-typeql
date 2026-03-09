@@ -77,10 +77,10 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.5.3
+go get github.com/CaliLuke/go-typeql@v1.6.0
 ```
 
-The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires the Rust FFI static library — you can either build it from source or use a prebuilt binary.
+The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires the Rust FFI static library. `go get` only downloads the source tree; it does not build or provision `libtypedb_go_ffi.a` for you. Before building or testing code that imports `driver/`, you must either build the Rust library from source in the module tree or install a prebuilt archive.
 
 ### Prebuilt FFI library
 
@@ -88,7 +88,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 
 ```bash
 # Download for your platform
-gh release download v1.5.3 -p 'libtypedb_go_ffi-linux-amd64.a' -R CaliLuke/go-typeql
+gh release download v1.6.0 -p 'libtypedb_go_ffi-linux-amd64.a' -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 cp libtypedb_go_ffi-linux-amd64.a /usr/local/lib/libtypedb_go_ffi.a
@@ -100,14 +100,14 @@ cp libtypedb_go_ffi-linux-amd64.a driver/rust/target/release/libtypedb_go_ffi.a
 go test -tags "cgo,typedb" ./...
 ```
 
-To build from source instead, see the [Development Guide](docs/DEVELOPMENT.md).
+To build from source instead, run `make build-rust` in the checked-out module before `go build` or `go test -tags "cgo,typedb" ...`. This matters even when the module comes from the Go proxy or module cache, because the Rust archive is not generated automatically during `go get`.
 
 For a complete runnable example covering connect, schema, and CRUD, see the [Getting Started walkthrough](docs/GETTING_STARTED.md).
 
 ## Running tests
 
 ```bash
-# Unit tests (395 tests, no database needed)
+# Unit tests (397 tests, no database needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (needs TypeDB on port 1729)
