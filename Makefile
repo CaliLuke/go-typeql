@@ -1,4 +1,4 @@
-.PHONY: build-rust clean-rust clean test test-unit test-integration lint diagnose-startup-hang
+.PHONY: build-rust clean-rust clean test test-all test-unit test-integration bench lint diagnose-startup-hang
 
 # Build the Rust FFI static library
 # MACOSX_DEPLOYMENT_TARGET=11.0 matches Go's -mmacosx-version-min=11.0
@@ -19,6 +19,13 @@ test-integration:
 
 # Run all tests
 test: test-unit
+
+# Run unit tests plus the benchmark recorder
+test-all: test-unit bench
+
+# Run benchmarks and append the results to benchmarks/benchmarks.sqlite
+bench:
+	go run ./cmd/benchdb
 
 # Lint
 lint:

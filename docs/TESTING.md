@@ -23,6 +23,9 @@ go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 # Lint
 make lint
+
+# Benchmarks (records results in benchmarks/benchmarks.sqlite)
+make bench
 ```
 
 ## Test Organization
@@ -33,6 +36,17 @@ make lint
 | `gotype/` | `*_test.go`  | Tags, models, registry, schema gen, CRUD, queries, filters, migration    |
 | `tqlgen/` | `*_test.go`  | Schema parsing, code generation, naming, functions, structs, annotations |
 | `driver/` | `*_test.go`  | Connection, transactions, queries (integration only)                     |
+
+## Benchmark History
+
+Benchmark runs are persisted in `benchmarks/benchmarks.sqlite`. The recorder appends:
+
+- benchmark metrics (`ns/op`, `B/op`, `allocs/op`)
+- git commit and dirty state
+- Go version, OS/arch, hostname, and CPU label
+- raw `go test` output for the run
+
+Use `make bench` for an explicit performance checkpoint, or `make test-all` to run unit tests and then record a benchmark run.
 
 ## Mock Patterns
 

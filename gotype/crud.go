@@ -593,16 +593,14 @@ func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, s
 		return nil, "", nil
 	}
 
-	flat := unwrapResult(results[0])
 	typeLabel := ""
-	if tl, ok := flat["_type"]; ok {
+	if tl, ok := lookupResultValue(results[0], "_type"); ok {
 		if s, ok := tl.(string); ok {
 			typeLabel = s
 		}
 	}
-	delete(flat, "_type")
 
-	instance, err := HydrateNew[T](flat)
+	instance, err := HydrateNew[T](results[0])
 	if err != nil {
 		return nil, "", fmt.Errorf("hydrate %s: %w", m.info.TypeName, err)
 	}
@@ -632,15 +630,14 @@ func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (an
 		return nil, "", nil
 	}
 
-	flat := unwrapResult(results[0])
 	typeLabel := ""
-	if tl, ok := flat["_type"]; ok {
+	if tl, ok := lookupResultValue(results[0], "_type"); ok {
 		if s, ok := tl.(string); ok {
 			typeLabel = s
 		}
 	}
 
-	instance, err := HydrateAny(flat)
+	instance, err := HydrateAny(results[0])
 	if err != nil {
 		return nil, "", fmt.Errorf("hydrate_any %s: %w", typeLabel, err)
 	}
@@ -698,10 +695,9 @@ func (m *Manager[T]) hydrateResults(results []map[string]any) ([]*T, error) {
 		return nil, nil
 	}
 
-	var instances []*T
+	instances := make([]*T, 0, len(results))
 	for _, row := range results {
-		flat := unwrapResult(row)
-		instance, err := HydrateNew[T](flat)
+		instance, err := HydrateNew[T](row)
 		if err != nil {
 			return nil, fmt.Errorf("hydrate %s: %w", m.info.TypeName, err)
 		}
@@ -716,7 +712,8 @@ func getIIDOf[T any](instance *T) string {
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	return getIIDFromValue(v)
+	info, _ := LookupType(v.Type())
+	return getIIDFromValueInfo(v, info)
 }
 
 // setIIDOn sets the IID on an entity or relation instance.
@@ -725,37 +722,19 @@ func setIIDOn[T any](instance *T, iid string) {
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	for _, fv := range v.Fields() {
-		if !fv.CanAddr() {
-			continue
-		}
-		if e, ok := reflect.TypeAssert[*BaseEntity](fv.Addr()); ok {
-			e.SetIID(iid)
-			return
-		}
-		if r, ok := reflect.TypeAssert[*BaseRelation](fv.Addr()); ok {
-			r.SetIID(iid)
-			return
-		}
-	}
+	info, _ := LookupType(v.Type())
+	setIIDWithInfo(v, info, iid)
 }
 
 // extractIID extracts the IID string from a fetch result.
 // Handles both direct string and wrapped {"value": "0x..."} formats.
 func extractIID(result map[string]any) string {
-	v, ok := result["_iid"]
+	v, ok := lookupResultValue(result, "_iid")
 	if !ok {
 		return ""
 	}
-	switch val := v.(type) {
-	case string:
-		return val
-	case map[string]any:
-		if inner, ok := val["value"]; ok {
-			if s, ok := inner.(string); ok {
-				return s
-			}
-		}
+	if s, ok := v.(string); ok {
+		return s
 	}
 	return ""
 }
@@ -763,7 +742,7 @@ func extractIID(result map[string]any) string {
 // unwrapResult flattens nested TypeDB result structures.
 // TypeDB fetch results may wrap values as {"value": X, "type": {...}}.
 func unwrapResult(result map[string]any) map[string]any {
-	flat := make(map[string]any)
+	flat := make(map[string]any, len(result))
 	for key, val := range result {
 		flat[key] = unwrapValue(val)
 	}

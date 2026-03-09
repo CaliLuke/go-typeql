@@ -232,7 +232,7 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 		}
 
 		// Prefer IID, fall back to key attributes
-		playerIID := getIIDFromValue(playerVal)
+		playerIID := getIIDFromValueInfo(playerVal, playerInfo)
 
 		if playerIID != "" {
 			matchPatterns = append(matchPatterns, ast.Entity("$"+roleVar, playerInfo.TypeName, ast.Iid(playerIID)))
@@ -276,7 +276,7 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 
 func (s *relationStrategy) BuildMatchByKey(info *ModelInfo, instance any, varName string) string {
 	v := reflectValue(instance)
-	iid := getIIDFromValue(v)
+	iid := getIIDFromValueInfo(v, info)
 	var match ast.MatchClause
 	if iid != "" {
 		match = ast.Match(
@@ -471,20 +471,33 @@ func extractSingleFieldValue(v reflect.Value, fi FieldInfo) any {
 	return val
 }
 
-func getIIDFromValue(v reflect.Value) string {
+func getIIDFromValueInfo(v reflect.Value, info *ModelInfo) string {
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
+	if !v.IsValid() || v.Kind() != reflect.Struct {
+		return ""
+	}
+	if info != nil && info.baseFieldIndex >= 0 {
+		return getIIDFromBaseField(v.Field(info.baseFieldIndex))
+	}
 	for _, fv := range v.Fields() {
-		if !fv.CanAddr() {
-			continue
+		if iid := getIIDFromBaseField(fv); iid != "" {
+			return iid
 		}
-		if e, ok := reflect.TypeAssert[*BaseEntity](fv.Addr()); ok {
-			return e.GetIID()
-		}
-		if r, ok := reflect.TypeAssert[*BaseRelation](fv.Addr()); ok {
-			return r.GetIID()
-		}
+	}
+	return ""
+}
+
+func getIIDFromBaseField(fv reflect.Value) string {
+	if !fv.CanAddr() {
+		return ""
+	}
+	if e, ok := reflect.TypeAssert[*BaseEntity](fv.Addr()); ok {
+		return e.GetIID()
+	}
+	if r, ok := reflect.TypeAssert[*BaseRelation](fv.Addr()); ok {
+		return r.GetIID()
 	}
 	return ""
 }

@@ -4,6 +4,7 @@ package ast
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,21 +33,23 @@ func (c *Compiler) Compile(node QueryNode) (string, error) {
 }
 
 // CompileBatch compiles a list of AST nodes into a single query string.
-// The operation parameter (e.g., "match", "insert") can be provided to wrap the compiled nodes.
-func (c *Compiler) CompileBatch(nodes []QueryNode, operation string) (string, error) {
-	parts := make([]string, 0, len(nodes))
-	for _, node := range nodes {
+// The separator controls how compiled nodes are joined; empty means newline.
+func (c *Compiler) CompileBatch(nodes []QueryNode, separator string) (string, error) {
+	if separator == "" {
+		separator = "\n"
+	}
+	var b strings.Builder
+	for i, node := range nodes {
 		s, err := c.Compile(node)
 		if err != nil {
 			return "", err
 		}
-		parts = append(parts, s)
+		if i > 0 {
+			b.WriteString(separator)
+		}
+		b.WriteString(s)
 	}
-	query := strings.Join(parts, "\n")
-	if operation != "" {
-		return operation + "\n" + query, nil
-	}
-	return query, nil
+	return b.String(), nil
 }
 
 // --- Clauses ---
@@ -54,15 +57,20 @@ func (c *Compiler) CompileBatch(nodes []QueryNode, operation string) (string, er
 func (c *Compiler) compileClause(clause Clause) (string, error) {
 	switch cl := clause.(type) {
 	case MatchClause:
-		patterns := make([]string, 0, len(cl.Patterns))
-		for _, p := range cl.Patterns {
+		var b strings.Builder
+		b.WriteString("match\n")
+		for i, p := range cl.Patterns {
+			if i > 0 {
+				b.WriteString(";\n")
+			}
 			s, err := c.compilePattern(p)
 			if err != nil {
 				return "", err
 			}
-			patterns = append(patterns, s)
+			b.WriteString(s)
 		}
-		return "match\n" + strings.Join(patterns, ";\n") + ";", nil
+		b.WriteByte(';')
+		return b.String(), nil
 
 	case MatchLetClause:
 		return c.compileMatchLet(cl)
@@ -101,15 +109,20 @@ func (c *Compiler) compileClause(clause Clause) (string, error) {
 		return "update\n" + strings.Join(stmts, ";\n") + ";", nil
 
 	case FetchClause:
-		items := make([]string, 0, len(cl.Items))
-		for _, item := range cl.Items {
+		var b strings.Builder
+		b.WriteString("fetch {\n  ")
+		for i, item := range cl.Items {
+			if i > 0 {
+				b.WriteString(",\n  ")
+			}
 			compiled, err := c.compileFetchItem(item)
 			if err != nil {
 				return "", err
 			}
-			items = append(items, compiled)
+			b.WriteString(compiled)
 		}
-		return "fetch {\n  " + strings.Join(items, ",\n  ") + "\n};", nil
+		b.WriteString("\n};")
+		return b.String(), nil
 
 	case ReduceClause:
 		assignments := make([]string, 0, len(cl.Assignments))
@@ -197,15 +210,22 @@ func (c *Compiler) compilePattern(pattern Pattern) (string, error) {
 		if p.IsStrict {
 			op = "isa!"
 		}
-		parts := []string{fmt.Sprintf("%s %s %s", p.Variable, op, p.TypeName)}
+		var b strings.Builder
+		b.Grow(len(p.Variable) + len(op) + len(p.TypeName) + len(p.Constraints)*16)
+		b.WriteString(p.Variable)
+		b.WriteByte(' ')
+		b.WriteString(op)
+		b.WriteByte(' ')
+		b.WriteString(p.TypeName)
 		for _, constraint := range p.Constraints {
 			s, err := c.compileConstraint(constraint)
 			if err != nil {
 				return "", err
 			}
-			parts = append(parts, s)
+			b.WriteString(", ")
+			b.WriteString(s)
 		}
-		return strings.Join(parts, ", "), nil
+		return b.String(), nil
 
 	case RelationPattern:
 		var parts []string
@@ -481,22 +501,22 @@ func (c *Compiler) compileFetchItem(item any) (string, error) {
 		return fi, nil
 
 	case FetchAttribute:
-		return fmt.Sprintf(`"%s": %s.%s`, fi.Key, fi.Var, fi.AttrName), nil
+		return `"` + fi.Key + `": ` + fi.Var + "." + fi.AttrName, nil
 
 	case FetchVariable:
-		return fmt.Sprintf(`"%s": %s`, fi.Key, fi.Var), nil
+		return `"` + fi.Key + `": ` + fi.Var, nil
 
 	case FetchAttributeList:
-		return fmt.Sprintf(`"%s": [%s.%s]`, fi.Key, fi.Var, fi.AttrName), nil
+		return `"` + fi.Key + `": [` + fi.Var + "." + fi.AttrName + "]", nil
 
 	case FetchFunction:
-		return fmt.Sprintf(`"%s": %s(%s)`, fi.Key, fi.FuncName, fi.Var), nil
+		return `"` + fi.Key + `": ` + fi.FuncName + "(" + fi.Var + ")", nil
 
 	case FetchWildcard:
-		return fmt.Sprintf(`"%s": %s.*`, fi.Key, fi.Var), nil
+		return `"` + fi.Key + `": ` + fi.Var + ".*", nil
 
 	case FetchNestedWildcard:
-		return fmt.Sprintf(`"%s": { %s.* }`, fi.Key, fi.Var), nil
+		return `"` + fi.Key + `": { ` + fi.Var + ".* }", nil
 
 	default:
 		return "", fmt.Errorf("unknown fetch item type: %T", item)
@@ -526,26 +546,26 @@ func FormatLiteral(val any, valueType string) string {
 		}
 		return "false"
 	case "long":
-		return fmt.Sprintf("%d", val)
+		return formatInteger(val)
 	case "double":
-		return fmt.Sprintf("%v", val)
+		return formatFloat(val)
 	case "datetime":
 		if t, ok := val.(time.Time); ok {
 			return t.Format("2006-01-02T15:04:05")
 		}
-		return fmt.Sprintf("%v", val)
+		return fmt.Sprint(val)
 	case "datetime-tz":
 		if t, ok := val.(time.Time); ok {
 			return t.Format(time.RFC3339)
 		}
-		return fmt.Sprintf("%v", val)
+		return fmt.Sprint(val)
 	case "date":
 		if t, ok := val.(time.Time); ok {
 			return t.Format("2006-01-02")
 		}
-		return fmt.Sprintf("%v", val)
+		return fmt.Sprint(val)
 	default:
-		return fmt.Sprintf(`"%v"`, val)
+		return `"` + EscapeString(fmt.Sprint(val)) + `"`
 	}
 }
 
@@ -589,11 +609,11 @@ func FormatGoValue(value any) string {
 		}
 		return "false"
 	case int, int8, int16, int32, int64:
-		return fmt.Sprintf("%d", val)
+		return formatInteger(val)
 	case uint, uint8, uint16, uint32, uint64:
-		return fmt.Sprintf("%d", val)
+		return formatInteger(val)
 	case float32, float64:
-		return fmt.Sprintf("%v", val)
+		return formatFloat(val)
 	case time.Time:
 		// Date-only format (midnight UTC)
 		if val.Hour() == 0 && val.Minute() == 0 && val.Second() == 0 && val.Nanosecond() == 0 {
@@ -607,7 +627,45 @@ func FormatGoValue(value any) string {
 		return val.Format(time.RFC3339)
 	default:
 		// Fallback: convert to string and escape
-		s := fmt.Sprintf("%v", val)
+		s := fmt.Sprint(val)
 		return `"` + EscapeString(s) + `"`
+	}
+}
+
+func formatInteger(val any) string {
+	switch v := val.(type) {
+	case int:
+		return strconv.Itoa(v)
+	case int8:
+		return strconv.FormatInt(int64(v), 10)
+	case int16:
+		return strconv.FormatInt(int64(v), 10)
+	case int32:
+		return strconv.FormatInt(int64(v), 10)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case uint:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint64:
+		return strconv.FormatUint(v, 10)
+	default:
+		return fmt.Sprint(val)
+	}
+}
+
+func formatFloat(val any) string {
+	switch v := val.(type) {
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	default:
+		return fmt.Sprint(val)
 	}
 }

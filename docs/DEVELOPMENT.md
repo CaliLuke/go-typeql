@@ -76,6 +76,8 @@ go build -tags "cgo,typedb" ./...
 | `make test-unit`        | Run unit tests (no DB required)                        |
 | `make test-integration` | Run integration tests (requires TypeDB + Rust library) |
 | `make test`             | Alias for `test-unit`                                  |
+| `make test-all`         | Run unit tests, then record a benchmark run            |
+| `make bench`            | Record benchmarks in `benchmarks/benchmarks.sqlite`    |
 | `make lint`             | Run `go vet` on all packages                           |
 | `make clean-rust`       | Clean Rust build artifacts                             |
 | `make clean`            | Clean Rust artifacts + Go build cache                  |

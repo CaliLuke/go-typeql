@@ -57,7 +57,8 @@ type ModelInfo struct {
 	// Roles is a list of metadata for each role player field (only for relations).
 	Roles []RoleInfo
 	// KeyFields is a subset of Fields containing attributes marked as keys.
-	KeyFields []FieldInfo
+	KeyFields      []FieldInfo
+	baseFieldIndex int
 }
 
 // FieldByName retrieves FieldInfo by the Go struct field name.
@@ -91,18 +92,25 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 	}
 
 	info := &ModelInfo{
-		GoType: t,
+		GoType:         t,
+		baseFieldIndex: -1,
 	}
 
 	// Determine kind and type name
-	kind, err := detectModelKind(t)
+	kind, baseFieldIndex, err := detectModelKind(t)
 	if err != nil {
 		return nil, err
 	}
 	info.Kind = kind
+	info.baseFieldIndex = baseFieldIndex
 
 	// Default type name: kebab-case struct name (e.g. UserAccount → user-account)
 	info.TypeName = toKebabCase(t.Name())
+
+	fieldCount := t.NumField()
+	info.Fields = make([]FieldInfo, 0, max(1, fieldCount/2+1))
+	info.Roles = make([]RoleInfo, 0, max(1, fieldCount/2))
+	info.KeyFields = make([]FieldInfo, 0, 1)
 
 	// Scan fields
 	for field := range t.Fields() {
@@ -171,19 +179,24 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 	return info, nil
 }
 
-func detectModelKind(t reflect.Type) (ModelKind, error) {
+var (
+	baseEntityType   = reflect.TypeOf(BaseEntity{})
+	baseRelationType = reflect.TypeOf(BaseRelation{})
+)
+
+func detectModelKind(t reflect.Type) (ModelKind, int, error) {
 	for field := range t.Fields() {
 		if !field.Anonymous {
 			continue
 		}
 		switch field.Type {
-		case reflect.TypeOf(BaseEntity{}):
-			return ModelKindEntity, nil
-		case reflect.TypeOf(BaseRelation{}):
-			return ModelKindRelation, nil
+		case baseEntityType:
+			return ModelKindEntity, field.Index[0], nil
+		case baseRelationType:
+			return ModelKindRelation, field.Index[0], nil
 		}
 	}
-	return 0, fmt.Errorf("type %s must embed BaseEntity or BaseRelation", t.Name())
+	return 0, -1, fmt.Errorf("type %s must embed BaseEntity or BaseRelation", t.Name())
 }
 
 func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) FieldInfo {
@@ -235,7 +248,7 @@ func ToDict[T any](instance *T) (map[string]any, error) {
 	result := make(map[string]any)
 
 	// Include IID if present
-	iid := getIIDFromValue(v)
+	iid := getIIDFromValueInfo(v, info)
 	if iid != "" {
 		result["_iid"] = iid
 	}
