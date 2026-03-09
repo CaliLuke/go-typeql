@@ -697,7 +697,7 @@ func (m *Manager[T]) hydrateResults(results []map[string]any) ([]*T, error) {
 
 	instances := make([]*T, 0, len(results))
 	for _, row := range results {
-		instance, err := HydrateNew[T](row)
+		instance, err := hydrateNewWithInfo[T](m.info, row)
 		if err != nil {
 			return nil, fmt.Errorf("hydrate %s: %w", m.info.TypeName, err)
 		}

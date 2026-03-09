@@ -65,7 +65,7 @@ func (m *mockConn) Transaction(dbName string, txType int) (Tx, error) {
 	return nil, fmt.Errorf("no more mock transactions")
 }
 
-func (m *mockConn) Schema(dbName string) (string, error)      { return m.schemaStr, nil }
+func (m *mockConn) Schema(dbName string) (string, error)       { return m.schemaStr, nil }
 func (m *mockConn) DatabaseCreate(name string) error           { return nil }
 func (m *mockConn) DatabaseDelete(name string) error           { return nil }
 func (m *mockConn) DatabaseContains(name string) (bool, error) { return true, nil }
@@ -181,6 +181,66 @@ func TestManager_All(t *testing.T) {
 	}
 	assertContains(t, readTx.queries[0], "match")
 	assertContains(t, readTx.queries[0], "fetch")
+}
+
+func TestManager_All_RelationWithRoles(t *testing.T) {
+	registerTestTypes(t)
+	readTx := &mockTx{
+		responses: [][]map[string]any{
+			{
+				{
+					"_iid":       "0xREL1",
+					"start-date": "2024-01-15",
+					"employee": map[string]any{
+						"_iid":  "0xPER1",
+						"name":  "Alice",
+						"email": "alice@example.com",
+						"age":   float64(30),
+					},
+					"employer": map[string]any{
+						"_iid":     "0xCOM1",
+						"name":     "Acme",
+						"industry": "Tech",
+					},
+				},
+			},
+		},
+	}
+
+	conn := &mockConn{txs: []*mockTx{readTx}}
+	db := NewDatabase(conn, "test_db")
+	mgr := NewManager[testEmployment](db)
+
+	results, err := mgr.All(context.Background())
+	if err != nil {
+		t.Fatalf("All failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	emp := results[0]
+	if emp.GetIID() != "0xREL1" {
+		t.Errorf("expected relation IID=0xREL1, got %q", emp.GetIID())
+	}
+	if emp.StartDate == nil || emp.StartDate.Format("2006-01-02") != "2024-01-15" {
+		t.Errorf("expected StartDate=2024-01-15, got %v", emp.StartDate)
+	}
+	if emp.Employee == nil || emp.Employee.Name != "Alice" {
+		t.Fatalf("expected hydrated employee Alice, got %#v", emp.Employee)
+	}
+	if emp.Employee.GetIID() != "0xPER1" {
+		t.Errorf("expected employee IID=0xPER1, got %q", emp.Employee.GetIID())
+	}
+	if emp.Employer == nil || emp.Employer.Name != "Acme" {
+		t.Fatalf("expected hydrated employer Acme, got %#v", emp.Employer)
+	}
+	if emp.Employer.GetIID() != "0xCOM1" {
+		t.Errorf("expected employer IID=0xCOM1, got %q", emp.Employer.GetIID())
+	}
+	if emp.Employer.Industry != "Tech" {
+		t.Errorf("expected employer Industry=Tech, got %q", emp.Employer.Industry)
+	}
 }
 
 func TestManager_Get_WithFilters(t *testing.T) {
@@ -590,7 +650,7 @@ func TestManager_Put(t *testing.T) {
 	registerTestTypes(t)
 	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			nil,                          // put query
+			nil,                         // put query
 			{{"_iid": "0xPUT_IID_001"}}, // IID fetch
 		},
 	}
@@ -702,8 +762,8 @@ func TestNewManagerWithTx(t *testing.T) {
 
 	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			nil,                                                                     // insert
-			{{"_iid": map[string]any{"value": "0x999"}}},                            // iid fetch
+			nil, // insert
+			{{"_iid": map[string]any{"value": "0x999"}}}, // iid fetch
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{writeTx}}

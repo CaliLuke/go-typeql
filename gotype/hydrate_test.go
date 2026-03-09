@@ -77,6 +77,23 @@ func TestHydrateNew(t *testing.T) {
 	}
 }
 
+func TestHydrateNew_PointerTypeArgument(t *testing.T) {
+	ClearRegistry()
+	MustRegister[TestPerson]()
+
+	data := map[string]any{
+		"name": "Carol",
+	}
+
+	person, err := HydrateNew[*TestPerson](data)
+	if err == nil {
+		t.Fatal("expected error for pointer type argument")
+	}
+	if person != nil {
+		t.Fatal("expected nil result on error")
+	}
+}
+
 func TestHydrate_NonPointerTarget(t *testing.T) {
 	ClearRegistry()
 	MustRegister[TestPerson]()

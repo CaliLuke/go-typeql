@@ -14,37 +14,48 @@ const MaxHydrationDepth = 10
 // Hydrate populates the fields of a target struct pointer with data from a map
 // of TypeDB attribute names to values. The struct type must be registered.
 func Hydrate(target any, data map[string]any) error {
-	return hydrateWithDepth(target, data, 0, make(map[string]bool))
+	v, info, err := hydrateTargetInfo(target)
+	if err != nil {
+		return err
+	}
+	var visited map[string]bool
+	if len(info.Roles) > 0 {
+		visited = make(map[string]bool)
+	}
+	return hydrateValueWithDepth(v, info, data, 0, visited)
 }
 
-// hydrateWithDepth performs hydration with cycle detection and depth limiting.
-// visited tracks IIDs already hydrated in this call chain to detect cycles.
-func hydrateWithDepth(target any, data map[string]any, depth int, visited map[string]bool) error {
-	if depth > MaxHydrationDepth {
-		return fmt.Errorf("hydration depth exceeded maximum of %d (possible cycle in graph)", MaxHydrationDepth)
-	}
-
+func hydrateTargetInfo(target any) (reflect.Value, *ModelInfo, error) {
 	v := reflect.ValueOf(target)
 	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return fmt.Errorf("target must be a non-nil pointer to struct")
+		return reflect.Value{}, nil, fmt.Errorf("target must be a non-nil pointer to struct")
 	}
 	v = v.Elem()
 	if v.Kind() != reflect.Struct {
-		return fmt.Errorf("target must point to a struct, got %s", v.Kind())
+		return reflect.Value{}, nil, fmt.Errorf("target must point to a struct, got %s", v.Kind())
 	}
 
 	info, ok := LookupType(v.Type())
 	if !ok {
-		return fmt.Errorf("type %s is not registered", v.Type().Name())
+		return reflect.Value{}, nil, fmt.Errorf("type %s is not registered", v.Type().Name())
+	}
+	return v, info, nil
+}
+
+func hydrateValueWithDepth(v reflect.Value, info *ModelInfo, data map[string]any, depth int, visited map[string]bool) error {
+	if depth > MaxHydrationDepth {
+		return fmt.Errorf("hydration depth exceeded maximum of %d (possible cycle in graph)", MaxHydrationDepth)
 	}
 
 	// Set IID if present and check for cycles
 	if iid, ok := lookupResultValue(data, "_iid"); ok {
 		if iidStr, ok := iid.(string); ok {
-			if visited[iidStr] {
-				return nil // cycle detected — stop recursion, leave fields at zero values
+			if visited != nil {
+				if visited[iidStr] {
+					return nil // cycle detected — stop recursion, leave fields at zero values
+				}
+				visited[iidStr] = true
 			}
-			visited[iidStr] = true
 			setIIDWithInfo(v, info, iidStr)
 		}
 	}
@@ -83,7 +94,11 @@ func hydrateWithDepth(target any, data map[string]any, depth int, visited map[st
 
 		// Create a new instance of the player type and hydrate it
 		playerPtr := reflect.New(playerInfo.GoType)
-		if err := hydrateWithDepth(playerPtr.Interface(), roleMap, depth+1, visited); err != nil {
+		nextVisited := visited
+		if nextVisited == nil {
+			nextVisited = make(map[string]bool)
+		}
+		if err := hydrateValueWithDepth(playerPtr.Elem(), playerInfo, roleMap, depth+1, nextVisited); err != nil {
 			return fmt.Errorf("role %s: %w", role.RoleName, err)
 		}
 
@@ -100,11 +115,16 @@ func hydrateWithDepth(target any, data map[string]any, depth int, visited map[st
 // HydrateNew is a convenience function that creates a new instance of type T,
 // hydrates it with the provided data, and returns a pointer to it.
 func HydrateNew[T any](data map[string]any) (*T, error) {
-	result := new(T)
-	if err := Hydrate(result, data); err != nil {
-		return nil, err
+	var zero T
+	t := reflect.TypeOf(zero)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
 	}
-	return result, nil
+	info, ok := LookupType(t)
+	if !ok {
+		return nil, fmt.Errorf("type %s is not registered", t.Name())
+	}
+	return hydrateNewWithInfo[T](info, data)
 }
 
 // HydrateAny creates and hydrates an instance of the concrete type identified
@@ -127,11 +147,31 @@ func HydrateAny(data map[string]any) (any, error) {
 	}
 
 	instancePtr := reflect.New(modelInfo.GoType)
-	if err := Hydrate(instancePtr.Interface(), data); err != nil {
+	var visited map[string]bool
+	if len(modelInfo.Roles) > 0 {
+		visited = make(map[string]bool)
+	}
+	if err := hydrateValueWithDepth(instancePtr.Elem(), modelInfo, data, 0, visited); err != nil {
 		return nil, fmt.Errorf("hydrate_any type %s: %w", typeLabel, err)
 	}
 
 	return instancePtr.Interface(), nil
+}
+
+func hydrateNewWithInfo[T any](info *ModelInfo, data map[string]any) (*T, error) {
+	result := new(T)
+	v := reflect.ValueOf(result).Elem()
+	if v.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("target must point to a struct, got %s", v.Kind())
+	}
+	var visited map[string]bool
+	if len(info.Roles) > 0 {
+		visited = make(map[string]bool)
+	}
+	if err := hydrateValueWithDepth(v, info, data, 0, visited); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func setIIDWithInfo(v reflect.Value, info *ModelInfo, iid string) {

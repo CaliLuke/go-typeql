@@ -11,25 +11,28 @@ The benchmark harness is now institutionalized in the repo:
 - `make bench`
 - benchmark history stored in `benchmarks/benchmarks.sqlite`
 - baseline run: `run 1`
-- latest optimized run before the next pass in this document: `run 3`
+- latest optimized run before the next pass in this document: `run 5`
 
 Measured gains from `run 1` to `run 3`:
 
 | Benchmark | `ns/op` | `B/op` | `allocs/op` |
 | --- | ---: | ---: | ---: |
-| `BenchmarkHydrate_10000Rows` | `-49.78%` | `-41.32%` | `-42.85%` |
-| `BenchmarkHydrate_1000Rows` | `-47.71%` | `-43.50%` | `-42.81%` |
-| `BenchmarkHydrate_100Rows` | `-47.46%` | `-42.89%` | `-42.55%` |
-| `BenchmarkHydrate_SingleRow` | `-28.48%` | `-46.67%` | `-42.86%` |
-| `BenchmarkCompiler_CompileBatch` | `-27.20%` | `+4.90%` | `-28.57%` |
-| `BenchmarkCompiler_FormatGoValue` | `-20.35%` | `0.00%` | `-20.00%` |
-| `BenchmarkExtractModelInfo_Entity` | `-9.04%` | `-10.46%` | `-4.35%` |
-| `BenchmarkExtractModelInfo_Relation` | `-1.03%` | `+8.72%` | `-4.00%` |
+| `BenchmarkHydrate_10000Rows` | `-68.87%` | `-67.46%` | `-85.72%` |
+| `BenchmarkHydrate_1000Rows` | `-67.15%` | `-65.75%` | `-85.72%` |
+| `BenchmarkHydrate_100Rows` | `-67.07%` | `-65.93%` | `-85.67%` |
+| `BenchmarkHydrate_SingleRow` | `-50.69%` | `-66.67%` | `-85.71%` |
+| `BenchmarkCompiler_CompileBatch` | `-21.80%` | `+4.90%` | `-28.57%` |
+| `BenchmarkCompiler_FormatGoValue` | `-14.95%` | `0.00%` | `-20.00%` |
+| `BenchmarkExtractModelInfo_Entity` | `-8.20%` | `-10.46%` | `-4.35%` |
+| `BenchmarkExtractModelInfo_Relation` | `+0.34%` | `+8.72%` | `-4.00%` |
 
 What has already been addressed:
 
 - Raw-row hydration replaced per-row `unwrapResult` copies on the main path.
 - Embedded base-field metadata is cached in `ModelInfo` for IID access.
+- `hydrateResults` now hydrates through pre-resolved `ModelInfo` rather than paying generic registry lookup on every row.
+- Roleless hydration no longer allocates cycle-detection state.
+- Common scalar field types now use typed setter fast paths instead of the generic `reflect.ValueOf(converted)` path.
 - `FormatLiteral`, `FormatGoValue`, and parts of `CompileBatch` / fetch compilation now use cheaper formatting paths.
 - Benchmark recording, comparison, and persistence are first-class parts of the repo workflow.
 
@@ -48,11 +51,10 @@ The hydration process is the primary bottleneck for read-heavy applications, par
 - **Generic coercion path:** common scalar fields still flow through generic `coerceValue` and `reflect.ValueOf(converted)` instead of typed fast paths.
 
 ### Suggestions
-- **Typed scalar setters:** Add direct `SetString`, `SetInt`, `SetFloat`, `SetBool`, and `time.Time` fast paths for common field types.
-- **Result slice preallocation:** `hydrateResults` should allocate `len(results)` capacity up front.
 - **Pre-compiled setters:** Store setter functions in `ModelInfo` to avoid per-row generic branching.
 - **Pre-compiled hydrators:** If the safer fast paths stop paying off, generate per-model hydrators at registration time.
 - **Unsafe field access:** Highest-risk, highest-reward follow-up if another major hydration gain is required.
+- **Typed slice fast paths:** multi-valued attributes still fall back to the generic slice path.
 
 ---
 
@@ -100,6 +102,6 @@ Query generation frequency can match or exceed hydration frequency in many workl
 
 From the current `run 3` baseline, the realistic remaining upside appears to be:
 
-1. **Hydration:** another **15-30%** with typed scalar setters and precompiled setter paths.
+1. **Hydration:** another **10-20%** is still plausible, but the easy wins are now mostly exhausted.
 2. **Compiler:** another **10-20%** with a full recursive builder rewrite.
 3. **Beyond that:** larger wins are still possible, but probably require the intrusive precompiled/unsafe hydrator approach rather than incremental cleanup.
