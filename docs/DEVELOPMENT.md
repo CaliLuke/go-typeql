@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go 1.26+**
+- **Go 1.26.2+**
 - **Rust toolchain** (for the FFI driver) — install via [rustup](https://rustup.rs/)
 - **TypeDB 3.x server** (for integration tests) — run via Podman/Docker or install directly
 - **Podman or Docker** (optional, for running TypeDB in tests)
@@ -51,7 +51,7 @@ gotype/
 
 ## Building the Rust FFI Library
 
-The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface.
+The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface. The repo currently tracks `typedb-driver` `3.8.4-rc0`.
 
 ```bash
 # Build the static library (driver/rust/target/release/libtypedb_go_ffi.a)
@@ -87,12 +87,12 @@ go build -tags "cgo,typedb" ./...
 A `docker-compose.yml` is provided for running TypeDB during integration tests. Works with both Podman and Docker:
 
 ```bash
-# Start TypeDB (port 1729)
+# Start TypeDB (repo compose exposes host port 1730 -> container port 1729)
 podman compose up -d
 # or: docker compose up -d
 
 # Run integration tests
-make test-integration
+TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 # Stop TypeDB
 podman compose down
@@ -111,11 +111,12 @@ The project uses build tags to isolate CGo-dependent code:
 The `ast/`, `gotype/`, and `tqlgen/` packages compile and test without any build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
-# Unit tests (default, no tags needed) — 399 tests
+# Unit tests (default, no tags needed) — 401 tests
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests
-go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+# Default test address is localhost:1729. When using the repo compose file, use localhost:1730.
+TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
 
 ## Package Dependencies
@@ -173,6 +174,7 @@ The four packages form a layered architecture:
 - `ast/` is a standalone TypeQL AST with zero dependencies. `gotype/` builds AST nodes and compiles them to TypeQL strings.
 - `gotype/` defines `Conn` and `Tx` interfaces. The `driver/` package satisfies them, but `gotype/` never imports `driver/` — the user wires them together.
 - `tqlgen/` parses TypeQL schema files. `gotype/` reuses its parser for schema introspection and migration diffing.
+- `tqlgen/` decodes escaped string literals in schema annotations such as `@regex("\\u0041")` and `@values("\\u{1F600}")`.
 - `driver/` is fully gated behind `//go:build cgo && typedb`. Everything else compiles and tests without CGo.
 
 ## Documentation

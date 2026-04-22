@@ -92,6 +92,108 @@ func TestParseSchema_Attributes(t *testing.T) {
 	}
 }
 
+func TestParseSchema_AttributeUnicodeEscapes(t *testing.T) {
+	input := `define
+
+attribute unicode-regex, value string @regex("^\u0041\u{1F600}$");
+attribute unicode-values, value string @values("prefix-\u0041", "emoji-\u{1F600}");
+`
+
+	schema, err := ParseSchema(input)
+	if err != nil {
+		t.Fatalf("ParseSchema failed: %v", err)
+	}
+
+	if len(schema.Attributes) != 2 {
+		t.Fatalf("expected 2 attributes, got %d", len(schema.Attributes))
+	}
+
+	regex := schema.Attributes[0]
+	if regex.Regex != "^A😀$" {
+		t.Fatalf("expected decoded regex, got %q", regex.Regex)
+	}
+
+	values := schema.Attributes[1]
+	wantValues := []string{"prefix-A", "emoji-😀"}
+	if len(values.Values) != len(wantValues) {
+		t.Fatalf("expected %d values, got %d", len(wantValues), len(values.Values))
+	}
+	for i, want := range wantValues {
+		if values.Values[i] != want {
+			t.Fatalf("value %d: got %q, want %q", i, values.Values[i], want)
+		}
+	}
+}
+
+func TestParseSchema_AttributeStringEscapes(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+		wantRegex  string
+		wantValues []string
+	}{
+		{
+			name:       "double quoted escapes",
+			annotation: `@values("foo\"bar", "path\/value", "slash\\value")`,
+			wantValues: []string{`foo"bar`, "path/value", `slash\value`},
+		},
+		{
+			name:       "single quoted escapes",
+			annotation: `@values('foo\'bar', 'path\/value', 'slash\\value')`,
+			wantValues: []string{`foo'bar`, "path/value", `slash\value`},
+		},
+		{
+			name:       "malformed short unicode preserved",
+			annotation: `@regex("bad \u00 escape")`,
+			wantRegex:  `bad \u00 escape`,
+		},
+		{
+			name:       "malformed empty braced unicode preserved",
+			annotation: `@regex("bad \u{} escape")`,
+			wantRegex:  `bad \u{} escape`,
+		},
+		{
+			name:       "malformed hex braced unicode preserved",
+			annotation: `@regex("bad \u{ZZ} escape")`,
+			wantRegex:  `bad \u{ZZ} escape`,
+		},
+		{
+			name:       "unknown escape preserved",
+			annotation: `@regex("foo\xbar")`,
+			wantRegex:  `foo\xbar`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := "define\n\nattribute test-attr, value string " + tt.annotation + ";\n"
+
+			schema, err := ParseSchema(input)
+			if err != nil {
+				t.Fatalf("ParseSchema failed: %v", err)
+			}
+			if len(schema.Attributes) != 1 {
+				t.Fatalf("expected 1 attribute, got %d", len(schema.Attributes))
+			}
+
+			attr := schema.Attributes[0]
+			if tt.wantRegex != "" && attr.Regex != tt.wantRegex {
+				t.Fatalf("regex: got %q, want %q", attr.Regex, tt.wantRegex)
+			}
+			if tt.wantValues != nil {
+				if len(attr.Values) != len(tt.wantValues) {
+					t.Fatalf("expected %d values, got %d", len(tt.wantValues), len(attr.Values))
+				}
+				for i, want := range tt.wantValues {
+					if attr.Values[i] != want {
+						t.Fatalf("value %d: got %q, want %q", i, attr.Values[i], want)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestParseSchema_Entities(t *testing.T) {
 	schema, err := ParseSchema(testSchema)
 	if err != nil {

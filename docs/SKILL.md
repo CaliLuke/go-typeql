@@ -693,6 +693,7 @@ The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstrac
 
 - Generates Go structs with `BaseEntity`/`BaseRelation` embedding and `typedb:"..."` tags
 - Generates string constants from `@values` constraints (`-enums`, on by default)
+- Decodes escaped TypeQL string literals in schema annotations, including `\uXXXX` and `\u{...}` forms in `@regex` and `@values`
 - Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas, abstract tracking, key attributes, schema hash
 - DTO mode (`-dto`) outputs Out/Create/Patch struct variants for HTTP APIs
 - N-role relation support (not limited to binary relations)

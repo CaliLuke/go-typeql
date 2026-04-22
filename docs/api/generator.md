@@ -4,6 +4,8 @@
 
 `tqlgen` generates Go struct definitions from TypeQL schema files. It produces structs with `gotype.BaseEntity`/`BaseRelation` embeds and `typedb:"..."` tags, ready for use with the ORM.
 
+When parsing schema annotations, `tqlgen` decodes escaped string literals used in TypeQL string values, including unicode escapes such as `\u0041` and `\u{1F600}` in `@regex(...)` and `@values(...)`.
+
 ## CLI Usage
 
 ```bash
@@ -260,6 +262,7 @@ The recognized acronyms are: ID, URL, UUID, API, HTTP, IID, NF.
 - `plays` clauses (used for role player type resolution)
 - `@regex`, `@range` annotations (parsed but not emitted as Go constraints)
 - `@values` annotations (parsed; emitted as string constants when `-enums=true`)
+- Escaped TypeQL string literals in annotations, including unicode escape forms `\uXXXX` and `\u{...}`
 - `fun` definitions (parsed for signature extraction, not emitted as Go code)
 - `struct` definitions (parsed for field extraction)
 - Comment annotations (`# @key value`, `# @key(value)`, `# @key` above type definitions)

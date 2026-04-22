@@ -4,6 +4,8 @@
 
 The `driver` package provides Go bindings to the official TypeDB `typedb-driver` 3.x Rust crate via CGo. All files are gated with `//go:build cgo && typedb` so they don't affect builds that don't need the driver.
 
+The bundled Rust FFI crate currently depends on `typedb-driver` `3.8.4-rc0`.
+
 `go get` only downloads the module source. It does not build the Rust static library automatically. If you import `driver/`, you must either run `make build-rust` in the module tree that Go is compiling, or provide a prebuilt `libtypedb_go_ffi.a` and build with the `typedb_prebuilt` tag. Release archives are published for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`.
 
 ## Prerequisites
@@ -100,6 +102,8 @@ The `Conn` interface includes database lifecycle methods (`DatabaseCreate`, `Dat
 - `go test ./gotype/...` works without Rust or CGo
 - `go build -tags "cgo,typedb" ./driver/...` compiles the driver
 - `go test -tags "cgo,typedb,integration" ./driver/...` runs integration tests
+
+If you use the repo `docker-compose.yml` for integration tests, set `TEST_DB_ADDRESS=localhost:1730` because the compose stack maps host port `1730` to the server's internal `1729`.
 
 ## Error Handling
 

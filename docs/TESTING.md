@@ -10,16 +10,16 @@ go-typeql uses a two-tier testing approach:
 ## Running Tests
 
 ```bash
-# Unit tests (399 tests, no DB required)
+# Unit tests (401 tests, no DB required)
 make test-unit
 # Or directly:
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (requires TypeDB + Rust library)
 podman compose up -d
-make test-integration
+TEST_DB_ADDRESS=localhost:1730 make test-integration
 # Or directly:
-go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 # Lint
 make lint
@@ -47,6 +47,8 @@ Benchmark runs are persisted in `benchmarks/benchmarks.sqlite`. The recorder app
 - raw `go test` output for the run
 
 Use `make bench` for an explicit performance checkpoint, or `make test-all` to run unit tests and then record a benchmark run.
+
+When using the repo `docker-compose.yml`, TypeDB is exposed on host port `1730` by default even though the server listens on container port `1729`. The tests default to `localhost:1729`, so set `TEST_DB_ADDRESS=localhost:1730` when running against the compose-managed instance.
 
 ## Mock Patterns
 

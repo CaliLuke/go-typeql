@@ -1,74 +1,70 @@
 ---
 name: release-checks
-description: Codex release checklist for publishing a go-typeql version safely and repeatably.
-argument-hint: "<version, e.g. v1.5.0>"
+description: This skill should be used when preparing and publishing a new go-typeql version to the Go module registry and GitHub. Triggers include "/release-checks", "release", "publish", "tag a version", "cut a release", "ship vX.Y.Z", "bump the version", or "prepare a release". Runs the 14-step checklist (tests, coverage, vet, golangci-lint, staticcheck, docs regen, tagging, changelog, pkg.go.dev verification).
+argument-hint: "<version, e.g. v1.2.0>"
 ---
 
-# Codex Release Checks for go-typeql
+# Release Checks for go-typeql
 
-Run this checklist in order. Stop on first failure and report the exact failing step.
+Follow every step in order. Stop and report if any step fails.
 
-Target version: `$ARGUMENTS`
+The target version is: $ARGUMENTS
 
-## 1. Confirm version
+## 1. Decide the version
 
-- Require an explicit semver version (e.g. `v1.5.0`).
-- If breaking changes exist, release as major and confirm module-path policy.
-- Verify tag does not already exist:
+Follow semver:
 
-```bash
-git tag --list | rg "^<version>$"
-```
+- **Patch** (`v1.0.2`): bug fixes, doc updates, no API changes
+- **Minor** (`v1.1.0`): new features, backward-compatible API additions
+- **Major** (`v2.0.0`): breaking changes (requires module path change to `github.com/CaliLuke/go-typeql/v2`)
 
-## 2. Validate working tree
+If `$ARGUMENTS` is empty, ask the user what version to release.
 
-- Check for unrelated/uncommitted changes before release prep:
-
-```bash
-git status --short
-```
-
-- If dirty, confirm with user what should be included.
-
-## 3. Run unit tests
+## 2. Run the full test suite
 
 ```bash
 go test ./ast/... ./gotype/... ./tqlgen/...
-```
-
-## 4. Run integration tests
-
-```bash
+make build-rust
 podman compose up -d
-go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
 
-## 5. Run static checks
+This step must prove both release surfaces still work:
 
-```bash
-go vet ./...
-golangci-lint run ./...
-```
+- The pure-Go packages (`ast/`, `gotype/`, `tqlgen/`) still pass from a clean checkout.
+- The CGo driver still links after producing `driver/rust/target/release/libtypedb_go_ffi.a`.
 
-## 6. Check coverage for changed surfaces
+The TypeDB container can be left running for subsequent steps; no teardown needed unless the user wants a clean environment (`podman compose down`).
+
+## 3. Check test coverage
 
 ```bash
 go test -coverprofile=coverage.out ./ast/... ./gotype/... ./tqlgen/...
 go tool cover -func=coverage.out | tail -1
 ```
 
-Review any newly introduced public API paths with weak/no coverage.
+Review any significant uncovered paths in new/changed code. No hard threshold, but don't ship untested public APIs.
 
-## 7. Verify module hygiene
+## 4. Run linters
+
+```bash
+go vet ./...
+golangci-lint run ./...
+~/go/bin/staticcheck ./...
+```
+
+## 5. Verify go.mod is tidy
 
 ```bash
 go mod tidy
-git diff -- go.mod go.sum
+git diff go.mod go.sum
 ```
 
-Expected: no diff unless intentionally changing dependencies.
+Should produce no diff. If it does, commit the tidied result as part of step 9 and continue.
 
-## 8. Regenerate docs when exported API changes
+## 6. Regenerate reference docs
+
+If any exported symbols changed:
 
 ```bash
 ~/go/bin/gomarkdoc ./ast/ > docs/api/reference/ast.md
@@ -76,52 +72,79 @@ Expected: no diff unless intentionally changing dependencies.
 ~/go/bin/gomarkdoc ./tqlgen/ > docs/api/reference/tqlgen.md
 ```
 
-## 9. Update release-facing docs
+## 7. Update AGENTS.md test count
 
-- Update version-pinned install line in `README.md`.
-- If command counts/quality gates changed, update `CLAUDE.md` notes accordingly.
-
-## 10. Final verification sweep
+Count tests with:
 
 ```bash
-go test ./ast/... ./gotype/... ./tqlgen/...
-go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+go test ./ast/... ./gotype/... ./tqlgen/... -v 2>&1 | grep -c "^--- PASS"
 ```
 
-## 11. Commit release prep
+Update the number in the comment at the top of the Commands section in `AGENTS.md`. `CLAUDE.md` is a symlink to `AGENTS.md`. If the comment is no longer at that location, grep for the prior count to find it.
+
+## 8. Update installation and release docs
+
+Update every user-facing version reference and artifact instruction:
 
 ```bash
-git add -A
-git commit -m "release: prepare <version>"
+go get github.com/CaliLuke/go-typeql@$ARGUMENTS
 ```
 
-## 12. Tag and push
+Specifically verify:
+
+- `README.md` uses the new version in both `go get` and `gh release download` examples.
+- Build/install docs reference the generic archive name `libtypedb_go_ffi.a` (the name after download/rename).
+- Release-download docs reference the per-platform names (`libtypedb_go_ffi-<os>-<arch>.a`, see step 13).
+- Docs clearly state that `go get` downloads source only; it does not build the Rust archive automatically.
+
+## 9. Commit outstanding changes
+
+Commit everything from steps 5–8.
+
+## 10. Tag the release
+
+Push `main` first so CI can verify before the tag goes out:
 
 ```bash
-git tag <version>
 git push origin main
-git push origin <version>
+git tag $ARGUMENTS
+git push origin $ARGUMENTS
 ```
 
-## 13. Create and refine GitHub release
+## 11. Create a GitHub release
+
+Use `--generate-notes` to seed an initial changelog from commits — you'll replace it in step 12.
 
 ```bash
-gh release create <version> --generate-notes --title "<version>"
+gh release create $ARGUMENTS --generate-notes --title "$ARGUMENTS"
 ```
 
-Then edit notes with a concise human changelog focused on user-visible changes.
+## 12. Write a changelog
 
-## 14. Verify public availability
-
-- Check package page: `https://pkg.go.dev/github.com/CaliLuke/go-typeql@<version>`
-- Trigger proxy fetch if needed:
+Edit the release notes with a human-written summary: new features, new types/functions, options, documentation changes. Use the auto-generated notes from step 11 as a reference. Omit internal-only changes (instruction-file edits, benchmark DB churn, local housekeeping).
 
 ```bash
-GOPROXY=https://proxy.golang.org GO111MODULE=on go get github.com/CaliLuke/go-typeql@<version>
+gh release edit $ARGUMENTS --notes "..."
 ```
 
-## 15. Post-release sanity
+## 13. Verify published assets and pkg.go.dev
 
-- Confirm tag + release artifact visibility on GitHub.
-- Confirm CI for the release commit/tag is green.
-- Capture follow-up items in issues, not in release notes.
+Visit `https://pkg.go.dev/github.com/CaliLuke/go-typeql@$ARGUMENTS`. Force indexing if needed:
+
+```bash
+GOPROXY=https://proxy.golang.org go get github.com/CaliLuke/go-typeql@$ARGUMENTS
+```
+
+Also verify the GitHub release contains the expected Rust static libraries and that their names match the documented install flow:
+
+- `libtypedb_go_ffi-linux-amd64.a`
+- `libtypedb_go_ffi-darwin-amd64.a`
+- `libtypedb_go_ffi-darwin-arm64.a`
+
+## 14. Report completion
+
+Report back to the user with:
+
+- The release URL (`https://github.com/CaliLuke/go-typeql/releases/tag/$ARGUMENTS`)
+- The pkg.go.dev URL
+- A one-line summary of test count, coverage, and any skipped/deferred steps

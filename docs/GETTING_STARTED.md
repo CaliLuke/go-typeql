@@ -1,6 +1,6 @@
 # Getting Started
 
-This walkthrough connects to TypeDB, creates a database, defines a schema, and does basic CRUD. It assumes you have TypeDB running on port 1729 (e.g. via `podman compose up -d`).
+This walkthrough connects to TypeDB, creates a database, defines a schema, and does basic CRUD. It assumes you have TypeDB running on port 1729. If you use the repo `docker-compose.yml` via `podman compose up -d`, connect to host port `1730` instead.
 
 ```go
 package main
@@ -45,7 +45,7 @@ func main() {
     gotype.Register[Employment]()
 
     // 3. Connect to TypeDB.
-    conn, err := driver.Open("localhost:1729", "admin", "password")
+    conn, err := driver.Open("localhost:1730", "admin", "password")
     if err != nil {
         log.Fatal(err)
     }

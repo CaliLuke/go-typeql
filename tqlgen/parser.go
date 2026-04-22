@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/alecthomas/participle/v2"
@@ -197,7 +198,7 @@ var simpleLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "FunKW", Pattern: `\bfun\b`},
 	{Name: "Keyword", Pattern: `\b(define|attribute|entity|relation|sub|value|owns|plays|relates|as|struct|match|return|isa|has|not|or|in|is|count|sum|max|min|mean|median|std|group)\b`},
 	{Name: "AnnotKW", Pattern: `@(key|unique|abstract|card|regex|values|range)`},
-	{Name: "String", Pattern: `"(?:[^"\\]|\\.)*"`},
+	{Name: "String", Pattern: `"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`},
 	{Name: "Var", Pattern: `\$[a-zA-Z_][a-zA-Z0-9_-]*`},
 	{Name: "Arrow", Pattern: `->`},
 	{Name: "CardExpr", Pattern: `[0-9]+(?:\.\.[0-9]*)?`},
@@ -418,12 +419,103 @@ func convertOwns(o *OwnsDef) OwnsSpec {
 	return spec
 }
 
-// unquote removes surrounding quotes from a string literal.
+// unquote removes surrounding quotes from a TypeQL string literal and decodes
+// the subset of JSON-style escapes used in schema annotations, plus TypeQL's
+// \u{...} unicode form for supplementary planes. Surrogate pairs are not
+// combined here; callers should use \u{...} for code points beyond the BMP.
 func unquote(s string) string {
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		return s[1 : len(s)-1]
+	if len(s) < 2 {
+		return s
 	}
-	return s
+
+	quote := s[0]
+	if (quote != '"' && quote != '\'') || s[len(s)-1] != quote {
+		return s
+	}
+
+	inner := s[1 : len(s)-1]
+	var b strings.Builder
+	b.Grow(len(inner))
+
+	for i := 0; i < len(inner); i++ {
+		ch := inner[i]
+		if ch != '\\' {
+			b.WriteByte(ch)
+			continue
+		}
+		if i+1 >= len(inner) {
+			b.WriteByte('\\')
+			break
+		}
+
+		next := inner[i+1]
+		switch next {
+		case '\\', '"', '\'', '/':
+			b.WriteByte(next)
+			i++
+		case 'b':
+			b.WriteByte('\b')
+			i++
+		case 'f':
+			b.WriteByte('\f')
+			i++
+		case 'n':
+			b.WriteByte('\n')
+			i++
+		case 'r':
+			b.WriteByte('\r')
+			i++
+		case 't':
+			b.WriteByte('\t')
+			i++
+		case 'u':
+			r, consumed, ok := decodeUnicodeEscape(inner[i+1:])
+			if !ok {
+				b.WriteByte('\\')
+				continue
+			}
+			b.WriteRune(r)
+			i += consumed
+		default:
+			// Preserve unknown escapes verbatim rather than guessing.
+			b.WriteByte('\\')
+			b.WriteByte(next)
+			i++
+		}
+	}
+
+	return b.String()
+}
+
+func decodeUnicodeEscape(s string) (rune, int, bool) {
+	if len(s) == 0 || s[0] != 'u' {
+		return 0, 0, false
+	}
+
+	if len(s) >= 3 && s[1] == '{' {
+		end := strings.IndexByte(s[2:], '}')
+		if end < 0 {
+			return 0, 0, false
+		}
+		hexDigits := s[2 : 2+end]
+		if len(hexDigits) == 0 || len(hexDigits) > 6 {
+			return 0, 0, false
+		}
+		v, err := strconv.ParseUint(hexDigits, 16, 32)
+		if err != nil || v > 0x10FFFF {
+			return 0, 0, false
+		}
+		return rune(v), 2 + end + 1, true
+	}
+
+	if len(s) < 5 {
+		return 0, 0, false
+	}
+	v, err := strconv.ParseUint(s[1:5], 16, 16)
+	if err != nil {
+		return 0, 0, false
+	}
+	return rune(v), 5, true
 }
 
 
