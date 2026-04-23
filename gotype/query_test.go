@@ -272,19 +272,30 @@ func TestQuery_Count_WithFilter(t *testing.T) {
 func TestQuery_Delete(t *testing.T) {
 	registerTestTypes(t)
 
-	writeTx := &mockTx{responses: [][]map[string]any{nil}}
+	writeTx := &mockTx{responses: [][]map[string]any{
+		{{"count": float64(1)}},
+		nil,
+	}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
 	mgr := NewManager[testPerson](db)
 
-	_, err := mgr.Query().
+	count, err := mgr.Query().
 		Filter(Eq("name", "Alice")).
 		Delete(context.Background())
 	if err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
+	if count != 1 {
+		t.Fatalf("expected delete count 1, got %d", count)
+	}
 
-	q := writeTx.queries[0]
+	if len(writeTx.queries) != 2 {
+		t.Fatalf("expected count query and delete query, got %d", len(writeTx.queries))
+	}
+
+	assertContains(t, writeTx.queries[0], "reduce $count = count($e);")
+	q := writeTx.queries[1]
 	assertContains(t, q, "match")
 	assertContains(t, q, `"Alice"`)
 	assertContains(t, q, "delete $e;")
@@ -429,25 +440,32 @@ func TestQuery_UpdateWith_NoResults(t *testing.T) {
 func TestQuery_Update_BulkMap(t *testing.T) {
 	registerTestTypes(t)
 
-	writeTx := &mockTx{}
+	writeTx := &mockTx{responses: [][]map[string]any{
+		{{"count": float64(2)}},
+		nil,
+	}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
 	mgr := NewManager[testPerson](db)
 
-	_, err := mgr.Query().Update(context.Background(), map[string]any{
+	count, err := mgr.Query().Update(context.Background(), map[string]any{
 		"email": "bulk@example.com",
 	})
 	if err != nil {
 		t.Fatalf("Update bulk failed: %v", err)
 	}
+	if count != 2 {
+		t.Fatalf("expected update count 2, got %d", count)
+	}
 
-	// Should have a single batched query with try-delete + insert
-	if len(writeTx.queries) != 1 {
-		t.Fatalf("expected 1 batched query, got %d:\n%s",
+	// Should have a count query followed by a single batched update query.
+	if len(writeTx.queries) != 2 {
+		t.Fatalf("expected count query and batched update query, got %d:\n%s",
 			len(writeTx.queries), strings.Join(writeTx.queries, "\n---\n"))
 	}
 
-	q := writeTx.queries[0]
+	assertContains(t, writeTx.queries[0], "reduce $count = count($e);")
+	q := writeTx.queries[1]
 	assertContains(t, q, "delete")
 	assertContains(t, q, "try")
 	assertContains(t, q, "insert")
@@ -472,6 +490,61 @@ func TestQuery_Update_EmptyMap(t *testing.T) {
 	if count != 0 {
 		t.Errorf("expected count 0 for empty update, got %d", count)
 	}
+}
+
+func TestQuery_Update_ReturnsMatchedCount(t *testing.T) {
+	registerTestTypes(t)
+
+	writeTx := &mockTx{
+		responses: [][]map[string]any{
+			{{"count": float64(2)}},
+			nil,
+		},
+	}
+	conn := &mockConn{txs: []*mockTx{writeTx}}
+	db := NewDatabase(conn, "test_db")
+	mgr := NewManager[testPerson](db)
+
+	count, err := mgr.Query().Update(context.Background(), map[string]any{
+		"email": "bulk@example.com",
+	})
+	if err != nil {
+		t.Fatalf("Update bulk failed: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected update count 2, got %d", count)
+	}
+	if len(writeTx.queries) != 2 {
+		t.Fatalf("expected count query and update query, got %d", len(writeTx.queries))
+	}
+	assertContains(t, writeTx.queries[0], "reduce $count = count($e);")
+}
+
+func TestQuery_Delete_ReturnsMatchedCount(t *testing.T) {
+	registerTestTypes(t)
+
+	writeTx := &mockTx{
+		responses: [][]map[string]any{
+			{{"count": float64(3)}},
+			nil,
+		},
+	}
+	conn := &mockConn{txs: []*mockTx{writeTx}}
+	db := NewDatabase(conn, "test_db")
+	mgr := NewManager[testPerson](db)
+
+	count, err := mgr.Query().Filter(Gt("age", 20)).Delete(context.Background())
+	if err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected delete count 3, got %d", count)
+	}
+	if len(writeTx.queries) != 2 {
+		t.Fatalf("expected count query and delete query, got %d", len(writeTx.queries))
+	}
+	assertContains(t, writeTx.queries[0], "reduce $count = count($e);")
+	assertContains(t, writeTx.queries[1], "delete $e;")
 }
 
 func TestQuery_Exists_True(t *testing.T) {

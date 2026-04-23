@@ -113,15 +113,38 @@ func (q *Query[T]) Count(ctx context.Context) (int64, error) {
 
 // Delete removes all instances that match the query filters.
 func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
-	query, err := q.buildDeleteQuery()
+	countQuery, err := q.buildCountQuery()
 	if err != nil {
-		return 0, fmt.Errorf("delete %s: build: %w", q.mgr.info.TypeName, err)
+		return 0, fmt.Errorf("delete %s: build count: %w", q.mgr.info.TypeName, err)
 	}
-	_, err = q.mgr.db.ExecuteWrite(ctx, query)
+	deleteQuery, err := q.buildDeleteQuery()
+	if err != nil {
+		return 0, fmt.Errorf("delete %s: build delete: %w", q.mgr.info.TypeName, err)
+	}
+
+	tx, err := q.mgr.db.Transaction(WriteTransaction)
 	if err != nil {
 		return 0, fmt.Errorf("delete %s: %w", q.mgr.info.TypeName, err)
 	}
-	return -1, nil
+	defer tx.Close()
+
+	countResults, err := tx.QueryWithContext(ctx, countQuery)
+	if err != nil {
+		return 0, fmt.Errorf("delete %s: count: %w", q.mgr.info.TypeName, err)
+	}
+	var count int64
+	if len(countResults) > 0 {
+		count = extractCount(countResults[0])
+	}
+
+	_, err = tx.QueryWithContext(ctx, deleteQuery)
+	if err != nil {
+		return 0, fmt.Errorf("delete %s: %w", q.mgr.info.TypeName, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("delete %s: commit: %w", q.mgr.info.TypeName, err)
+	}
+	return count, nil
 }
 
 // --- Query building ---
@@ -272,7 +295,7 @@ func (q *Query[T]) UpdateWith(ctx context.Context, fn func(*T)) ([]*T, error) {
 
 // Update performs a bulk attribute update on all matching instances.
 // Keys in the updates map are TypeDB attribute names; values are the new values.
-// Returns the number of instances updated, or -1 if the count is unknown.
+// Returns the number of instances updated.
 func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, error) {
 	if len(updates) == 0 {
 		return 0, nil
@@ -289,6 +312,19 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 		return 0, fmt.Errorf("bulk_update %s: %w", q.mgr.info.TypeName, err)
 	}
 	defer tx.Close()
+
+	countQuery, err := q.buildCountQuery()
+	if err != nil {
+		return 0, fmt.Errorf("bulk_update %s: build count: %w", q.mgr.info.TypeName, err)
+	}
+	countResults, err := tx.QueryWithContext(ctx, countQuery)
+	if err != nil {
+		return 0, fmt.Errorf("bulk_update %s: count: %w", q.mgr.info.TypeName, err)
+	}
+	var count int64
+	if len(countResults) > 0 {
+		count = extractCount(countResults[0])
+	}
 
 	// Build a single match-delete-insert query for all attributes
 	var tryMatches []string
@@ -313,7 +349,7 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("bulk_update %s: commit: %w", q.mgr.info.TypeName, err)
 	}
-	return -1, nil
+	return count, nil
 }
 
 // --- Aggregate queries ---

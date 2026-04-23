@@ -10,14 +10,6 @@ No remaining open top-priority issues.
 
 ## 2. Correctness — secondary
 
-### 2.1 `Query.Update` + `Query.Delete` return fake counts
-
-`query.go:114` returns `-1`, `query.go:259` returns `-1`. The doc comment
-says "or -1 if the count is unknown" — but TypeDB can return the match
-count via `reduce $c = count($e);` in the same tx. Either plumb that
-through or change the signature to `error` (not `(int64, error)`) to
-stop misleading callers.
-
 ### 2.3 `Database.Transaction()` has no ctx parameter
 
 `session.go:119–121`: callers pass `ctx` to `ExecuteWrite`, which then
@@ -99,4 +91,4 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **2.1 / 2.3** (correctness/API cleanup) — highest remaining leverage.
+1. **2.3** (correctness/API cleanup) — highest remaining leverage.
