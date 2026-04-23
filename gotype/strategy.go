@@ -73,11 +73,10 @@ func (s *entityStrategy) buildInsertOrPut(info *ModelInfo, instance any, varName
 	}
 
 	for _, fi := range info.Fields {
-		vals := extractFieldValues(v, fi)
-		for _, val := range vals {
+		visitFieldValues(v, fi, func(val any) {
 			statements = append(statements,
 				ast.HasStmt("$"+varName, fi.Tag.Name, ast.ValueFromGo(val)))
-		}
+		})
 	}
 
 	// Build clause based on keyword
@@ -237,10 +236,9 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 		varName, info.TypeName, strings.Join(roleParts, ", ")))
 
 	for _, fi := range info.Fields {
-		vals := extractFieldValues(v, fi)
-		for _, val := range vals {
+		visitFieldValues(v, fi, func(val any) {
 			insertParts = append(insertParts, fmt.Sprintf("has %s %s", fi.Tag.Name, FormatValue(val)))
-		}
+		})
 	}
 
 	// Compile query
@@ -394,28 +392,24 @@ func reflectValue(instance any) reflect.Value {
 	return v
 }
 
-func extractFieldValues(v reflect.Value, fi FieldInfo) []any {
+func visitFieldValues(v reflect.Value, fi FieldInfo, fn func(any)) {
 	field := v.Field(fi.FieldIndex)
 	if fi.IsPointer && field.IsNil() {
-		return nil
+		return
 	}
 
 	if fi.IsSlice {
-		if field.Len() == 0 {
-			return nil
-		}
-		vals := make([]any, field.Len())
 		for i := 0; i < field.Len(); i++ {
-			vals[i] = field.Index(i).Interface()
+			fn(field.Index(i).Interface())
 		}
-		return vals
+		return
 	}
 
 	val := field.Interface()
 	if fi.IsPointer {
 		val = field.Elem().Interface()
 	}
-	return []any{val}
+	fn(val)
 }
 
 func extractSingleFieldValue(v reflect.Value, fi FieldInfo) any {

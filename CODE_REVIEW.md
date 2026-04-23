@@ -6,12 +6,7 @@ Section 1 ("Top issues") is the highest-signal list; later sections are broader 
 
 ## 1. Top issues
 
-### 1.1 `extractFieldValues` allocates a 1-slot slice per scalar field
-
-`gotype/strategy.go:423–445`: the common case (scalar, non-slice) goes
-through `return []any{val}`. Callers iterate the slice with one element.
-Split the API into scalar and slice versions, or return `(val any, extras []any)`.
-Hit on every insert and every update for every field — easy win.
+No remaining open top-priority issues.
 
 ## 2. Correctness — secondary
 
@@ -171,6 +166,5 @@ For contrast — these are well-done and worth preserving when refactoring:
 ## 8. Suggested ordering for fixes
 
 1. **2.6** (partial-success mutation) — small and correctness-sensitive.
-2. **1.1** (perf quick win) — contained and benchmarkable.
-3. **2.5** (pool concurrency) — bug potential grows with adoption.
-4. **3.1, 4.1, 4.3** (refactors) — do after the above to avoid merge pain.
+2. **2.5** (pool concurrency) — bug potential grows with adoption.
+3. **3.1, 4.1, 4.3** (refactors) — do after the above to avoid merge pain.
