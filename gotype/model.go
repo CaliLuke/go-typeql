@@ -37,6 +37,8 @@ type FieldInfo struct {
 	ElemType reflect.Type
 	// ValueType is the TypeDB value type (e.g., "string", "long", "boolean").
 	ValueType string
+	// timeLayoutHint caches the last successful datetime parsing layout index.
+	timeLayoutHint uint32
 }
 
 // ModelInfo contains comprehensive metadata about a registered TypeDB model,

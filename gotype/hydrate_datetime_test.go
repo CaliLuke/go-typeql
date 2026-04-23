@@ -93,3 +93,32 @@ func TestHydrate_DateField(t *testing.T) {
 		t.Errorf("BirthDate: got %v, want %v", entity.BirthDate, expectedTime)
 	}
 }
+
+func TestCoerceTimeFast_CachesSuccessfulLayout(t *testing.T) {
+	fi := &FieldInfo{}
+
+	got, ok := coerceTimeFast("2024-01-15T10:30:00Z", fi)
+	if !ok {
+		t.Fatal("expected RFC3339 datetime to parse")
+	}
+	if fi.timeLayoutHint != 1 {
+		t.Fatalf("expected RFC3339 layout hint 1, got %d", fi.timeLayoutHint)
+	}
+	want, _ := time.Parse(time.RFC3339, "2024-01-15T10:30:00Z")
+	if !got.Equal(want) {
+		t.Fatalf("parsed time mismatch: got %v want %v", got, want)
+	}
+
+	fi.timeLayoutHint = 2
+	got, ok = coerceTimeFast("2024-01-16T10:30:00Z", fi)
+	if !ok {
+		t.Fatal("expected RFC3339 datetime to parse after stale cache hint")
+	}
+	if fi.timeLayoutHint != 1 {
+		t.Fatalf("expected cache hint to refresh back to 1, got %d", fi.timeLayoutHint)
+	}
+	want, _ = time.Parse(time.RFC3339, "2024-01-16T10:30:00Z")
+	if !got.Equal(want) {
+		t.Fatalf("parsed time mismatch after cache refresh: got %v want %v", got, want)
+	}
+}

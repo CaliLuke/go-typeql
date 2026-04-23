@@ -4,6 +4,7 @@ package gotype
 import (
 	"fmt"
 	"reflect"
+	"sync/atomic"
 	"time"
 )
 
@@ -61,7 +62,8 @@ func hydrateValueWithDepth(v reflect.Value, info *ModelInfo, data map[string]any
 	}
 
 	// Set attribute fields
-	for _, fi := range info.Fields {
+	for i := range info.Fields {
+		fi := &info.Fields[i]
 		val, ok := lookupResultValue(data, fi.Tag.Name)
 		if !ok {
 			continue
@@ -202,7 +204,7 @@ func setIIDOnBaseField(fv reflect.Value, iid string) bool {
 	return false
 }
 
-func setFieldValue(field reflect.Value, fi FieldInfo, val any) error {
+func setFieldValue(field reflect.Value, fi *FieldInfo, val any) error {
 	if fi.IsSlice {
 		return setSliceField(field, fi, val)
 	}
@@ -226,7 +228,7 @@ func setFieldValue(field reflect.Value, fi FieldInfo, val any) error {
 	return nil
 }
 
-func trySetScalarField(field reflect.Value, fi FieldInfo, val any) bool {
+func trySetScalarField(field reflect.Value, fi *FieldInfo, val any) bool {
 	targetType := fi.FieldType
 	if fi.IsPointer {
 		targetType = fi.ElemType
@@ -271,7 +273,7 @@ func trySetScalarField(field reflect.Value, fi FieldInfo, val any) bool {
 		return true
 
 	case "datetime", "datetime-tz", "date":
-		t, ok := coerceTimeFast(val)
+		t, ok := coerceTimeFast(val, fi)
 		if !ok || targetType != reflect.TypeOf(time.Time{}) {
 			return false
 		}
@@ -299,7 +301,7 @@ func coerceStringFast(val any) (string, bool) {
 	}
 }
 
-func setIntegerFast(field reflect.Value, fi FieldInfo, targetType reflect.Type, val any) bool {
+func setIntegerFast(field reflect.Value, fi *FieldInfo, targetType reflect.Type, val any) bool {
 	switch targetType.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		i64, ok := coerceInt64Fast(val)
@@ -333,7 +335,7 @@ func setIntegerFast(field reflect.Value, fi FieldInfo, targetType reflect.Type, 
 	return false
 }
 
-func setFloatFast(field reflect.Value, fi FieldInfo, targetType reflect.Type, val any) bool {
+func setFloatFast(field reflect.Value, fi *FieldInfo, targetType reflect.Type, val any) bool {
 	f64, ok := coerceFloat64Fast(val)
 	if !ok {
 		return false
@@ -462,18 +464,30 @@ func coerceFloat64Fast(val any) (float64, bool) {
 	}
 }
 
-func coerceTimeFast(val any) (time.Time, bool) {
+var timeCoerceLayouts = [...]string{
+	time.RFC3339,
+	"2006-01-02T15:04:05",
+	"2006-01-02",
+}
+
+func coerceTimeFast(val any, fi *FieldInfo) (time.Time, bool) {
 	switch v := val.(type) {
 	case time.Time:
 		return v, true
 	case string:
-		for _, layout := range []string{
-			time.RFC3339,
-			"2006-01-02T15:04:05",
-			"2006-01-02",
-		} {
+		if fi != nil {
+			if idx := atomic.LoadUint32(&fi.timeLayoutHint); idx > 0 && int(idx-1) < len(timeCoerceLayouts) {
+				if t, err := time.Parse(timeCoerceLayouts[idx-1], v); err == nil {
+					return t, true
+				}
+			}
+		}
+		for i, layout := range timeCoerceLayouts {
 			t, err := time.Parse(layout, v)
 			if err == nil {
+				if fi != nil {
+					atomic.StoreUint32(&fi.timeLayoutHint, uint32(i+1))
+				}
 				return t, true
 			}
 		}
@@ -481,7 +495,7 @@ func coerceTimeFast(val any) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func setSliceField(field reflect.Value, fi FieldInfo, val any) error {
+func setSliceField(field reflect.Value, fi *FieldInfo, val any) error {
 	rv := reflect.ValueOf(val)
 	if rv.Kind() != reflect.Slice {
 		// Single value -> wrap in slice
@@ -507,7 +521,7 @@ func setSliceField(field reflect.Value, fi FieldInfo, val any) error {
 	return nil
 }
 
-func coerceValue(val any, fi FieldInfo) (any, error) {
+func coerceValue(val any, fi *FieldInfo) (any, error) {
 	targetType := fi.ElemType
 	if targetType == nil {
 		targetType = fi.FieldType
