@@ -28,7 +28,16 @@ make build-rust
 go vet ./...                    # Built-in static analysis
 golangci-lint run ./...         # Comprehensive linter (50+ checks)
 ~/go/bin/staticcheck ./...      # Standalone staticcheck (supports Go 1.26 new(val))
+
+# Full quality gates — runs the lint trio plus goimports, tidy drift, and tests
+./check.sh                      # or: make check
+./check.sh --fix                # auto-format (goimports -w, golangci --fix)
 ```
+
+The `check.sh` script is the single entry point for pre-push verification. Scope is unit
+packages (`ast/`, `gotype/`, `tqlgen/`, `cmd/`) — `driver/` needs CGo + a built Rust lib
+and is covered by `make test-integration` and `/release-checks`. Non-blocking reports
+(`dupl`, `gocyclo`) print at the end as tracked metrics, not gates.
 
 ## Code Quality Standards
 

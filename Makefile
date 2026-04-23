@@ -1,4 +1,4 @@
-.PHONY: build-rust clean-rust clean test test-all test-unit test-integration bench lint diagnose-startup-hang
+.PHONY: build-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang
 
 # Build the Rust FFI static library
 # MACOSX_DEPLOYMENT_TARGET=11.0 matches Go's -mmacosx-version-min=11.0
@@ -27,9 +27,15 @@ test-all: test-unit bench
 bench:
 	go run ./cmd/benchdb
 
-# Lint
+# Lint (fast — just vet)
 lint:
 	go vet ./ast/... ./gotype/...
+
+# Full quality gates (unit scope): build, vet, goimports, tidy drift,
+# golangci-lint, staticcheck, tests + dupl/gocyclo reports.
+# Use `./check.sh --fix` to auto-format.
+check:
+	./check.sh
 
 # Full clean
 clean: clean-rust

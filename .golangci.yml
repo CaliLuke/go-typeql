@@ -1,7 +1,38 @@
 version: "2"
 
+run:
+  timeout: 5m
+  tests: true
+
 linters:
+  default: standard
+  enable:
+    - bodyclose
+    - misspell
+    - unconvert
+
   settings:
     staticcheck:
       checks:
         - "all"
+
+  exclusions:
+    generated: lax
+    paths:
+      - ^driver/
+      - ^reference/
+      - ^typeql-reference/
+      - ^benchmarks/
+    rules:
+      - path: _test\.go
+        linters: [errcheck]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - ^driver/
+      - ^reference/
+      - ^typeql-reference/
