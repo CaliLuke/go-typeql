@@ -9,27 +9,41 @@ import (
 	"github.com/CaliLuke/go-typeql/ast"
 )
 
-// ModelStrategy specifies the interface for building TypeQL queries based on
-// the kind of model (entity or relation).
-type ModelStrategy interface {
+// InsertBuilder generates write-oriented TypeQL clauses for a model kind.
+type InsertBuilder interface {
 	// BuildInsertQuery generates a TypeQL insert statement for an instance.
 	BuildInsertQuery(info *ModelInfo, instance any, varName string) (string, error)
 	// BuildPutQuery generates a TypeQL put (upsert) statement for an instance.
 	BuildPutQuery(info *ModelInfo, instance any, varName string) (string, error)
+}
+
+// MatchBuilder generates match clauses for a model kind.
+type MatchBuilder interface {
 	// BuildMatchByKey generates a match clause based on the model's key attributes.
 	BuildMatchByKey(info *ModelInfo, instance any, varName string) (string, error)
 	// BuildMatchByIID generates a match clause based on the internal instance ID.
 	BuildMatchByIID(iid string, varName string) (string, error)
 	// BuildMatchAll generates a match clause for all instances of the type.
 	BuildMatchAll(info *ModelInfo, varName string) (string, error)
-	// BuildFetchAll generates a fetch clause for all attributes of the type.
-	BuildFetchAll(info *ModelInfo, varName string) (string, error)
 	// BuildMatchAllStrict generates a strict match clause using isa!.
 	BuildMatchAllStrict(info *ModelInfo, varName string) (string, error)
+}
+
+// FetchBuilder generates fetch clauses for a model kind.
+type FetchBuilder interface {
+	// BuildFetchAll generates a fetch clause for all attributes of the type.
+	BuildFetchAll(info *ModelInfo, varName string) (string, error)
 	// BuildFetchAllWithType generates a fetch clause that includes the type label.
 	BuildFetchAllWithType(info *ModelInfo, varName string) (string, error)
 	// BuildFetchWithRoles generates a fetch clause including role player data for relations.
 	BuildFetchWithRoles(info *ModelInfo, varName string) (matchAdditions string, fetchClause string, err error)
+}
+
+// ModelStrategy composes the query builders needed for a model kind.
+type ModelStrategy interface {
+	InsertBuilder
+	MatchBuilder
+	FetchBuilder
 }
 
 // strategyFor returns the appropriate strategy for the given model kind.

@@ -67,15 +67,6 @@ the #1 time-waster. Gate a `DEBUG`-level log (or optional
 
 ## 4. Speed of development
 
-### 4.1 `ModelStrategy` interface is too wide and inconsistent
-
-10 methods, with `BuildFetchWithRoles` returning two strings and every
-other method returning one. Entity's `BuildFetchWithRoles` just delegates
-to `BuildFetchAll` with `""`. Collapse: either have every method return
-`(matchAdditions, fetchClause string, err error)` or split into
-`InsertBuilder`, `MatchBuilder`, `FetchBuilder` interfaces that strategies
-compose. Current shape forces every new operation to touch 2 types.
-
 ## 5. Performance — smaller
 
 - `ast.Compiler{}` is allocated on every call to `BuildX` in `strategy.go`.
@@ -115,4 +106,4 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **4.1** (refactor) — highest remaining leverage.
+1. **2.1 / 2.2 / 2.3** (correctness/API cleanup) — highest remaining leverage.
