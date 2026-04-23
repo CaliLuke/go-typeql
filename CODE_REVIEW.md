@@ -45,20 +45,6 @@ leaves the tx unusable and no rollback is possible.
 
 ## 3. Debuggability
 
-### 3.1 Seven-way `logFFIDuration` call sites in `QueryWithOptions`
-
-`driver/transaction.go:74–114`: every return path ends in a long
-key/value list that must be kept in sync by hand. Drift is inevitable.
-Wrap with:
-
-```go
-defer func(start time.Time) {
-    logFFIDuration("tx.query", start, ...common..., "result", status, "error", errStr, "rows", rowCount, "bytes", byteCount)
-}(time.Now())
-```
-
-…and assign `status`, `errStr`, `rowCount`, `byteCount` once per path.
-
 ### 3.2 `TransactionContext` leak warning is log-only
 
 `session.go:175–178`: only printed to the Go `log` package. Easy to miss
@@ -147,4 +133,4 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **3.1, 4.1, 4.3** (refactors) — highest remaining leverage.
+1. **4.1, 4.3** (refactors) — highest remaining leverage.

@@ -61,6 +61,24 @@ func (t *Transaction) debugLeakFinalizer() {
 	t.markClosedLocked("gc_finalizer")
 }
 
+func (t *Transaction) logQueryDuration(start time.Time, query string, queryOp, queryFP string, rows int, byteCount int, err error, extra ...any) {
+	fields := []any{
+		"tx_id", t.id,
+		"db", t.dbName,
+		"tx_type", int(t.txType),
+		"query_len", len(query),
+		"query_op", queryOp,
+		"query_fingerprint", queryFP,
+	}
+	fields = append(fields, extra...)
+	if err != nil {
+		fields = append(fields, "result", "error", "error", err.Error())
+	} else {
+		fields = append(fields, "result", "ok", "rows", rows, "bytes", byteCount)
+	}
+	logFFIDuration("tx.query", start, fields...)
+}
+
 // IsOpen returns true if the transaction is active and has not been committed, rolled back, or closed.
 func (t *Transaction) IsOpen() bool {
 	t.mu.Lock()
@@ -86,7 +104,7 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 	defer t.mu.Unlock()
 
 	if t.ptr == nil {
-		logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_options", opts != nil, "result", "error", "error", ErrNotConnected.Error())
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrNotConnected, "with_options", opts != nil)
 		return nil, ErrNotConnected
 	}
 
@@ -106,19 +124,19 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 	buf := C.typedb_transaction_query(t.ptr, cQuery, cOpts, &outLen, &queryErr)
 	if buf == nil {
 		if err := getError(queryErr); err != nil {
-			logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_options", opts != nil, "result", "error", "error", err.Error())
+			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, "with_options", opts != nil)
 			return nil, err
 		}
-		logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_options", opts != nil, "result", "ok", "rows", 0, "bytes", 0)
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, nil, "with_options", opts != nil)
 		return nil, nil
 	}
 	defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
 	results, err := decodeMsgpack(buf, outLen)
 	if err != nil {
-		logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_options", opts != nil, "result", "error", "error", err.Error())
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, int(outLen), err, "with_options", opts != nil)
 		return nil, err
 	}
-	logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_options", opts != nil, "result", "ok", "rows", len(results), "bytes", int(outLen))
+	t.logQueryDuration(start, query, queryOp, queryFP, len(results), int(outLen), nil, "with_options", opts != nil)
 	return results, nil
 }
 
@@ -164,7 +182,7 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 		defer t.mu.Unlock()
 
 		if t.ptr == nil {
-			logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_context", true, "result", "error", "error", ErrNotConnected.Error())
+			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrNotConnected, "with_context", true)
 			ch <- queryResult{err: ErrNotConnected}
 			return
 		}
@@ -180,22 +198,18 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 		buf := C.typedb_transaction_query(t.ptr, cQuery, nil, &outLen, &queryErr)
 		if buf == nil {
 			if err := getError(queryErr); err != nil {
-				logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_context", true, "result", "error", "error", err.Error())
+				t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, "with_context", true)
 				ch <- queryResult{err: err}
 				return
 			}
-			logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_context", true, "result", "ok", "rows", 0, "bytes", 0)
+			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, nil, "with_context", true)
 			ch <- queryResult{}
 			return
 		}
 		defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
 
 		results, err := decodeMsgpack(buf, outLen)
-		if err != nil {
-			logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_context", true, "result", "error", "error", err.Error())
-		} else {
-			logFFIDuration("tx.query", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "with_context", true, "result", "ok", "rows", len(results), "bytes", int(outLen))
-		}
+		t.logQueryDuration(start, query, queryOp, queryFP, len(results), int(outLen), err, "with_context", true)
 		ch <- queryResult{results: results, err: err}
 	}()
 
