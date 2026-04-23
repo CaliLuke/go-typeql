@@ -265,9 +265,14 @@ func (t *Transaction) Close() {
 	defer t.mu.Unlock()
 
 	if t.ptr != nil {
-		C.typedb_transaction_close(t.ptr)
+		var closeErr *C.char
+		C.typedb_transaction_close(t.ptr, &closeErr)
 		t.ptr = nil
 		t.markClosedLocked("close")
+		if err := getError(closeErr); err != nil {
+			logFFIDuration("tx.close", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", err.Error())
+			return
+		}
 		logFFIDuration("tx.close", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "ok")
 	}
 }

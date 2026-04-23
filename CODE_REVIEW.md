@@ -6,14 +6,7 @@ Section 1 ("Top issues") is the highest-signal list; later sections are broader 
 
 ## 1. Top issues
 
-### 1.1 `Transaction.Close()` swallows the FFI error
-
-`driver/transaction.go:256–261`: `C.typedb_transaction_close` has no
-return-error pathway; there is no `getError(...)` check, no log on failure.
-A close-time error (e.g., network half-closed on a pooled conn) vanishes.
-At minimum log the failure; ideally surface via a `(err error)` return.
-
-### 1.2 `parseValueString` uses `fmt.Sscanf` per aggregate row
+### 1.1 `parseValueString` uses `fmt.Sscanf` per aggregate row
 
 `gotype/query.go:574–589`: every aggregate result string goes through
 three `fmt.Sscanf` calls in sequence. `Sscanf` builds a reflect-driven
@@ -21,7 +14,7 @@ format state machine per call. Replace with `strings.HasPrefix` +
 `strconv.ParseFloat` on the numeric substring — 10–100× faster, no
 allocations.
 
-### 1.3 `decodeMsgpack` allocates per query
+### 1.2 `decodeMsgpack` allocates per query
 
 `driver/transaction.go:193–202`: `C.GoBytes` (full copy),
 `bytes.NewReader`, `msgpack.NewDecoder` (encoder config), `Decode`. For
@@ -32,7 +25,7 @@ Reader; (b) keep a `sync.Pool` of decoders; (c) use
 decoder promises not to retain the bytes (it doesn't — msgpack-v5 can
 alias strings via zero-copy), so stick with the copy but skip the Reader.
 
-### 1.4 Hot-path query builders use `fmt.Sprintf` + `strings.Join` + `[]string` accumulation
+### 1.3 Hot-path query builders use `fmt.Sprintf` + `strings.Join` + `[]string` accumulation
 
 `gotype/query.go:119–169, 222–260, 308–330, 417–476`,
 `gotype/crud.go:680–691`, `gotype/filter.go` (~30 call sites). Every
@@ -48,7 +41,7 @@ the `if len(q.orderBy) > 0` branch `match +=` mutates it, then
 `parts = []string{match}` discards the initially-appended version.
 Refactor to build a single time.
 
-### 1.5 `extractFieldValues` allocates a 1-slot slice per scalar field
+### 1.4 `extractFieldValues` allocates a 1-slot slice per scalar field
 
 `gotype/strategy.go:423–445`: the common case (scalar, non-slice) goes
 through `return []any{val}`. Callers iterate the slice with one element.
@@ -212,7 +205,7 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **1.1, 2.6** (silent error drops / partial-success mutation) — small, independent, each raises debuggability.
-2. **1.2, 1.3, 1.5** (perf quick wins) — contained, benchmarkable.
+1. **2.6** (partial-success mutation) — small and correctness-sensitive.
+2. **1.1, 1.2, 1.4** (perf quick wins) — contained, benchmarkable.
 3. **2.5** (pool concurrency) — bug potential grows with adoption.
 4. **3.1, 4.1, 4.3** (refactors) — do after the above to avoid merge pain.

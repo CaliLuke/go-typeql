@@ -14,7 +14,7 @@ use serde_json::json;
 
 use typedb_driver::{
     answer::QueryAnswer,
-    concept::{Concept, value::ValueType},
+    concept::{value::ValueType, Concept},
     Credentials, DriverOptions, Promise, QueryOptions, Transaction, TransactionOptions,
     TransactionType, TypeDBDriver,
 };
@@ -39,7 +39,10 @@ fn concept_to_json(concept: &Concept) -> serde_json::Value {
     // Entity/Relation instances → structured object with kind, type, iid
     if let Some(iid) = concept.try_get_iid() {
         let mut obj = serde_json::Map::new();
-        obj.insert("_kind".into(), json!(concept.get_category().name().to_lowercase()));
+        obj.insert(
+            "_kind".into(),
+            json!(concept.get_category().name().to_lowercase()),
+        );
         obj.insert("_type".into(), json!(concept.get_label()));
         obj.insert("_iid".into(), json!(format!("{}", iid)));
         return serde_json::Value::Object(obj);
@@ -47,7 +50,10 @@ fn concept_to_json(concept: &Concept) -> serde_json::Value {
     // Types (EntityType, RelationType, etc.)
     if concept.is_type() {
         let mut obj = serde_json::Map::new();
-        obj.insert("_kind".into(), json!(concept.get_category().name().to_lowercase()));
+        obj.insert(
+            "_kind".into(),
+            json!(concept.get_category().name().to_lowercase()),
+        );
         obj.insert("_label".into(), json!(concept.get_label()));
         return serde_json::Value::Object(obj);
     }
@@ -156,7 +162,9 @@ fn query_op(query: &str) -> String {
         .trim_matches(';')
         .to_lowercase();
     match first.as_str() {
-        "match" | "insert" | "delete" | "update" | "define" | "undefine" | "fetch" | "reduce" => first,
+        "match" | "insert" | "delete" | "update" | "define" | "undefine" | "fetch" | "reduce" => {
+            first
+        }
         _ => "other".to_string(),
     }
 }
@@ -449,10 +457,7 @@ pub extern "C" fn typedb_query_options_set_include_instance_types(
 
 /// Set prefetch_size option.
 #[no_mangle]
-pub extern "C" fn typedb_query_options_set_prefetch_size(
-    opts: *mut QueryOptions,
-    size: i64,
-) {
+pub extern "C" fn typedb_query_options_set_prefetch_size(opts: *mut QueryOptions, size: i64) {
     let o = unsafe { &mut *opts };
     o.prefetch_size = Some(size as u64);
 }
@@ -637,7 +642,9 @@ pub extern "C" fn typedb_transaction_query(
 fn vec_to_raw(bytes: Vec<u8>, out_len: *mut usize) -> *mut u8 {
     if bytes.is_empty() {
         if !out_len.is_null() {
-            unsafe { *out_len = 0; }
+            unsafe {
+                *out_len = 0;
+            }
         }
         return null_mut();
     }
@@ -646,7 +653,9 @@ fn vec_to_raw(bytes: Vec<u8>, out_len: *mut usize) -> *mut u8 {
     let ptr = boxed.as_mut_ptr();
     std::mem::forget(boxed);
     if !out_len.is_null() {
-        unsafe { *out_len = len; }
+        unsafe {
+            *out_len = len;
+        }
     }
     ptr
 }
@@ -673,10 +682,10 @@ fn collect_answer_to_values(answer: QueryAnswer) -> Result<Vec<serde_json::Value
                 Ok(doc) => {
                     let json_val = doc.into_json();
                     // Convert typedb JSON to serde_json::Value
-                    let json_str = serde_json::to_string(&json_val)
-                        .unwrap_or_else(|_| json_val.to_string());
-                    let val: serde_json::Value = serde_json::from_str(&json_str)
-                        .unwrap_or(serde_json::Value::Null);
+                    let json_str =
+                        serde_json::to_string(&json_val).unwrap_or_else(|_| json_val.to_string());
+                    let val: serde_json::Value =
+                        serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
                     docs.push(val);
                 }
                 Err(e) => return Err(e.to_string()),
@@ -776,21 +785,32 @@ pub extern "C" fn typedb_transaction_rollback(txn: *const Transaction, err_out: 
 
 /// Close and free the transaction without committing.
 #[no_mangle]
-pub extern "C" fn typedb_transaction_close(txn: *mut Transaction) {
+pub extern "C" fn typedb_transaction_close(txn: *mut Transaction, err_out: *mut *mut c_char) {
     let start = Instant::now();
     rust_debug_log("ffi.typedb_transaction_close.enter", vec![]);
-    if !txn.is_null() {
-        unsafe { drop(Box::from_raw(txn)) };
+    if txn.is_null() {
         rust_debug_log_timed(
             "ffi.typedb_transaction_close.exit",
             start,
-            vec![("result", "ok".to_string())],
+            vec![("result", "nil_txn".to_string())],
         );
         return;
     }
+
+    let txn = unsafe { Box::from_raw(txn) };
+    if let Err(e) = txn.close().resolve() {
+        rust_debug_log_timed(
+            "ffi.typedb_transaction_close.exit",
+            start,
+            vec![("result", "error".to_string()), ("error", e.to_string())],
+        );
+        set_error(err_out, e);
+        return;
+    }
+
     rust_debug_log_timed(
         "ffi.typedb_transaction_close.exit",
         start,
-        vec![("result", "nil_txn".to_string())],
+        vec![("result", "ok".to_string())],
     );
 }
