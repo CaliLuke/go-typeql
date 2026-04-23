@@ -16,8 +16,8 @@ import (
 // Sensor is an entity with an integer key.
 type Sensor struct {
 	gotype.BaseEntity
-	SensorID int     `typedb:"sensor-id,key"`
-	Location string  `typedb:"location"`
+	SensorID int      `typedb:"sensor-id,key"`
+	Location string   `typedb:"location"`
 	Reading  *float64 `typedb:"reading,card=0..1"`
 }
 

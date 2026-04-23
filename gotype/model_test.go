@@ -320,4 +320,3 @@ type testPersonModel struct {
 	Email string `typedb:"email"`
 	Age   *int   `typedb:"age"`
 }
-

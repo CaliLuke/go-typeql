@@ -23,7 +23,7 @@ type MigratedPerson struct {
 // NewEntity is a brand new entity type for migration tests.
 type NewEntity struct {
 	gotype.BaseEntity
-	Code string `typedb:"code,key"`
+	Code    string `typedb:"code,key"`
 	Summary string `typedb:"summary"`
 }
 

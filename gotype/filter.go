@@ -18,10 +18,10 @@ type Filter interface {
 
 // ComparisonFilter compares an attribute to a value using a TypeQL operator.
 type ComparisonFilter struct {
-	Attr     string
-	Op       string
-	Value    any
-	Negated  bool
+	Attr    string
+	Op      string
+	Value   any
+	Negated bool
 }
 
 // ToPatterns generates TypeQL patterns for a comparison filter.

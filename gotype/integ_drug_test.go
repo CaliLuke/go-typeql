@@ -38,22 +38,22 @@ type Disease struct {
 
 type Trial struct {
 	gotype.BaseEntity
-	TrialID    string  `typedb:"trial-id,key"`
-	Phase      int     `typedb:"phase"`
+	TrialID     string  `typedb:"trial-id,key"`
+	Phase       int     `typedb:"phase"`
 	SuccessRate float64 `typedb:"success-rate"`
 }
 
 type InteractsWith struct {
 	gotype.BaseRelation
-	Ligand     *Compound `typedb:"role:ligand"`
-	Receptor   *Target   `typedb:"role:receptor"`
-	Affinity   float64   `typedb:"affinity"`
+	Ligand   *Compound `typedb:"role:ligand"`
+	Receptor *Target   `typedb:"role:receptor"`
+	Affinity float64   `typedb:"affinity"`
 }
 
 type Treats struct {
 	gotype.BaseRelation
-	Treatment  *Compound `typedb:"role:treatment"`
-	Condition  *Disease  `typedb:"role:condition"`
+	Treatment *Compound `typedb:"role:treatment"`
+	Condition *Disease  `typedb:"role:condition"`
 }
 
 type TestedIn struct {
@@ -152,7 +152,10 @@ func seedDrug(t *testing.T) drugFixture {
 	}
 
 	// Interactions: Aspirin→COX-1, Aspirin→COX-2, Ibuprofen→COX-2, Metformin→AMPK, Atorvastatin→HMG-CoA
-	interactData := []struct{ c, t int; a float64 }{
+	interactData := []struct {
+		c, t int
+		a    float64
+	}{
 		{0, 0, 8.5}, {0, 1, 7.2}, {1, 1, 9.1}, {2, 2, 6.8}, {3, 3, 9.5},
 	}
 	for _, id := range interactData {
@@ -170,7 +173,10 @@ func seedDrug(t *testing.T) drugFixture {
 	}
 
 	// Tested: Aspirin→TRL-001(100mg), Ibuprofen→TRL-002(200mg), Metformin→TRL-003(500mg), Atorvastatin→TRL-004(10mg)
-	testedData := []struct{ c, t int; d float64 }{
+	testedData := []struct {
+		c, t int
+		d    float64
+	}{
 		{0, 0, 100.0}, {1, 1, 200.0}, {2, 2, 500.0}, {3, 3, 10.0},
 	}
 	for _, td := range testedData {

@@ -15,10 +15,10 @@ import (
 
 type ThreatActor struct {
 	gotype.BaseEntity
-	ActorID     string `typedb:"actor-id,key"`
-	ActorAlias  string `typedb:"actor-alias"`
-	Origin      string `typedb:"origin"`
-	Sophistication int `typedb:"sophistication"`
+	ActorID        string `typedb:"actor-id,key"`
+	ActorAlias     string `typedb:"actor-alias"`
+	Origin         string `typedb:"origin"`
+	Sophistication int    `typedb:"sophistication"`
 }
 
 type Malware struct {
@@ -99,10 +99,10 @@ func setupCyberDB(t *testing.T) *gotype.Database {
 }
 
 type cyberFixture struct {
-	db      *gotype.Database
-	actors  []*ThreatActor
-	malware []*Malware
-	vulns   []*Vulnerability
+	db         *gotype.Database
+	actors     []*ThreatActor
+	malware    []*Malware
+	vulns      []*Vulnerability
 	indicators []*Indicator
 	campaigns  []*Campaign
 }

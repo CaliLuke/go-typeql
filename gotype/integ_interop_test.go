@@ -16,9 +16,9 @@ import (
 // Base abstract entity (registered but no instances created directly).
 type Vehicle struct {
 	gotype.BaseEntity
-	Vin   string `typedb:"vin,key"`
-	Make  string `typedb:"make"`
-	Year  int    `typedb:"vehicle-year"`
+	Vin  string `typedb:"vin,key"`
+	Make string `typedb:"make"`
+	Year int    `typedb:"vehicle-year"`
 }
 
 type Car struct {
@@ -31,10 +31,10 @@ type Car struct {
 
 type Truck struct {
 	gotype.BaseEntity
-	Vin      string  `typedb:"vin,key"`
-	Make     string  `typedb:"make"`
-	Year     int     `typedb:"vehicle-year"`
-	Payload  float64 `typedb:"payload-tons"`
+	Vin     string  `typedb:"vin,key"`
+	Make    string  `typedb:"make"`
+	Year    int     `typedb:"vehicle-year"`
+	Payload float64 `typedb:"payload-tons"`
 }
 
 type Driver struct {
@@ -51,8 +51,8 @@ type Garage struct {
 
 type Drives struct {
 	gotype.BaseRelation
-	Operator   *Driver `typedb:"role:operator"`
-	Operated   *Car    `typedb:"role:operated-car"`
+	Operator *Driver `typedb:"role:operator"`
+	Operated *Car    `typedb:"role:operated-car"`
 }
 
 type DrivesTruck struct {
@@ -63,7 +63,7 @@ type DrivesTruck struct {
 
 type ParkedAt struct {
 	gotype.BaseRelation
-	ParkedCar    *Car    `typedb:"role:parked-car"`
+	ParkedCar     *Car    `typedb:"role:parked-car"`
 	ParkingGarage *Garage `typedb:"role:parking-garage"`
 }
 

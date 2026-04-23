@@ -15,9 +15,9 @@ import (
 
 type SocialUser struct {
 	gotype.BaseEntity
-	Handle   string `typedb:"handle,key"`
+	Handle      string `typedb:"handle,key"`
 	DisplayName string `typedb:"display-name"`
-	Followers *int  `typedb:"follower-count,card=0..1"`
+	Followers   *int   `typedb:"follower-count,card=0..1"`
 }
 
 type Post struct {
@@ -48,15 +48,15 @@ type SocialFriendship struct {
 
 type Authored struct {
 	gotype.BaseRelation
-	PostAuthor *SocialUser `typedb:"role:post-author"`
-	AuthoredPost *Post     `typedb:"role:authored-post"`
+	PostAuthor   *SocialUser `typedb:"role:post-author"`
+	AuthoredPost *Post       `typedb:"role:authored-post"`
 }
 
 type CommentedOn struct {
 	gotype.BaseRelation
-	Commenter    *SocialUser `typedb:"role:commenter"`
-	CommentEntry *Comment    `typedb:"role:comment-entry"`
-	CommentedPost *Post      `typedb:"role:commented-post"`
+	Commenter     *SocialUser `typedb:"role:commenter"`
+	CommentEntry  *Comment    `typedb:"role:comment-entry"`
+	CommentedPost *Post       `typedb:"role:commented-post"`
 }
 
 // ---------------------------------------------------------------------------

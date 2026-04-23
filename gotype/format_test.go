@@ -38,4 +38,3 @@ func TestFormatValue(t *testing.T) {
 		})
 	}
 }
-

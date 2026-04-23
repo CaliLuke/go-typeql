@@ -17,10 +17,10 @@ import (
 
 // AttrDef parses: attribute name [,] value type [@constraint(...)];
 type AttrDef struct {
-	Name      string        `parser:"'attribute' @Ident ','?"`
-	ValueType string        `parser:"'value' @Ident"`
-	Annots    []Annotation  `parser:"@@*"`
-	Semi      string        `parser:"';'"`
+	Name      string       `parser:"'attribute' @Ident ','?"`
+	ValueType string       `parser:"'value' @Ident"`
+	Annots    []Annotation `parser:"@@*"`
+	Semi      string       `parser:"';'"`
 }
 
 // EntityDef parses: entity name [sub parent] [@abstract] [, clause...];
@@ -85,12 +85,12 @@ type AsClause struct {
 
 // Annotation parses: @key, @unique, @abstract, @card(...), @regex(...), @values(...), @range(...)
 type Annotation struct {
-	Key    bool        `parser:"  @'@key'"`
-	Unique bool        `parser:"| @'@unique'"`
-	Card   *CardAnnot  `parser:"| @@"`
-	Regex  *RegexAnnot `parser:"| @@"`
+	Key    bool         `parser:"  @'@key'"`
+	Unique bool         `parser:"| @'@unique'"`
+	Card   *CardAnnot   `parser:"| @@"`
+	Regex  *RegexAnnot  `parser:"| @@"`
 	Values *ValuesAnnot `parser:"| @@"`
-	Range  *RangeAnnot `parser:"| @@"`
+	Range  *RangeAnnot  `parser:"| @@"`
 }
 
 // CardAnnot parses: @card(expr)
@@ -166,7 +166,7 @@ func ParseSchemaFile(path string) (*ParsedSchema, error) {
 
 // TQLFileSimple is the top-level grammar for a TypeQL define block.
 type TQLFileSimple struct {
-	Define      string     `parser:"'define'"`
+	Define      string      `parser:"'define'"`
 	Definitions []SimpleDef `parser:"@@*"`
 }
 
@@ -290,7 +290,6 @@ func parseParam(toks []string) ParameterSpec {
 	}
 	return ps
 }
-
 
 // convertAST converts the participle AST to our domain model.
 func convertAST(file *TQLFileSimple) *ParsedSchema {
@@ -517,8 +516,6 @@ func decodeUnicodeEscape(s string) (rune, int, bool) {
 	}
 	return rune(v), 5, true
 }
-
-
 
 // --- Annotation extraction ---
 

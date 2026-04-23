@@ -122,4 +122,3 @@ func parseCardinality(s string) (min *int, max *int, err error) {
 	}
 	return new(minV), new(maxV), nil
 }
-

@@ -378,7 +378,7 @@ func TestRenderDTO(t *testing.T) {
 		"relation create": "type KnowsCreate struct",
 		"type field":      `Type string`,
 		"id field":        `ID string`,
-		"TypeName method":  `func (PersonOut) TypeName()`,
+		"TypeName method": `func (PersonOut) TypeName()`,
 		"EntityOut iface": "type EntityOut interface",
 		"json tag":        `json:"name"`,
 		"role out":        "KnowerID",
@@ -460,8 +460,8 @@ func TestBuildDTOData_CustomInterfaceNames(t *testing.T) {
 		Entities: []EntitySpec{{Name: "person"}},
 	}
 	data := BuildDTOData(schema, DTOConfig{
-		PackageName:    "dto",
-		EntityOutName:  "MyEntityOut",
+		PackageName:     "dto",
+		EntityOutName:   "MyEntityOut",
 		EntityPatchName: "MyEntityPatch",
 	})
 

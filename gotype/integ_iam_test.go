@@ -58,13 +58,13 @@ type HasRole struct {
 
 type Grants struct {
 	gotype.BaseRelation
-	Grantor  *IAMRole       `typedb:"role:grantor"`
+	Grantor   *IAMRole       `typedb:"role:grantor"`
 	GrantPerm *IAMPermission `typedb:"role:grant-perm"`
 }
 
 type Accesses struct {
 	gotype.BaseRelation
-	Accessor        *IAMPermission `typedb:"role:accessor"`
+	Accessor         *IAMPermission `typedb:"role:accessor"`
 	AccessedResource *IAMResource   `typedb:"role:accessed-resource"`
 }
 
@@ -87,11 +87,11 @@ func setupIAMDB(t *testing.T) *gotype.Database {
 }
 
 type iamFixture struct {
-	db    *gotype.Database
-	users []*IAMUser
-	groups []*IAMGroup
-	roles  []*IAMRole
-	perms  []*IAMPermission
+	db        *gotype.Database
+	users     []*IAMUser
+	groups    []*IAMGroup
+	roles     []*IAMRole
+	perms     []*IAMPermission
 	resources []*IAMResource
 }
 
@@ -181,8 +181,8 @@ func seedIAM(t *testing.T) iamFixture {
 	// Grants: super-admin→all perms, developer→read+write, viewer→read
 	grantData := []struct{ r, p int }{
 		{0, 0}, {0, 1}, {0, 2}, {0, 3}, // super-admin → read,write,delete,admin
-		{1, 0}, {1, 1},                   // developer → read,write
-		{2, 0},                            // viewer → read
+		{1, 0}, {1, 1}, // developer → read,write
+		{2, 0}, // viewer → read
 	}
 	for _, g := range grantData {
 		assertInsert(t, ctx, grantsMgr, &Grants{Grantor: roles[g.r], GrantPerm: perms[g.p]})
@@ -191,9 +191,9 @@ func seedIAM(t *testing.T) iamFixture {
 	// Access: read→all resources, write→prod-db+staging-db, delete→prod-db, admin→prod-db
 	accessData := []struct{ p, r int }{
 		{0, 0}, {0, 1}, {0, 2}, // read → all
-		{1, 0}, {1, 1},         // write → prod, staging
-		{2, 0},                  // delete → prod
-		{3, 0},                  // admin → prod
+		{1, 0}, {1, 1}, // write → prod, staging
+		{2, 0}, // delete → prod
+		{3, 0}, // admin → prod
 	}
 	for _, a := range accessData {
 		assertInsert(t, ctx, accessMgr, &Accesses{Accessor: perms[a.p], AccessedResource: resources[a.r]})
