@@ -309,15 +309,7 @@ func buildFetchAllWithType(info *ModelInfo, varName string) (string, error) {
 		ast.FetchFunc("_type", "label", "$t"),
 	}
 	for _, fi := range info.Fields {
-		if fi.IsSlice {
-			items = append(items, ast.FetchAttributeList{
-				Key:      fi.Tag.Name,
-				Var:      "$" + varName,
-				AttrName: fi.Tag.Name,
-			})
-		} else {
-			items = append(items, ast.FetchAttr(fi.Tag.Name, "$"+varName, fi.Tag.Name))
-		}
+		items = appendFetchField(items, fi, varName)
 	}
 	return compileNode(ast.Fetch(items...))
 }
@@ -329,13 +321,7 @@ func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) 
 	items = append(items, fmt.Sprintf(`"_iid": iid($%s)`, varName))
 
 	// Own attributes
-	for _, fi := range info.Fields {
-		if fi.IsSlice {
-			items = append(items, fmt.Sprintf(`"%s": [$%s.%s]`, fi.Tag.Name, varName, fi.Tag.Name))
-		} else {
-			items = append(items, fmt.Sprintf(`"%s": $%s.%s`, fi.Tag.Name, varName, fi.Tag.Name))
-		}
-	}
+	items = appendFetchProjectionItems(items, info.Fields, varName)
 
 	// Role players
 	for _, role := range info.Roles {
@@ -356,13 +342,7 @@ func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) 
 		// Build a sub-fetch for the role player
 		var subItems []string
 		subItems = append(subItems, fmt.Sprintf(`"_iid": iid($%s)`, roleVar))
-		for _, pf := range playerInfo.Fields {
-			if pf.IsSlice {
-				subItems = append(subItems, fmt.Sprintf(`"%s": [$%s.%s]`, pf.Tag.Name, roleVar, pf.Tag.Name))
-			} else {
-				subItems = append(subItems, fmt.Sprintf(`"%s": $%s.%s`, pf.Tag.Name, roleVar, pf.Tag.Name))
-			}
-		}
+		subItems = appendFetchProjectionItems(subItems, playerInfo.Fields, roleVar)
 		items = append(items, fmt.Sprintf(`"%s": { %s }`, role.RoleName, strings.Join(subItems, ", ")))
 	}
 
@@ -444,6 +424,17 @@ func getIIDFromValueInfo(v reflect.Value, info *ModelInfo) string {
 
 func compileNode(node ast.QueryNode) (string, error) {
 	return (&ast.Compiler{}).Compile(node)
+}
+
+func appendFetchProjectionItems(items []string, fields []FieldInfo, varName string) []string {
+	for _, fi := range fields {
+		if fi.IsSlice {
+			items = append(items, fmt.Sprintf(`"%s": [$%s.%s]`, fi.Tag.Name, varName, fi.Tag.Name))
+			continue
+		}
+		items = append(items, fmt.Sprintf(`"%s": $%s.%s`, fi.Tag.Name, varName, fi.Tag.Name))
+	}
+	return items
 }
 
 func getIIDFromBaseField(fv reflect.Value) string {

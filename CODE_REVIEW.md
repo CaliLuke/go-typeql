@@ -76,18 +76,6 @@ to `BuildFetchAll` with `""`. Collapse: either have every method return
 `InsertBuilder`, `MatchBuilder`, `FetchBuilder` interfaces that strategies
 compose. Current shape forces every new operation to touch 2 types.
 
-### 4.2 Duplicated fetch-item construction
-
-`strategy.go:132–152`, `294–314`, `326–351`, `crud.go:769–801`, and
-`buildFetchAllWithType` at `strategy.go:332–351` all implement the same
-"emit fetch items for info.Fields" loop. Promote to one helper.
-
-### 4.4 Ad-hoc `queryOperation` / `queryFingerprint` called twice
-
-`driver/transaction.go:75, 76, 123, 124`: computed twice per query-with-
-context (once for early-cancelled log, once in the goroutine). Compute
-once and pass through.
-
 ## 5. Performance — smaller
 
 - `ast.Compiler{}` is allocated on every call to `BuildX` in `strategy.go`.
