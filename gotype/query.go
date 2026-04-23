@@ -4,6 +4,7 @@ package gotype
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -599,18 +600,15 @@ func (fq *FunctionQuery) Execute(ctx context.Context) ([]map[string]any, error) 
 
 // parseValueString parses TypeDB 3.x result strings like "Value(integer: 55)" or "Value(double: 3.14)".
 func parseValueString(s string) float64 {
-	var val float64
-	// Try "Value(integer: N)" format
-	if _, err := fmt.Sscanf(s, "Value(integer: %f)", &val); err == nil {
-		return val
-	}
-	// Try "Value(double: N)" format
-	if _, err := fmt.Sscanf(s, "Value(double: %f)", &val); err == nil {
-		return val
-	}
-	// Try "Value(long: N)" format (legacy)
-	if _, err := fmt.Sscanf(s, "Value(long: %f)", &val); err == nil {
-		return val
+	for _, prefix := range []string{"Value(integer: ", "Value(double: ", "Value(long: "} {
+		if body, ok := strings.CutPrefix(s, prefix); ok {
+			if num, ok := strings.CutSuffix(body, ")"); ok {
+				val, err := strconv.ParseFloat(num, 64)
+				if err == nil {
+					return val
+				}
+			}
+		}
 	}
 	return 0
 }

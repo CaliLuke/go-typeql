@@ -2,6 +2,7 @@ package gotype
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 )
@@ -216,6 +217,28 @@ func TestQuery_Count(t *testing.T) {
 		t.Errorf("expected 42, got %d", count)
 	}
 	assertContains(t, readTx.queries[0], "reduce $count = count($e);")
+}
+
+func TestParseValueString(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want float64
+	}{
+		{name: "integer", in: "Value(integer: 55)", want: 55},
+		{name: "double", in: "Value(double: 3.14)", want: 3.14},
+		{name: "legacy long", in: "Value(long: 42)", want: 42},
+		{name: "invalid", in: "not-a-value", want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseValueString(tt.in)
+			if math.Abs(got-tt.want) > 1e-9 {
+				t.Fatalf("parseValueString(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestQuery_Count_WithFilter(t *testing.T) {
