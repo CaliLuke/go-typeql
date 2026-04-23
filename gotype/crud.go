@@ -195,23 +195,11 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error {
 	}
 
 	tx, autoCommit, err := m.writeTx()
-	if err != nil {
-		return fmt.Errorf("update %s: %w", m.info.TypeName, err)
-	}
-	if autoCommit {
-		defer tx.Close()
-	}
-
-	if err := m.updateInstanceInTx(ctx, tx, instance); err != nil {
-		return err
-	}
-
-	if autoCommit {
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("update %s: commit: %w", m.info.TypeName, err)
-		}
-	}
-	return nil
+	return m.withWriteTx(ctx, "update", func() (Tx, bool, error) {
+		return tx, autoCommit, err
+	}, func(tx Tx) error {
+		return m.updateInstanceInTx(ctx, tx, instance)
+	})
 }
 
 // updateInstanceInTx performs a batched update within an existing transaction.
@@ -379,29 +367,17 @@ func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...Del
 		}
 	}
 
-	tx, autoCommit, err := m.writeTx()
-	if err != nil {
-		return fmt.Errorf("delete_many %s: %w", m.info.TypeName, err)
-	}
-	if autoCommit {
-		defer tx.Close()
-	}
-
-	for i, inst := range instances {
-		iid := getIIDOf(inst)
-		query := fmt.Sprintf("match\n$e isa %s, iid %s;\ndelete $e;", m.info.TypeName, iid)
-		_, err := tx.QueryWithContext(ctx, query)
-		if err != nil {
-			return fmt.Errorf("delete_many %s[%d]: %w", m.info.TypeName, i, err)
+	return m.withWriteTx(ctx, "delete_many", m.writeTx, func(tx Tx) error {
+		for i, inst := range instances {
+			iid := getIIDOf(inst)
+			query := fmt.Sprintf("match\n$e isa %s, iid %s;\ndelete $e;", m.info.TypeName, iid)
+			_, err := tx.QueryWithContext(ctx, query)
+			if err != nil {
+				return fmt.Errorf("delete_many %s[%d]: %w", m.info.TypeName, i, err)
+			}
 		}
-	}
-
-	if autoCommit {
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("delete_many %s: commit: %w", m.info.TypeName, err)
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // UpdateMany updates multiple instances in a single transaction.
@@ -420,26 +396,14 @@ func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error {
 		}
 	}
 
-	tx, autoCommit, err := m.writeTx()
-	if err != nil {
-		return fmt.Errorf("update_many %s: %w", m.info.TypeName, err)
-	}
-	if autoCommit {
-		defer tx.Close()
-	}
-
-	for i, inst := range instances {
-		if err := m.updateInstanceInTx(ctx, tx, inst); err != nil {
-			return fmt.Errorf("update_many %s[%d]: %w", m.info.TypeName, i, err)
+	return m.withWriteTx(ctx, "update_many", m.writeTx, func(tx Tx) error {
+		for i, inst := range instances {
+			if err := m.updateInstanceInTx(ctx, tx, inst); err != nil {
+				return fmt.Errorf("update_many %s[%d]: %w", m.info.TypeName, i, err)
+			}
 		}
-	}
-
-	if autoCommit {
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("update_many %s: commit: %w", m.info.TypeName, err)
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // Put upserts an instance (insert or update).
@@ -456,44 +420,32 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
 		return fmt.Errorf("put %s: build query: %w", m.info.TypeName, err)
 	}
 
-	tx, autoCommit, err := m.writeTx()
-	if err != nil {
-		return fmt.Errorf("put %s: %w", m.info.TypeName, err)
-	}
-	if autoCommit {
-		defer tx.Close()
-	}
-
-	_, err = tx.QueryWithContext(ctx, putQuery)
-	if err != nil {
-		return fmt.Errorf("put %s: %w", m.info.TypeName, err)
-	}
-
-	// Fetch IID in the same transaction via key match
-	if len(m.info.KeyFields) > 0 {
-		matchQuery, err := m.strategy.BuildMatchByKey(m.info, instance, "e")
+	return m.withWriteTx(ctx, "put", m.writeTx, func(tx Tx) error {
+		_, err = tx.QueryWithContext(ctx, putQuery)
 		if err != nil {
-			return fmt.Errorf("put %s: build iid query: %w", m.info.TypeName, err)
+			return fmt.Errorf("put %s: %w", m.info.TypeName, err)
 		}
-		iidQuery := matchQuery + "\n" + `fetch { "_iid": iid($e) };`
 
-		results, err := tx.QueryWithContext(ctx, iidQuery)
-		if err != nil {
-			return fmt.Errorf("put %s: fetch iid: %w", m.info.TypeName, err)
-		}
-		if len(results) == 1 {
-			if iid := extractIID(results[0]); iid != "" {
-				setIIDOn(instance, iid)
+		// Fetch IID in the same transaction via key match
+		if len(m.info.KeyFields) > 0 {
+			matchQuery, err := m.strategy.BuildMatchByKey(m.info, instance, "e")
+			if err != nil {
+				return fmt.Errorf("put %s: build iid query: %w", m.info.TypeName, err)
+			}
+			iidQuery := matchQuery + "\n" + `fetch { "_iid": iid($e) };`
+
+			results, err := tx.QueryWithContext(ctx, iidQuery)
+			if err != nil {
+				return fmt.Errorf("put %s: fetch iid: %w", m.info.TypeName, err)
+			}
+			if len(results) == 1 {
+				if iid := extractIID(results[0]); iid != "" {
+					setIIDOn(instance, iid)
+				}
 			}
 		}
-	}
-
-	if autoCommit {
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("put %s: commit: %w", m.info.TypeName, err)
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // PutMany upserts multiple instances in a single transaction.
@@ -502,30 +454,26 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 		return nil
 	}
 
-	tx, err := m.db.Transaction(WriteTransaction)
+	err := m.withWriteTx(ctx, "put_many", m.newWriteTx, func(tx Tx) error {
+		for i, inst := range instances {
+			if inst == nil {
+				return fmt.Errorf("put_many %s[%d]: instance must not be nil", m.info.TypeName, i)
+			}
+			varName := fmt.Sprintf("e%d", i)
+			putQuery, err := m.strategy.BuildPutQuery(m.info, inst, varName)
+			if err != nil {
+				return fmt.Errorf("put_many %s[%d]: build query: %w", m.info.TypeName, i, err)
+			}
+
+			_, err = tx.QueryWithContext(ctx, putQuery)
+			if err != nil {
+				return fmt.Errorf("put_many %s[%d]: %w", m.info.TypeName, i, err)
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("put_many %s: %w", m.info.TypeName, err)
-	}
-	defer tx.Close()
-
-	for i, inst := range instances {
-		if inst == nil {
-			return fmt.Errorf("put_many %s[%d]: instance must not be nil", m.info.TypeName, i)
-		}
-		varName := fmt.Sprintf("e%d", i)
-		putQuery, err := m.strategy.BuildPutQuery(m.info, inst, varName)
-		if err != nil {
-			return fmt.Errorf("put_many %s[%d]: build query: %w", m.info.TypeName, i, err)
-		}
-
-		_, err = tx.QueryWithContext(ctx, putQuery)
-		if err != nil {
-			return fmt.Errorf("put_many %s[%d]: %w", m.info.TypeName, i, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("put_many %s: commit: %w", m.info.TypeName, err)
+		return err
 	}
 
 	// Fetch IIDs in a read transaction
@@ -571,40 +519,35 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 		return nil
 	}
 
-	tx, err := m.db.Transaction(WriteTransaction)
-	if err != nil {
-		return fmt.Errorf("insert_many %s: %w", m.info.TypeName, err)
-	}
-	defer tx.Close()
-
 	pendingIIDs := make([]string, len(instances))
+	err := m.withWriteTx(ctx, "insert_many", m.newWriteTx, func(tx Tx) error {
+		for i, inst := range instances {
+			if inst == nil {
+				return fmt.Errorf("insert_many %s[%d]: instance must not be nil", m.info.TypeName, i)
+			}
+			varName := fmt.Sprintf("e%d", i)
+			insertQuery, err := m.strategy.BuildInsertQuery(m.info, inst, varName)
+			if err != nil {
+				return fmt.Errorf("insert_many %s[%d]: build query: %w", m.info.TypeName, i, err)
+			}
 
-	for i, inst := range instances {
-		if inst == nil {
-			return fmt.Errorf("insert_many %s[%d]: instance must not be nil", m.info.TypeName, i)
-		}
-		varName := fmt.Sprintf("e%d", i)
-		insertQuery, err := m.strategy.BuildInsertQuery(m.info, inst, varName)
-		if err != nil {
-			return fmt.Errorf("insert_many %s[%d]: build query: %w", m.info.TypeName, i, err)
-		}
+			// Execute insert with fetch - get IID in same query
+			results, err := tx.QueryWithContext(ctx, insertQuery)
+			if err != nil {
+				return fmt.Errorf("insert_many %s[%d]: %w", m.info.TypeName, i, err)
+			}
 
-		// Execute insert with fetch - get IID in same query
-		results, err := tx.QueryWithContext(ctx, insertQuery)
-		if err != nil {
-			return fmt.Errorf("insert_many %s[%d]: %w", m.info.TypeName, i, err)
-		}
-
-		// Parse IID from insert result (fetch clause returns it)
-		if len(results) == 1 {
-			if iid := extractIID(results[0]); iid != "" {
-				pendingIIDs[i] = iid
+			// Parse IID from insert result (fetch clause returns it)
+			if len(results) == 1 {
+				if iid := extractIID(results[0]); iid != "" {
+					pendingIIDs[i] = iid
+				}
 			}
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("insert_many %s: commit: %w", m.info.TypeName, err)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	for i, iid := range pendingIIDs {
@@ -718,6 +661,35 @@ func (m *Manager[T]) writeTx() (tx Tx, autoCommit bool, err error) {
 		return nil, false, err
 	}
 	return tx, true, nil
+}
+
+func (m *Manager[T]) newWriteTx() (Tx, bool, error) {
+	tx, err := m.db.Transaction(WriteTransaction)
+	if err != nil {
+		return nil, false, err
+	}
+	return tx, true, nil
+}
+
+func (m *Manager[T]) withWriteTx(ctx context.Context, op string, open func() (Tx, bool, error), fn func(Tx) error) error {
+	tx, autoCommit, err := open()
+	if err != nil {
+		return fmt.Errorf("%s %s: %w", op, m.info.TypeName, err)
+	}
+	if autoCommit {
+		defer tx.Close()
+	}
+
+	if err := fn(tx); err != nil {
+		return err
+	}
+
+	if autoCommit {
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("%s %s: commit: %w", op, m.info.TypeName, err)
+		}
+	}
+	return nil
 }
 
 // readQuery executes a read query using the bound tx or a new read transaction.

@@ -82,12 +82,6 @@ compose. Current shape forces every new operation to touch 2 types.
 `buildFetchAllWithType` at `strategy.go:332–351` all implement the same
 "emit fetch items for info.Fields" loop. Promote to one helper.
 
-### 4.3 `Delete` vs `DeleteMany` / `Update` vs `UpdateMany` / `Put` vs `PutMany`
-
-Each pair duplicates the tx + validation + commit scaffold with minor
-variation. A `runBatch(tx, items, per func(Tx, *T, int) error)` helper
-could halve the file size of `crud.go`.
-
 ### 4.4 Ad-hoc `queryOperation` / `queryFingerprint` called twice
 
 `driver/transaction.go:75, 76, 123, 124`: computed twice per query-with-
@@ -133,4 +127,4 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **4.1, 4.3** (refactors) — highest remaining leverage.
+1. **4.1** (refactor) — highest remaining leverage.
