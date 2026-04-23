@@ -131,3 +131,55 @@ func TestDatabase_BeginContext_UsesContextAwareConn(t *testing.T) {
 		t.Fatalf("BeginContext returned unexpected tx: got %#v want %#v", tc.Tx(), tx)
 	}
 }
+
+func TestTransactionContextCounters_DecrementOnClose(t *testing.T) {
+	beforeActive := ActiveTransactionContexts()
+
+	db := NewDatabase(&mockConn{txs: []*mockTx{{}}}, "test_db")
+	tc, err := db.Begin(WriteTransaction)
+	if err != nil {
+		t.Fatalf("Begin failed: %v", err)
+	}
+	if got := ActiveTransactionContexts(); got != beforeActive+1 {
+		t.Fatalf("active tx contexts after Begin: got %d want %d", got, beforeActive+1)
+	}
+
+	tc.Close()
+
+	if got := ActiveTransactionContexts(); got != beforeActive {
+		t.Fatalf("active tx contexts after Close: got %d want %d", got, beforeActive)
+	}
+}
+
+func TestTransactionContextHandleLeak_IncrementsLeakCounter(t *testing.T) {
+	beforeActive := ActiveTransactionContexts()
+	beforeLeaks := LeakedTransactionContexts()
+
+	var reportedDB string
+	prevReporter := txContextLeakReporter.Load()
+	txContextLeakReporter.Store(transactionContextLeakReporter(func(dbName string) {
+		reportedDB = dbName
+	}))
+	defer txContextLeakReporter.Store(prevReporter)
+
+	db := NewDatabase(&mockConn{txs: []*mockTx{{}}}, "leak_db")
+	tc, err := db.Begin(WriteTransaction)
+	if err != nil {
+		t.Fatalf("Begin failed: %v", err)
+	}
+
+	tc.handleLeak()
+
+	if got := ActiveTransactionContexts(); got != beforeActive {
+		t.Fatalf("active tx contexts after leak: got %d want %d", got, beforeActive)
+	}
+	if got := LeakedTransactionContexts(); got != beforeLeaks+1 {
+		t.Fatalf("leaked tx contexts: got %d want %d", got, beforeLeaks+1)
+	}
+	if reportedDB != "leak_db" {
+		t.Fatalf("leak reporter db name: got %q want %q", reportedDB, "leak_db")
+	}
+	if !tc.closed.Load() {
+		t.Fatal("expected leaked TransactionContext to be marked closed")
+	}
+}

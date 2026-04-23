@@ -12,13 +12,6 @@ No remaining open top-priority issues.
 
 ## 3. Debuggability
 
-### 3.2 `TransactionContext` leak warning is log-only
-
-`session.go:175–178`: only printed to the Go `log` package. Easy to miss
-under JSON-logger setups. Surface as a metric/counter (you already have
-`incActiveTxOpen` in driver) and consider panicking in test builds
-behind a `-tags=strict_tx` build tag.
-
 ### 3.3 Panic-on-unregistered in `NewManager`
 
 `crud.go:33, 54`: constructing a manager for an unregistered type panics.

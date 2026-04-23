@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"sync"
 	"sync/atomic"
 )
 
@@ -61,6 +62,30 @@ type Conn interface {
 
 type contextTransactionConn interface {
 	TransactionContext(ctx context.Context, dbName string, txType int) (Tx, error)
+}
+
+type transactionContextLeakReporter func(dbName string)
+
+var activeTransactionContexts atomic.Int64
+var leakedTransactionContexts atomic.Int64
+var txContextLeakReporter atomic.Value
+
+func init() {
+	txContextLeakReporter.Store(transactionContextLeakReporter(func(dbName string) {
+		log.Printf("WARNING: TransactionContext on %q was garbage-collected without being closed (possible transaction leak)", dbName)
+	}))
+}
+
+// ActiveTransactionContexts returns the number of TransactionContexts that have
+// been opened and not yet closed, committed, rolled back, or leaked.
+func ActiveTransactionContexts() int64 {
+	return activeTransactionContexts.Load()
+}
+
+// LeakedTransactionContexts returns the number of TransactionContexts observed
+// by the finalizer without an explicit Close, Commit, or Rollback.
+func LeakedTransactionContexts() int64 {
+	return leakedTransactionContexts.Load()
 }
 
 // EnsureDatabase checks whether a database exists and creates it if not.
@@ -184,6 +209,7 @@ type TransactionContext struct {
 	tx     Tx
 	txType TransactionType
 	closed atomic.Bool
+	done   sync.Once
 }
 
 // Begin starts a new TransactionContext.
@@ -202,11 +228,8 @@ func (db *Database) BeginContext(ctx context.Context, txType TransactionType) (*
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 	tc := &TransactionContext{db: db, tx: tx, txType: txType}
-	runtime.SetFinalizer(tc, func(tc *TransactionContext) {
-		if !tc.closed.Load() {
-			log.Printf("WARNING: TransactionContext on %q was garbage-collected without being closed (possible transaction leak)", db.dbName)
-		}
-	})
+	activeTransactionContexts.Add(1)
+	runtime.SetFinalizer(tc, (*TransactionContext).handleLeak)
 	return tc, nil
 }
 
@@ -214,7 +237,7 @@ func (db *Database) BeginContext(ctx context.Context, txType TransactionType) (*
 func (tc *TransactionContext) Commit() error {
 	err := tc.tx.Commit()
 	if err == nil || !tc.tx.IsOpen() {
-		tc.closed.Store(true)
+		tc.markDone()
 	}
 	return err
 }
@@ -223,7 +246,7 @@ func (tc *TransactionContext) Commit() error {
 func (tc *TransactionContext) Rollback() error {
 	err := tc.tx.Rollback()
 	if err == nil || !tc.tx.IsOpen() {
-		tc.closed.Store(true)
+		tc.markDone()
 	}
 	return err
 }
@@ -231,12 +254,30 @@ func (tc *TransactionContext) Rollback() error {
 // Close releases resources associated with the scoped transaction.
 func (tc *TransactionContext) Close() {
 	tc.tx.Close()
-	tc.closed.Store(true)
+	tc.markDone()
 }
 
 // Tx returns the underlying Tx for direct query execution.
 func (tc *TransactionContext) Tx() Tx {
 	return tc.tx
+}
+
+func (tc *TransactionContext) markDone() {
+	tc.done.Do(func() {
+		tc.closed.Store(true)
+		activeTransactionContexts.Add(-1)
+	})
+}
+
+func (tc *TransactionContext) handleLeak() {
+	if tc.closed.Load() {
+		return
+	}
+	leakedTransactionContexts.Add(1)
+	if reporter, ok := txContextLeakReporter.Load().(transactionContextLeakReporter); ok && reporter != nil {
+		reporter(tc.db.dbName)
+	}
+	tc.markDone()
 }
 
 // ExecuteSchema executes a schema modification query in a schema transaction.
