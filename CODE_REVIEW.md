@@ -19,15 +19,6 @@ ctx-aware. The pool adapter confirms this:
 is saturated, the caller's deadline is ignored until a connection frees.
 This is a breaking API change; consider `TransactionCtx(ctx, txType)`.
 
-### 2.4 `ExecuteWrite` has no rollback on commit failure
-
-`session.go:138–140`: on `tx.Commit()` error, the deferred `tx.Close()`
-runs — but because the Rust driver consumes the transaction on commit
-(`transaction.go:218` nils the ptr), `Close` is a no-op. There's nothing
-to roll back (driver state is already half-gone), so the behavior is
-correct but the ergonomics are confusing. Document that a failed commit
-leaves the tx unusable and no rollback is possible.
-
 ## 3. Debuggability
 
 ### 3.2 `TransactionContext` leak warning is log-only

@@ -241,7 +241,8 @@ func decodeMsgpack(buf *C.uchar, outLen C.size_t) ([]map[string]any, error) {
 }
 
 // Commit persists the changes made in the transaction to the database.
-// After calling Commit, the transaction is closed and cannot be used further.
+// Whether Commit succeeds or fails, the underlying Rust transaction handle is
+// consumed and cannot be reused, rolled back, or closed again meaningfully.
 func (t *Transaction) Commit() error {
 	start := time.Now()
 	t.mu.Lock()

@@ -122,6 +122,8 @@ func (db *Database) Transaction(txType TransactionType) (Tx, error) {
 }
 
 // ExecuteWrite executes a query in a new write transaction and commits it.
+// If Commit fails, the underlying transaction has already been consumed by the
+// driver and cannot be rolled back or reused.
 func (db *Database) ExecuteWrite(ctx context.Context, query string) ([]map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("write: context cancelled: %w", err)
