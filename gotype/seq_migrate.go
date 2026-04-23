@@ -206,6 +206,56 @@ func hasValidationErrors(issues []SeqValidationIssue) bool {
 	return false
 }
 
+// prepareSeqMigrations validates the input set, ensures the state schema
+// exists, and returns the sorted migrations along with the applied record map.
+func prepareSeqMigrations(ctx context.Context, db *Database, migrations []SequentialMigration) ([]SequentialMigration, *seqMigrationState, map[string]seqMigrationRecord, error) {
+	if issues := ValidateSequentialMigrations(migrations); hasValidationErrors(issues) {
+		return nil, nil, nil, fmt.Errorf("seq migration validation failed: %s", formatIssues(issues))
+	}
+
+	sorted := make([]SequentialMigration, len(migrations))
+	copy(sorted, migrations)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+
+	state := newSeqMigrationState(db)
+	if err := state.EnsureSchema(ctx); err != nil {
+		return nil, nil, nil, fmt.Errorf("seq migration: ensure state schema: %w", err)
+	}
+	applied, err := state.Applied(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("seq migration: query applied: %w", err)
+	}
+	return sorted, state, applied, nil
+}
+
+func verifySeqChecksums(sorted []SequentialMigration, applied map[string]seqMigrationRecord) error {
+	for _, m := range sorted {
+		rec, ok := applied[m.Name]
+		if !ok || rec.Checksum == "" {
+			continue
+		}
+		current := MigrationChecksum(m)
+		if current != "" && current != rec.Checksum {
+			return &ChecksumMismatchError{Name: m.Name, Expected: rec.Checksum, Actual: current}
+		}
+	}
+	return nil
+}
+
+func pendingSeqMigrations(sorted []SequentialMigration, applied map[string]seqMigrationRecord, target string) []SequentialMigration {
+	var pending []SequentialMigration
+	for _, m := range sorted {
+		if _, ok := applied[m.Name]; ok {
+			continue
+		}
+		pending = append(pending, m)
+		if target != "" && m.Name == target {
+			break
+		}
+	}
+	return pending
+}
+
 // RunSequentialMigrations validates, sorts, and applies pending migrations.
 // Returns the names of migrations that were applied (or would be applied in dry-run mode).
 func RunSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error) {
@@ -218,59 +268,16 @@ func RunSequentialMigrations(ctx context.Context, db *Database, migrations []Seq
 		logFn = func(string) {}
 	}
 
-	// Validate
-	issues := ValidateSequentialMigrations(migrations)
-	if hasValidationErrors(issues) {
-		return nil, fmt.Errorf("seq migration validation failed: %s", formatIssues(issues))
-	}
-
-	// Sort by name
-	sorted := make([]SequentialMigration, len(migrations))
-	copy(sorted, migrations)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Name < sorted[j].Name
-	})
-
-	// Ensure state schema and query applied
-	state := newSeqMigrationState(db)
-	if err := state.EnsureSchema(ctx); err != nil {
-		return nil, fmt.Errorf("seq migration: ensure state schema: %w", err)
-	}
-
-	applied, err := state.Applied(ctx)
+	sorted, state, applied, err := prepareSeqMigrations(ctx, db, migrations)
 	if err != nil {
-		return nil, fmt.Errorf("seq migration: query applied: %w", err)
+		return nil, err
 	}
 
-	// Validate checksums of already-applied migrations
-	for _, m := range sorted {
-		rec, ok := applied[m.Name]
-		if !ok {
-			continue
-		}
-		if rec.Checksum != "" {
-			current := MigrationChecksum(m)
-			if current != "" && current != rec.Checksum {
-				return nil, &ChecksumMismatchError{
-					Name:     m.Name,
-					Expected: rec.Checksum,
-					Actual:   current,
-				}
-			}
-		}
+	if err := verifySeqChecksums(sorted, applied); err != nil {
+		return nil, err
 	}
 
-	// Determine pending
-	var pending []SequentialMigration
-	for _, m := range sorted {
-		if _, ok := applied[m.Name]; ok {
-			continue
-		}
-		pending = append(pending, m)
-		if cfg.target != "" && m.Name == cfg.target {
-			break
-		}
-	}
+	pending := pendingSeqMigrations(sorted, applied, cfg.target)
 
 	if cfg.dryRun {
 		names := make([]string, len(pending))

@@ -53,42 +53,8 @@ func Register[T any]() error {
 		}
 	}
 
-	// Validate type name against reserved words
-	kindStr := "entity"
-	if info.Kind == ModelKindRelation {
-		kindStr = "relation"
-	}
-	if IsReservedWord(info.TypeName) {
-		return &ReservedWordError{Word: info.TypeName, Context: kindStr}
-	}
-	if err := ValidateIdentifier(info.TypeName, kindStr); err != nil {
+	if err := validateModelNames(info); err != nil {
 		return err
-	}
-
-	// Validate attribute names against reserved words and identifiers
-	for _, fi := range info.Fields {
-		if fi.Tag.Name != "" && IsReservedWord(fi.Tag.Name) {
-			return &ReservedWordError{Word: fi.Tag.Name, Context: "attribute"}
-		}
-		if fi.Tag.Name != "" {
-			if err := ValidateIdentifier(fi.Tag.Name, "attribute"); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Validate role names for relations
-	if info.Kind == ModelKindRelation {
-		for _, fi := range info.Fields {
-			if fi.Tag.RoleName != "" && IsReservedWord(fi.Tag.RoleName) {
-				return &ReservedWordError{Word: fi.Tag.RoleName, Context: "role"}
-			}
-			if fi.Tag.RoleName != "" {
-				if err := ValidateIdentifier(fi.Tag.RoleName, "role"); err != nil {
-					return err
-				}
-			}
-		}
 	}
 
 	globalRegistry.mu.Lock()
@@ -102,6 +68,45 @@ func Register[T any]() error {
 
 	globalRegistry.byName[info.TypeName] = info
 	globalRegistry.byType[t] = info
+	return nil
+}
+
+func validateModelNames(info *ModelInfo) error {
+	kindStr := "entity"
+	if info.Kind == ModelKindRelation {
+		kindStr = "relation"
+	}
+	if IsReservedWord(info.TypeName) {
+		return &ReservedWordError{Word: info.TypeName, Context: kindStr}
+	}
+	if err := ValidateIdentifier(info.TypeName, kindStr); err != nil {
+		return err
+	}
+	for _, fi := range info.Fields {
+		if fi.Tag.Name == "" {
+			continue
+		}
+		if IsReservedWord(fi.Tag.Name) {
+			return &ReservedWordError{Word: fi.Tag.Name, Context: "attribute"}
+		}
+		if err := ValidateIdentifier(fi.Tag.Name, "attribute"); err != nil {
+			return err
+		}
+	}
+	if info.Kind != ModelKindRelation {
+		return nil
+	}
+	for _, fi := range info.Fields {
+		if fi.Tag.RoleName == "" {
+			continue
+		}
+		if IsReservedWord(fi.Tag.RoleName) {
+			return &ReservedWordError{Word: fi.Tag.RoleName, Context: "role"}
+		}
+		if err := ValidateIdentifier(fi.Tag.RoleName, "role"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

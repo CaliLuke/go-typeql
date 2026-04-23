@@ -42,52 +42,64 @@ func ParseTag(tag string) (FieldTag, error) {
 		return FieldTag{Skip: tag == "-"}, nil
 	}
 
-	parts := strings.Split(tag, ",")
 	ft := FieldTag{}
-
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
+	for i, raw := range strings.Split(tag, ",") {
+		part := strings.TrimSpace(raw)
 		if part == "" {
 			continue
 		}
-
-		if i == 0 && !strings.Contains(part, "=") && !strings.Contains(part, ":") &&
-			part != "key" && part != "unique" && part != "abstract" && part != "-" {
+		if i == 0 && isBareName(part) {
 			ft.Name = part
 			continue
 		}
-
-		switch {
-		case part == "key":
-			ft.Key = true
-		case part == "unique":
-			ft.Unique = true
-		case part == "abstract":
-			ft.Abstract = true
-		case part == "-":
-			ft.Skip = true
-		case strings.HasPrefix(part, "role:"):
-			ft.RoleName = strings.TrimPrefix(part, "role:")
-		case strings.HasPrefix(part, "type:"):
-			ft.TypeName = strings.TrimPrefix(part, "type:")
-		case strings.HasPrefix(part, "card="):
-			cardStr := strings.TrimPrefix(part, "card=")
-			min, max, err := parseCardinality(cardStr)
-			if err != nil {
-				return FieldTag{}, fmt.Errorf("invalid cardinality %q: %w", cardStr, err)
-			}
-			ft.CardMin = min
-			ft.CardMax = max
-		default:
-			if i == 0 {
-				ft.Name = part
-			} else {
-				return FieldTag{}, fmt.Errorf("unknown tag option: %q", part)
-			}
+		if err := applyTagOption(&ft, part, i == 0); err != nil {
+			return FieldTag{}, err
 		}
 	}
-
 	return ft, nil
+}
+
+func isBareName(part string) bool {
+	if strings.ContainsAny(part, "=:") {
+		return false
+	}
+	switch part {
+	case "key", "unique", "abstract", "-":
+		return false
+	}
+	return true
+}
+
+func applyTagOption(ft *FieldTag, part string, isFirst bool) error {
+	switch {
+	case part == "key":
+		ft.Key = true
+	case part == "unique":
+		ft.Unique = true
+	case part == "abstract":
+		ft.Abstract = true
+	case part == "-":
+		ft.Skip = true
+	case strings.HasPrefix(part, "role:"):
+		ft.RoleName = strings.TrimPrefix(part, "role:")
+	case strings.HasPrefix(part, "type:"):
+		ft.TypeName = strings.TrimPrefix(part, "type:")
+	case strings.HasPrefix(part, "card="):
+		cardStr := strings.TrimPrefix(part, "card=")
+		min, max, err := parseCardinality(cardStr)
+		if err != nil {
+			return fmt.Errorf("invalid cardinality %q: %w", cardStr, err)
+		}
+		ft.CardMin = min
+		ft.CardMax = max
+	default:
+		if isFirst {
+			ft.Name = part
+			return nil
+		}
+		return fmt.Errorf("unknown tag option: %q", part)
+	}
+	return nil
 }
 
 // parseCardinality parses cardinality strings like "0..1", "1..5", "2..", "0+".

@@ -130,9 +130,13 @@ func (s *entityStrategy) BuildMatchAll(info *ModelInfo, varName string) string {
 }
 
 func (s *entityStrategy) BuildFetchAll(info *ModelInfo, varName string) string {
-	var items []ast.FetchItem
-	items = append(items, ast.FetchFunc("_iid", "iid", "$"+varName))
+	return buildFetchAll(info, varName)
+}
 
+// buildFetchAll compiles a fetch for every owned attribute plus the synthetic
+// _iid field. Shared by entity and relation strategies.
+func buildFetchAll(info *ModelInfo, varName string) string {
+	items := []ast.FetchItem{ast.FetchFunc("_iid", "iid", "$"+varName)}
 	for _, fi := range info.Fields {
 		if fi.IsSlice {
 			items = append(items, ast.FetchAttributeList{
@@ -144,10 +148,8 @@ func (s *entityStrategy) BuildFetchAll(info *ModelInfo, varName string) string {
 			items = append(items, ast.FetchAttr(fi.Tag.Name, "$"+varName, fi.Tag.Name))
 		}
 	}
-
-	fetch := ast.Fetch(items...)
 	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(fetch)
+	result, _ := compiler.Compile(ast.Fetch(items...))
 	return result
 }
 
@@ -162,26 +164,7 @@ func (s *entityStrategy) BuildMatchAllStrict(info *ModelInfo, varName string) st
 }
 
 func (s *entityStrategy) BuildFetchAllWithType(info *ModelInfo, varName string) string {
-	var items []ast.FetchItem
-	items = append(items, ast.FetchFunc("_iid", "iid", "$"+varName))
-	items = append(items, ast.FetchFunc("_type", "label", "$t"))
-
-	for _, fi := range info.Fields {
-		if fi.IsSlice {
-			items = append(items, ast.FetchAttributeList{
-				Key:      fi.Tag.Name,
-				Var:      "$" + varName,
-				AttrName: fi.Tag.Name,
-			})
-		} else {
-			items = append(items, ast.FetchAttr(fi.Tag.Name, "$"+varName, fi.Tag.Name))
-		}
-	}
-
-	fetch := ast.Fetch(items...)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(fetch)
-	return result
+	return buildFetchAllWithType(info, varName)
 }
 
 func (s *entityStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) (string, string) {
@@ -311,25 +294,7 @@ func (s *relationStrategy) BuildMatchAll(info *ModelInfo, varName string) string
 }
 
 func (s *relationStrategy) BuildFetchAll(info *ModelInfo, varName string) string {
-	var items []ast.FetchItem
-	items = append(items, ast.FetchFunc("_iid", "iid", "$"+varName))
-
-	for _, fi := range info.Fields {
-		if fi.IsSlice {
-			items = append(items, ast.FetchAttributeList{
-				Key:      fi.Tag.Name,
-				Var:      "$" + varName,
-				AttrName: fi.Tag.Name,
-			})
-		} else {
-			items = append(items, ast.FetchAttr(fi.Tag.Name, "$"+varName, fi.Tag.Name))
-		}
-	}
-
-	fetch := ast.Fetch(items...)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(fetch)
-	return result
+	return buildFetchAll(info, varName)
 }
 
 func (s *relationStrategy) BuildMatchAllStrict(info *ModelInfo, varName string) string {
@@ -343,10 +308,16 @@ func (s *relationStrategy) BuildMatchAllStrict(info *ModelInfo, varName string) 
 }
 
 func (s *relationStrategy) BuildFetchAllWithType(info *ModelInfo, varName string) string {
-	var items []ast.FetchItem
-	items = append(items, ast.FetchFunc("_iid", "iid", "$"+varName))
-	items = append(items, ast.FetchFunc("_type", "label", "$t"))
+	return buildFetchAllWithType(info, varName)
+}
 
+// buildFetchAllWithType compiles a fetch for every owned attribute plus
+// synthetic _iid / _type fields. Shared by entity and relation strategies.
+func buildFetchAllWithType(info *ModelInfo, varName string) string {
+	items := []ast.FetchItem{
+		ast.FetchFunc("_iid", "iid", "$"+varName),
+		ast.FetchFunc("_type", "label", "$t"),
+	}
 	for _, fi := range info.Fields {
 		if fi.IsSlice {
 			items = append(items, ast.FetchAttributeList{
@@ -358,10 +329,8 @@ func (s *relationStrategy) BuildFetchAllWithType(info *ModelInfo, varName string
 			items = append(items, ast.FetchAttr(fi.Tag.Name, "$"+varName, fi.Tag.Name))
 		}
 	}
-
-	fetch := ast.Fetch(items...)
 	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(fetch)
+	result, _ := compiler.Compile(ast.Fetch(items...))
 	return result
 }
 

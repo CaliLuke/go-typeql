@@ -144,7 +144,15 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 	// Check if we need time import
 	data.NeedsTime = needsTimeDTOImport(schema, attrTypes, excludeEntities, excludeRelations)
 
-	// --- Base Structs ---
+	buildDTOBaseStructs(data, cfg, attrTypes, entityIndex)
+	buildDTOEntities(data, cfg, attrTypes, entityIndex, baseStructMap, inheritedAttrSets, overrides, excludeEntities, schema)
+	buildDTORelations(data, cfg, attrTypes, schema, excludeRelations)
+	buildDTOComposites(data, cfg, attrTypes, entityIndex)
+
+	return data
+}
+
+func buildDTOBaseStructs(data *DTOData, cfg DTOConfig, attrTypes map[string]string, entityIndex map[string]EntitySpec) {
 	for _, bs := range cfg.BaseStructs {
 		entity, ok := entityIndex[bs.SourceEntity]
 		if !ok {
@@ -152,14 +160,9 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 		}
 		var outFields []dtoFieldCtx
 		for _, attrName := range bs.InheritedAttrs {
-			vtype := attrTypes[attrName]
-			goType := typeDBToGo(vtype)
-			required := isRequiredAttr(attrName, entity)
-			if cfg.StrictOut && required {
-				outFields = append(outFields, makeDTOField(attrName, goType, false, cfg.UseAcronyms))
-			} else {
-				outFields = append(outFields, makeDTOField(attrName, goType, true, cfg.UseAcronyms))
-			}
+			goType := typeDBToGo(attrTypes[attrName])
+			pointer := !cfg.StrictOut || !isRequiredAttr(attrName, entity)
+			outFields = append(outFields, makeDTOField(attrName, goType, pointer, cfg.UseAcronyms))
 		}
 		var extraFields []dtoFieldCtx
 		for name, goType := range bs.ExtraFields {
@@ -170,15 +173,15 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 			})
 		}
 		sort.Slice(extraFields, func(i, j int) bool { return extraFields[i].GoName < extraFields[j].GoName })
-
 		data.BaseStructs = append(data.BaseStructs, baseStructDTOCtx{
 			BaseName:    bs.BaseName,
 			OutFields:   outFields,
 			ExtraFields: extraFields,
 		})
 	}
+}
 
-	// --- Entities ---
+func buildDTOEntities(data *DTOData, cfg DTOConfig, attrTypes map[string]string, entityIndex map[string]EntitySpec, baseStructMap map[string]BaseStructConfig, inheritedAttrSets map[string]map[string]bool, overrides map[string][]EntityFieldOverride, excludeEntities map[string]bool, schema *ParsedSchema) {
 	allEntities := make([]string, 0, len(schema.Entities))
 	for _, e := range schema.Entities {
 		allEntities = append(allEntities, e.Name)
@@ -193,63 +196,19 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 		if cfg.SkipAbstract && e.Abstract {
 			continue
 		}
-
 		goName := goTypeName(name, RenderConfig{UseAcronyms: cfg.UseAcronyms})
 
-		// Determine base struct embedding
 		embedOut, embedCreate, embedPatch := "", "", ""
 		var skipAttrs map[string]bool
-		bs := findBaseStruct(name, entityIndex, baseStructMap)
-		if bs != nil && name != bs.SourceEntity {
+		if bs := findBaseStruct(name, entityIndex, baseStructMap); bs != nil && name != bs.SourceEntity {
 			embedOut = bs.BaseName + "Out"
 			embedCreate = bs.BaseName + "Create"
 			embedPatch = bs.BaseName + "Patch"
 			skipAttrs = inheritedAttrSets[bs.SourceEntity]
 		}
 
-		var outFields, createFields, patchFields []dtoFieldCtx
-		attrs := sortedOwnedAttrs(e)
-		for _, attrName := range attrs {
-			if skipAttrs[attrName] {
-				continue
-			}
-			vtype := attrTypes[attrName]
-			goType := typeDBToGo(vtype)
-			required := isRequiredAttr(attrName, e)
-
-			// Apply overrides
-			outReq := required
-			createReq := required
-			for _, ov := range overrides[name+":"+attrName] {
-				if ov.Required != nil {
-					switch ov.Variant {
-					case "out":
-						outReq = *ov.Required
-					case "create":
-						createReq = *ov.Required
-					}
-				}
-			}
-
-			// Out field
-			if cfg.StrictOut && outReq {
-				outFields = append(outFields, makeDTOField(attrName, goType, false, cfg.UseAcronyms))
-			} else {
-				outFields = append(outFields, makeDTOField(attrName, goType, true, cfg.UseAcronyms))
-			}
-
-			// Create field
-			if createReq {
-				createFields = append(createFields, makeDTOField(attrName, goType, false, cfg.UseAcronyms))
-			} else {
-				createFields = append(createFields, makeDTOField(attrName, goType, true, cfg.UseAcronyms))
-			}
-
-			// Patch field — always pointer
-			patchFields = append(patchFields, makeDTOField(attrName, goType, true, cfg.UseAcronyms))
-		}
-
-		ctx := entityDTOCtx{
+		outFields, createFields, patchFields := entityDTOFields(e, attrTypes, skipAttrs, name, overrides, cfg)
+		data.Entities = append(data.Entities, entityDTOCtx{
 			GoName:       goName,
 			TypeName:     name,
 			Abstract:     e.Abstract,
@@ -259,29 +218,45 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 			OutFields:    outFields,
 			CreateFields: createFields,
 			PatchFields:  patchFields,
-		}
-		data.Entities = append(data.Entities, ctx)
-
+		})
 		if !e.Abstract {
 			data.ConcreteEntities = append(data.ConcreteEntities, goName)
 		}
 	}
+}
 
-	// --- Relations ---
+func entityDTOFields(e EntitySpec, attrTypes map[string]string, skipAttrs map[string]bool, entityName string, overrides map[string][]EntityFieldOverride, cfg DTOConfig) (out, create, patch []dtoFieldCtx) {
+	for _, attrName := range sortedOwnedAttrs(e) {
+		if skipAttrs[attrName] {
+			continue
+		}
+		goType := typeDBToGo(attrTypes[attrName])
+		required := isRequiredAttr(attrName, e)
+		outReq, createReq := required, required
+		for _, ov := range overrides[entityName+":"+attrName] {
+			if ov.Required == nil {
+				continue
+			}
+			switch ov.Variant {
+			case "out":
+				outReq = *ov.Required
+			case "create":
+				createReq = *ov.Required
+			}
+		}
+		out = append(out, makeDTOField(attrName, goType, !cfg.StrictOut || !outReq, cfg.UseAcronyms))
+		create = append(create, makeDTOField(attrName, goType, !createReq, cfg.UseAcronyms))
+		patch = append(patch, makeDTOField(attrName, goType, true, cfg.UseAcronyms))
+	}
+	return
+}
+
+func buildDTORelations(data *DTOData, cfg DTOConfig, attrTypes map[string]string, schema *ParsedSchema, excludeRelations map[string]bool) {
 	allRelations := make([]string, 0, len(schema.Relations))
 	for _, r := range schema.Relations {
 		allRelations = append(allRelations, r.Name)
 	}
 	sort.Strings(allRelations)
-
-	// Role player lookup
-	rolePlayers := make(map[string][]string)
-	for _, e := range schema.Entities {
-		for _, p := range e.Plays {
-			key := p.Relation + ":" + p.Role
-			rolePlayers[key] = append(rolePlayers[key], e.Name)
-		}
-	}
 
 	for _, name := range allRelations {
 		if excludeRelations[name] {
@@ -291,7 +266,6 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 		if cfg.SkipAbstract && r.Abstract {
 			continue
 		}
-
 		goName := goTypeName(name, RenderConfig{UseAcronyms: cfg.UseAcronyms})
 
 		var roles []roleFieldCtx
@@ -306,43 +280,29 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 		}
 
 		var outFields, createFields []dtoFieldCtx
-		attrs := sortedRelationOwnedAttrs(r)
-		for _, attrName := range attrs {
-			vtype := attrTypes[attrName]
-			goType := typeDBToGo(vtype)
+		for _, attrName := range sortedRelationOwnedAttrs(r) {
+			goType := typeDBToGo(attrTypes[attrName])
 			required := isRequiredRelAttr(attrName, r)
-
-			if cfg.StrictOut && required {
-				outFields = append(outFields, makeDTOField(attrName, goType, false, cfg.UseAcronyms))
-			} else {
-				outFields = append(outFields, makeDTOField(attrName, goType, true, cfg.UseAcronyms))
-			}
-
-			if required {
-				createFields = append(createFields, makeDTOField(attrName, goType, false, cfg.UseAcronyms))
-			} else {
-				createFields = append(createFields, makeDTOField(attrName, goType, true, cfg.UseAcronyms))
-			}
+			outFields = append(outFields, makeDTOField(attrName, goType, !cfg.StrictOut || !required, cfg.UseAcronyms))
+			createFields = append(createFields, makeDTOField(attrName, goType, !required, cfg.UseAcronyms))
 		}
 
-		ctx := relationDTOCtx{
+		data.Relations = append(data.Relations, relationDTOCtx{
 			GoName:       goName,
 			TypeName:     name,
 			Abstract:     r.Abstract,
 			Roles:        roles,
 			OutFields:    outFields,
 			CreateFields: createFields,
-		}
-		data.Relations = append(data.Relations, ctx)
-
+		})
 		if !r.Abstract {
 			data.ConcreteRelations = append(data.ConcreteRelations, goName)
 		}
 	}
+}
 
-	// --- Composite entities ---
+func buildDTOComposites(data *DTOData, cfg DTOConfig, attrTypes map[string]string, entityIndex map[string]EntitySpec) {
 	for _, comp := range cfg.CompositeEntities {
-		// Merge all fields from all listed entities, deduplicating by attribute name
 		seen := make(map[string]bool)
 		var fields []dtoFieldCtx
 		for _, eName := range comp.Entities {
@@ -355,10 +315,7 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 					continue
 				}
 				seen[o.Attribute] = true
-				vtype := attrTypes[o.Attribute]
-				goType := typeDBToGo(vtype)
-				// All composite fields are pointer (union of different types)
-				fields = append(fields, makeDTOField(o.Attribute, goType, true, cfg.UseAcronyms))
+				fields = append(fields, makeDTOField(o.Attribute, typeDBToGo(attrTypes[o.Attribute]), true, cfg.UseAcronyms))
 			}
 		}
 		sort.Slice(fields, func(i, j int) bool { return fields[i].GoName < fields[j].GoName })
@@ -368,8 +325,6 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 			Fields:   fields,
 		})
 	}
-
-	return data
 }
 
 // RenderDTO writes a DTO Go file from DTOData.

@@ -152,45 +152,52 @@ func IntrospectSchemaFromString(schemaStr string) (*tqlgen.ParsedSchema, error) 
 func DiffSchema(desired *tqlgen.ParsedSchema, current *tqlgen.ParsedSchema) *SchemaDiff {
 	diff := &SchemaDiff{}
 
-	// Build lookup maps for current schema
 	currentAttrs := make(map[string]bool)
 	for _, a := range current.Attributes {
 		currentAttrs[a.Name] = true
 	}
-
 	currentEntities := make(map[string]*tqlgen.EntitySpec)
 	for i := range current.Entities {
 		currentEntities[current.Entities[i].Name] = &current.Entities[i]
 	}
-
 	currentRelations := make(map[string]*tqlgen.RelationSpec)
 	for i := range current.Relations {
 		currentRelations[current.Relations[i].Name] = &current.Relations[i]
 	}
 
-	// Check desired attributes
 	for _, a := range desired.Attributes {
 		if !currentAttrs[a.Name] {
-			diff.AddAttributes = append(diff.AddAttributes, AttrChange{
-				Name:      a.Name,
-				ValueType: a.ValueType,
-			})
+			diff.AddAttributes = append(diff.AddAttributes, AttrChange{Name: a.Name, ValueType: a.ValueType})
 		}
 	}
 
-	// Check desired entities
-	desiredEntities := make(map[string]bool)
-	for _, e := range desired.Entities {
-		desiredEntities[e.Name] = true
+	desiredEntities := diffEntities(diff, desired.Entities, currentEntities)
+	desiredRelations := diffRelations(diff, desired.Relations, currentRelations)
+
+	for name := range currentEntities {
+		if !desiredEntities[name] {
+			diff.RemoveTypes = append(diff.RemoveTypes, name)
+		}
+	}
+	for name := range currentRelations {
+		if !desiredRelations[name] {
+			diff.RemoveTypes = append(diff.RemoveTypes, name)
+		}
+	}
+
+	return diff
+}
+
+func diffEntities(diff *SchemaDiff, desired []tqlgen.EntitySpec, currentEntities map[string]*tqlgen.EntitySpec) map[string]bool {
+	seen := make(map[string]bool, len(desired))
+	for _, e := range desired {
+		seen[e.Name] = true
 		cur, exists := currentEntities[e.Name]
 		if !exists {
-			diff.AddEntities = append(diff.AddEntities, TypeChange{
-				TypeQL: buildEntityDefine(e),
-			})
+			diff.AddEntities = append(diff.AddEntities, TypeChange{TypeQL: buildEntityDefine(e)})
 			continue
 		}
-		// Entity exists — check for new owns
-		curOwns := make(map[string]bool)
+		curOwns := make(map[string]bool, len(cur.Owns))
 		for _, o := range cur.Owns {
 			curOwns[o.Attribute] = true
 		}
@@ -204,20 +211,19 @@ func DiffSchema(desired *tqlgen.ParsedSchema, current *tqlgen.ParsedSchema) *Sch
 			}
 		}
 	}
+	return seen
+}
 
-	// Check desired relations
-	desiredRelations := make(map[string]bool)
-	for _, r := range desired.Relations {
-		desiredRelations[r.Name] = true
+func diffRelations(diff *SchemaDiff, desired []tqlgen.RelationSpec, currentRelations map[string]*tqlgen.RelationSpec) map[string]bool {
+	seen := make(map[string]bool, len(desired))
+	for _, r := range desired {
+		seen[r.Name] = true
 		cur, exists := currentRelations[r.Name]
 		if !exists {
-			diff.AddRelations = append(diff.AddRelations, TypeChange{
-				TypeQL: buildRelationDefine(r),
-			})
+			diff.AddRelations = append(diff.AddRelations, TypeChange{TypeQL: buildRelationDefine(r)})
 			continue
 		}
-		// Relation exists — check for new relates/owns
-		curRelates := make(map[string]bool)
+		curRelates := make(map[string]bool, len(cur.Relates))
 		for _, rel := range cur.Relates {
 			curRelates[rel.Role] = true
 		}
@@ -230,7 +236,7 @@ func DiffSchema(desired *tqlgen.ParsedSchema, current *tqlgen.ParsedSchema) *Sch
 				})
 			}
 		}
-		curOwns := make(map[string]bool)
+		curOwns := make(map[string]bool, len(cur.Owns))
 		for _, o := range cur.Owns {
 			curOwns[o.Attribute] = true
 		}
@@ -244,20 +250,7 @@ func DiffSchema(desired *tqlgen.ParsedSchema, current *tqlgen.ParsedSchema) *Sch
 			}
 		}
 	}
-
-	// Detect removals (informational only)
-	for name := range currentEntities {
-		if !desiredEntities[name] {
-			diff.RemoveTypes = append(diff.RemoveTypes, name)
-		}
-	}
-	for name := range currentRelations {
-		if !desiredRelations[name] {
-			diff.RemoveTypes = append(diff.RemoveTypes, name)
-		}
-	}
-
-	return diff
+	return seen
 }
 
 // DiffSchemaFromRegistry compares the currently registered Go models against

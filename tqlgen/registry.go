@@ -177,12 +177,50 @@ func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData {
 		entityIndex[e.Name] = e
 	}
 
-	// --- Attributes ---
-	allAttrNames := make([]string, 0, len(schema.Attributes))
-	for _, a := range schema.Attributes {
-		allAttrNames = append(allAttrNames, a.Name)
+	allAttrNames := collectAttrNames(schema)
+	allEntities := collectEntityNames(schema)
+	relIndex, allRelations := indexRelations(schema)
+
+	fillAttributeData(data, schema, cfg, attrIndex, allAttrNames)
+	fillEntityData(data, cfg, entityIndex, allEntities)
+	fillRelationData(data, cfg, schema, entityIndex, relIndex, allRelations)
+	if cfg.JSONSchema {
+		fillJSONSchemaData(data, cfg, attrIndex, entityIndex, allEntities)
 	}
-	sort.Strings(allAttrNames)
+
+	return data
+}
+
+func collectAttrNames(schema *ParsedSchema) []string {
+	names := make([]string, 0, len(schema.Attributes))
+	for _, a := range schema.Attributes {
+		names = append(names, a.Name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func collectEntityNames(schema *ParsedSchema) []string {
+	names := make([]string, 0, len(schema.Entities))
+	for _, e := range schema.Entities {
+		names = append(names, e.Name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func indexRelations(schema *ParsedSchema) (map[string]RelationSpec, []string) {
+	index := make(map[string]RelationSpec, len(schema.Relations))
+	names := make([]string, 0, len(schema.Relations))
+	for _, r := range schema.Relations {
+		index[r.Name] = r
+		names = append(names, r.Name)
+	}
+	sort.Strings(names)
+	return index, names
+}
+
+func fillAttributeData(data *RegistryData, schema *ParsedSchema, cfg RegistryConfig, attrIndex map[string]AttributeSpec, allAttrNames []string) {
 	data.AttributeTypes = allAttrNames
 
 	if cfg.TypedConstants {
@@ -202,7 +240,6 @@ func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData {
 		}
 	}
 
-	// --- Enums ---
 	if cfg.Enums {
 		for _, a := range schema.Attributes {
 			if len(a.Values) > 0 {
@@ -210,13 +247,9 @@ func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData {
 			}
 		}
 	}
+}
 
-	// --- Entities ---
-	allEntities := make([]string, 0, len(schema.Entities))
-	for _, e := range schema.Entities {
-		allEntities = append(allEntities, e.Name)
-	}
-	sort.Strings(allEntities)
+func fillEntityData(data *RegistryData, cfg RegistryConfig, entityIndex map[string]EntitySpec, allEntities []string) {
 	data.AllEntityTypes = allEntities
 
 	for _, name := range allEntities {
@@ -230,92 +263,59 @@ func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData {
 		})
 	}
 
-	// EntityParents
 	for _, name := range allEntities {
 		e := entityIndex[name]
 		if e.Parent != "" {
 			data.EntityParents = append(data.EntityParents, KVCtx{name, e.Parent})
 		}
-	}
-
-	// EntityAbstract
-	for _, name := range allEntities {
-		e := entityIndex[name]
 		if e.Abstract {
 			data.EntityAbstract = append(data.EntityAbstract, name)
 		}
 	}
 
-	// EntityKeys
 	for _, name := range allEntities {
 		e := entityIndex[name]
 		if cfg.SkipAbstract && e.Abstract {
 			continue
 		}
 		var keys []string
+		attrs := make([]string, 0, len(e.Owns))
 		for _, o := range e.Owns {
+			attrs = append(attrs, o.Attribute)
 			if o.Key {
 				keys = append(keys, o.Attribute)
 			}
 		}
+		sort.Strings(attrs)
+		data.EntityAttributes = append(data.EntityAttributes, KVSliceCtx{name, attrs})
 		if len(keys) > 0 {
 			sort.Strings(keys)
 			data.EntityKeys = append(data.EntityKeys, KVSliceCtx{name, keys})
 		}
 	}
+}
 
-	// EntityAttributes (skip abstract)
-	for _, name := range allEntities {
-		e := entityIndex[name]
-		if cfg.SkipAbstract && e.Abstract {
-			continue
-		}
-		attrs := make([]string, 0, len(e.Owns))
-		for _, o := range e.Owns {
-			attrs = append(attrs, o.Attribute)
-		}
-		sort.Strings(attrs)
-		data.EntityAttributes = append(data.EntityAttributes, KVSliceCtx{name, attrs})
-	}
-
-	// --- Relations ---
-	relIndex := make(map[string]RelationSpec, len(schema.Relations))
-	allRelations := make([]string, 0, len(schema.Relations))
-	for _, r := range schema.Relations {
-		relIndex[r.Name] = r
-		allRelations = append(allRelations, r.Name)
-	}
-	sort.Strings(allRelations)
+func fillRelationData(data *RegistryData, cfg RegistryConfig, schema *ParsedSchema, entityIndex map[string]EntitySpec, relIndex map[string]RelationSpec, allRelations []string) {
 	data.AllRelationTypes = allRelations
 
 	for _, name := range allRelations {
 		r := relIndex[name]
-		if cfg.SkipAbstract && r.Abstract {
-			continue
+		if !cfg.SkipAbstract || !r.Abstract {
+			data.RelationConstants = append(data.RelationConstants, TypeConstCtx{
+				Name:  toRegistryConst(cfg.RelPrefix, name, cfg.UseAcronyms),
+				Value: name,
+			})
 		}
-		data.RelationConstants = append(data.RelationConstants, TypeConstCtx{
-			Name:  toRegistryConst(cfg.RelPrefix, name, cfg.UseAcronyms),
-			Value: name,
-		})
-	}
-
-	// RelationAbstract
-	for _, name := range allRelations {
-		r := relIndex[name]
 		if r.Abstract {
 			data.RelationAbstract = append(data.RelationAbstract, name)
 		}
-	}
-
-	// RelationParents
-	for _, name := range allRelations {
-		r := relIndex[name]
 		if r.Parent != "" {
 			data.RelationParents = append(data.RelationParents, KVCtx{name, r.Parent})
 		}
 	}
 
-	// Role → player types from entity plays clauses
+	// Role → player types from entity plays clauses. Used only for the
+	// RelationSchema assembly below.
 	rolePlayers := make(map[string][]string)
 	for _, e := range schema.Entities {
 		for _, p := range e.Plays {
@@ -324,74 +324,55 @@ func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData {
 		}
 	}
 
-	// RelationSchema — supports N roles
 	for _, name := range allRelations {
 		r := relIndex[name]
-		if len(r.Relates) == 0 {
+		if len(r.Relates) > 0 {
+			var roles []RoleCtx
+			for _, rel := range r.Relates {
+				players := rolePlayers[name+":"+rel.Role]
+				sort.Strings(players)
+				players = filterMostSpecific(players, entityIndex)
+				roles = append(roles, RoleCtx{RoleName: rel.Role, PlayerTypes: players, Card: rel.Card})
+			}
+			data.RelationSchema = append(data.RelationSchema, RelSchemaCtx{Name: name, Roles: roles})
+		}
+		if len(r.Owns) > 0 {
+			attrs := make([]string, 0, len(r.Owns))
+			for _, o := range r.Owns {
+				attrs = append(attrs, o.Attribute)
+			}
+			sort.Strings(attrs)
+			data.RelationAttrs = append(data.RelationAttrs, KVSliceCtx{name, attrs})
+		}
+	}
+}
+
+func fillJSONSchemaData(data *RegistryData, cfg RegistryConfig, attrIndex map[string]AttributeSpec, entityIndex map[string]EntitySpec, allEntities []string) {
+	for _, name := range allEntities {
+		e := entityIndex[name]
+		if cfg.SkipAbstract && e.Abstract {
 			continue
 		}
-		var roles []RoleCtx
-		for _, rel := range r.Relates {
-			players := rolePlayers[name+":"+rel.Role]
-			sort.Strings(players)
-			players = filterMostSpecific(players, entityIndex)
-			roles = append(roles, RoleCtx{
-				RoleName:    rel.Role,
-				PlayerTypes: players,
-				Card:        rel.Card,
-			})
-		}
-		data.RelationSchema = append(data.RelationSchema, RelSchemaCtx{
-			Name:  name,
-			Roles: roles,
-		})
-	}
-
-	// RelationAttributes
-	for _, name := range allRelations {
-		r := relIndex[name]
-		if len(r.Owns) == 0 {
-			continue
-		}
-		attrs := make([]string, 0, len(r.Owns))
-		for _, o := range r.Owns {
-			attrs = append(attrs, o.Attribute)
-		}
-		sort.Strings(attrs)
-		data.RelationAttrs = append(data.RelationAttrs, KVSliceCtx{name, attrs})
-	}
-
-	// JSON schema fragments
-	if cfg.JSONSchema {
-		for _, name := range allEntities {
-			e := entityIndex[name]
-			if cfg.SkipAbstract && e.Abstract {
+		var props []JSONSchemaPropCtx
+		var required []string
+		for _, o := range e.Owns {
+			attr, ok := attrIndex[o.Attribute]
+			if !ok {
 				continue
 			}
-			var props []JSONSchemaPropCtx
-			var required []string
-			for _, o := range e.Owns {
-				attr, ok := attrIndex[o.Attribute]
-				if !ok {
-					continue
-				}
-				jt := typeDBToJSONSchemaType(attr.ValueType)
-				props = append(props, JSONSchemaPropCtx{Name: o.Attribute, JSONType: jt})
-				if o.Key || o.Unique {
-					required = append(required, o.Attribute)
-				}
+			props = append(props, JSONSchemaPropCtx{Name: o.Attribute, JSONType: typeDBToJSONSchemaType(attr.ValueType)})
+			if o.Key || o.Unique {
+				required = append(required, o.Attribute)
 			}
-			sort.Slice(props, func(i, j int) bool { return props[i].Name < props[j].Name })
-			sort.Strings(required)
-			data.EntityJSONSchema = append(data.EntityJSONSchema, JSONSchemaCtx{
-				TypeName:   name,
-				Properties: props,
-				Required:   required,
-			})
 		}
+		sort.Slice(props, func(i, j int) bool { return props[i].Name < props[j].Name })
+		sort.Strings(required)
+		data.EntityJSONSchema = append(data.EntityJSONSchema, JSONSchemaCtx{
+			TypeName:   name,
+			Properties: props,
+			Required:   required,
+		})
 	}
-
-	return data
 }
 
 // filterMostSpecific removes ancestor types when a descendant is also present.

@@ -57,114 +57,94 @@ func (c *Compiler) CompileBatch(nodes []QueryNode, separator string) (string, er
 func (c *Compiler) compileClause(clause Clause) (string, error) {
 	switch cl := clause.(type) {
 	case MatchClause:
-		var b strings.Builder
-		b.WriteString("match\n")
-		for i, p := range cl.Patterns {
-			if i > 0 {
-				b.WriteString(";\n")
-			}
-			s, err := c.compilePattern(p)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(s)
-		}
-		b.WriteByte(';')
-		return b.String(), nil
-
+		return c.compileMatchClause(cl)
 	case MatchLetClause:
 		return c.compileMatchLet(cl)
-
 	case InsertClause:
-		stmts := make([]string, 0, len(cl.Statements))
-		for _, s := range cl.Statements {
-			compiled, err := c.compileStatement(s)
-			if err != nil {
-				return "", err
-			}
-			stmts = append(stmts, compiled)
-		}
-		return "insert\n" + strings.Join(stmts, ";\n") + ";", nil
-
+		return c.compileStmtBlock("insert", cl.Statements)
 	case DeleteClause:
-		stmts := make([]string, 0, len(cl.Statements))
-		for _, s := range cl.Statements {
-			compiled, err := c.compileStatement(s)
-			if err != nil {
-				return "", err
-			}
-			stmts = append(stmts, compiled)
-		}
-		return "delete\n" + strings.Join(stmts, ";\n") + ";", nil
-
+		return c.compileStmtBlock("delete", cl.Statements)
 	case UpdateClause:
-		stmts := make([]string, 0, len(cl.Statements))
-		for _, s := range cl.Statements {
-			compiled, err := c.compileStatement(s)
-			if err != nil {
-				return "", err
-			}
-			stmts = append(stmts, compiled)
-		}
-		return "update\n" + strings.Join(stmts, ";\n") + ";", nil
-
-	case FetchClause:
-		var b strings.Builder
-		b.WriteString("fetch {\n  ")
-		for i, item := range cl.Items {
-			if i > 0 {
-				b.WriteString(",\n  ")
-			}
-			compiled, err := c.compileFetchItem(item)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(compiled)
-		}
-		b.WriteString("\n};")
-		return b.String(), nil
-
-	case ReduceClause:
-		assignments := make([]string, 0, len(cl.Assignments))
-		for _, a := range cl.Assignments {
-			compiled, err := c.compileReduceAssignment(a)
-			if err != nil {
-				return "", err
-			}
-			assignments = append(assignments, compiled)
-		}
-		reduceStr := "reduce " + strings.Join(assignments, ", ")
-		if cl.GroupBy != "" {
-			reduceStr += " groupby " + cl.GroupBy
-		}
-		return reduceStr + ";", nil
-
+		return c.compileStmtBlock("update", cl.Statements)
 	case PutClause:
-		stmts := make([]string, 0, len(cl.Statements))
-		for _, s := range cl.Statements {
-			compiled, err := c.compileStatement(s)
-			if err != nil {
-				return "", err
-			}
-			stmts = append(stmts, compiled)
-		}
-		return "put\n" + strings.Join(stmts, ";\n") + ";", nil
-
+		return c.compileStmtBlock("put", cl.Statements)
+	case FetchClause:
+		return c.compileFetchClause(cl)
+	case ReduceClause:
+		return c.compileReduceClause(cl)
 	case SelectClause:
 		return "select " + strings.Join(cl.Variables, ", ") + ";", nil
-
 	case SortClause:
 		return fmt.Sprintf("sort %s %s;", cl.Variable, cl.Direction), nil
-
 	case OffsetClause:
 		return fmt.Sprintf("offset %d;", cl.Count), nil
-
 	case LimitClause:
 		return fmt.Sprintf("limit %d;", cl.Count), nil
-
 	default:
 		return "", fmt.Errorf("unknown clause type: %T", clause)
 	}
+}
+
+func (c *Compiler) compileMatchClause(cl MatchClause) (string, error) {
+	var b strings.Builder
+	b.WriteString("match\n")
+	for i, p := range cl.Patterns {
+		if i > 0 {
+			b.WriteString(";\n")
+		}
+		s, err := c.compilePattern(p)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(s)
+	}
+	b.WriteByte(';')
+	return b.String(), nil
+}
+
+func (c *Compiler) compileStmtBlock(keyword string, statements []Statement) (string, error) {
+	stmts := make([]string, 0, len(statements))
+	for _, s := range statements {
+		compiled, err := c.compileStatement(s)
+		if err != nil {
+			return "", err
+		}
+		stmts = append(stmts, compiled)
+	}
+	return keyword + "\n" + strings.Join(stmts, ";\n") + ";", nil
+}
+
+func (c *Compiler) compileFetchClause(cl FetchClause) (string, error) {
+	var b strings.Builder
+	b.WriteString("fetch {\n  ")
+	for i, item := range cl.Items {
+		if i > 0 {
+			b.WriteString(",\n  ")
+		}
+		compiled, err := c.compileFetchItem(item)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(compiled)
+	}
+	b.WriteString("\n};")
+	return b.String(), nil
+}
+
+func (c *Compiler) compileReduceClause(cl ReduceClause) (string, error) {
+	assignments := make([]string, 0, len(cl.Assignments))
+	for _, a := range cl.Assignments {
+		compiled, err := c.compileReduceAssignment(a)
+		if err != nil {
+			return "", err
+		}
+		assignments = append(assignments, compiled)
+	}
+	reduceStr := "reduce " + strings.Join(assignments, ", ")
+	if cl.GroupBy != "" {
+		reduceStr += " groupby " + cl.GroupBy
+	}
+	return reduceStr + ";", nil
 }
 
 func (c *Compiler) compileMatchLet(clause MatchLetClause) (string, error) {
@@ -206,91 +186,95 @@ func (c *Compiler) compileLetAssignment(a LetAssignment) (string, error) {
 func (c *Compiler) compilePattern(pattern Pattern) (string, error) {
 	switch p := pattern.(type) {
 	case EntityPattern:
-		op := "isa"
-		if p.IsStrict {
-			op = "isa!"
-		}
-		var b strings.Builder
-		b.Grow(len(p.Variable) + len(op) + len(p.TypeName) + len(p.Constraints)*16)
-		b.WriteString(p.Variable)
-		b.WriteByte(' ')
-		b.WriteString(op)
-		b.WriteByte(' ')
-		b.WriteString(p.TypeName)
-		for _, constraint := range p.Constraints {
-			s, err := c.compileConstraint(constraint)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(", ")
-			b.WriteString(s)
-		}
-		return b.String(), nil
-
+		return c.compileEntityPattern(p)
 	case RelationPattern:
 		return c.compileRelationPattern(p)
-
 	case SubTypePattern:
 		return p.Variable + " sub " + p.ParentType, nil
-
 	case HasPattern:
 		return p.ThingVar + " has " + p.AttrType + " " + p.AttrVar, nil
-
 	case ValueComparisonPattern:
 		valStr, err := c.compileValueOrString(p.Value)
 		if err != nil {
 			return "", err
 		}
 		return p.Var + " " + p.Operator + " " + valStr, nil
-
 	case NotPattern:
-		subPatterns := make([]string, 0, len(p.Patterns))
-		for _, sp := range p.Patterns {
+		return c.compileNotPattern(p)
+	case OrPattern:
+		return c.compileOrPattern(p)
+	case IidPattern:
+		return p.Variable + " iid " + p.IID, nil
+	case AttributePattern:
+		return c.compileAttributePattern(p)
+	case RawPattern:
+		return p.Content, nil
+	default:
+		return "", fmt.Errorf("unknown pattern type: %T", pattern)
+	}
+}
+
+func (c *Compiler) compileEntityPattern(p EntityPattern) (string, error) {
+	op := "isa"
+	if p.IsStrict {
+		op = "isa!"
+	}
+	var b strings.Builder
+	b.Grow(len(p.Variable) + len(op) + len(p.TypeName) + len(p.Constraints)*16)
+	b.WriteString(p.Variable)
+	b.WriteByte(' ')
+	b.WriteString(op)
+	b.WriteByte(' ')
+	b.WriteString(p.TypeName)
+	for _, constraint := range p.Constraints {
+		s, err := c.compileConstraint(constraint)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(", ")
+		b.WriteString(s)
+	}
+	return b.String(), nil
+}
+
+func (c *Compiler) compileNotPattern(p NotPattern) (string, error) {
+	subPatterns := make([]string, 0, len(p.Patterns))
+	for _, sp := range p.Patterns {
+		s, err := c.compilePattern(sp)
+		if err != nil {
+			return "", err
+		}
+		subPatterns = append(subPatterns, s)
+	}
+	return "not { " + strings.Join(subPatterns, "; ") + "; }", nil
+}
+
+func (c *Compiler) compileOrPattern(p OrPattern) (string, error) {
+	blocks := make([]string, 0, len(p.Alternatives))
+	for _, alt := range p.Alternatives {
+		subPatterns := make([]string, 0, len(alt))
+		for _, sp := range alt {
 			s, err := c.compilePattern(sp)
 			if err != nil {
 				return "", err
 			}
 			subPatterns = append(subPatterns, s)
 		}
-		inner := strings.Join(subPatterns, "; ")
-		return "not { " + inner + "; }", nil
-
-	case OrPattern:
-		blocks := make([]string, 0, len(p.Alternatives))
-		for _, alt := range p.Alternatives {
-			subPatterns := make([]string, 0, len(alt))
-			for _, sp := range alt {
-				s, err := c.compilePattern(sp)
-				if err != nil {
-					return "", err
-				}
-				subPatterns = append(subPatterns, s)
-			}
-			blockContent := strings.Join(subPatterns, "; ")
-			blocks = append(blocks, "{ "+blockContent+"; }")
-		}
-		return strings.Join(blocks, " or "), nil
-
-	case IidPattern:
-		return p.Variable + " iid " + p.IID, nil
-
-	case AttributePattern:
-		parts := []string{p.Variable + " isa " + p.TypeName}
-		if p.Value != nil {
-			valStr, err := c.compileValue(p.Value)
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, p.Variable+" "+valStr)
-		}
-		return strings.Join(parts, "; "), nil
-
-	case RawPattern:
-		return p.Content, nil
-
-	default:
-		return "", fmt.Errorf("unknown pattern type: %T", pattern)
+		blocks = append(blocks, "{ "+strings.Join(subPatterns, "; ")+"; }")
 	}
+	return strings.Join(blocks, " or "), nil
+}
+
+func (c *Compiler) compileAttributePattern(p AttributePattern) (string, error) {
+	parts := []string{p.Variable + " isa " + p.TypeName}
+	if p.Value != nil {
+		valStr, err := c.compileValue(p.Value)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, p.Variable+" "+valStr)
+	}
+	return strings.Join(parts, "; "), nil
 }
 
 // --- Statements ---
