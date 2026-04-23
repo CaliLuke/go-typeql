@@ -4,23 +4,24 @@ package gotype
 import (
 	"fmt"
 	"reflect"
-	"strings"
 	"sync"
 )
 
 var (
 	globalRegistry = &Registry{
-		byName: make(map[string]*ModelInfo),
-		byType: make(map[reflect.Type]*ModelInfo),
+		byName:   make(map[string]*ModelInfo),
+		byType:   make(map[reflect.Type]*ModelInfo),
+		byGoName: make(map[string]*ModelInfo),
 	}
 )
 
 // Registry maintains a mapping between Go struct types and TypeDB model metadata.
 // It is used to look up schema information during query generation and hydration.
 type Registry struct {
-	mu     sync.RWMutex
-	byName map[string]*ModelInfo
-	byType map[reflect.Type]*ModelInfo
+	mu       sync.RWMutex
+	byName   map[string]*ModelInfo
+	byType   map[reflect.Type]*ModelInfo
+	byGoName map[string]*ModelInfo
 }
 
 // Register adds a Go struct type to the global registry as a TypeDB model.
@@ -68,6 +69,7 @@ func Register[T any]() error {
 
 	globalRegistry.byName[info.TypeName] = info
 	globalRegistry.byType[t] = info
+	globalRegistry.byGoName[lowerGoName(t.Name())] = info
 	return nil
 }
 
@@ -141,11 +143,9 @@ func LookupType(t reflect.Type) (*ModelInfo, bool) {
 func LookupByGoName(name string) (*ModelInfo, bool) {
 	globalRegistry.mu.RLock()
 	defer globalRegistry.mu.RUnlock()
-	lower := strings.ToLower(name)
-	for _, info := range globalRegistry.byType {
-		if strings.ToLower(info.GoType.Name()) == lower {
-			return info, true
-		}
+	info, ok := globalRegistry.byGoName[lowerGoName(name)]
+	if ok {
+		return info, true
 	}
 	return nil, false
 }
@@ -187,4 +187,17 @@ func ClearRegistry() {
 	defer globalRegistry.mu.Unlock()
 	globalRegistry.byName = make(map[string]*ModelInfo)
 	globalRegistry.byType = make(map[reflect.Type]*ModelInfo)
+	globalRegistry.byGoName = make(map[string]*ModelInfo)
+}
+
+func lowerGoName(name string) string {
+	b := make([]byte, len(name))
+	for i := range len(name) {
+		c := name[i]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b)
 }

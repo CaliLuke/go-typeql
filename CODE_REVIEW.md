@@ -18,8 +18,6 @@ No remaining open top-priority issues.
 
 - `coerceTimeFast` (`hydrate.go:465`) loops three layouts on every time
   field. Cache the last-successful layout per ModelInfo field.
-- `Registry.LookupByGoName` (`registry.go:142–151`) linear-scans and
-  lowercases every entry per call. Build a secondary index at register time.
 - `validateModelNames` (`registry.go:74–111`) runs `IsReservedWord` +
   `ValidateIdentifier` on every field of every register call; if
   `reserved.go` uses a slice scan, replace with `map[string]struct{}`.
