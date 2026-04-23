@@ -2,8 +2,10 @@ package gotype
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // Filter represents a query filter expression that generates TypeQL patterns.
@@ -26,6 +28,9 @@ type ComparisonFilter struct {
 
 // ToPatterns generates TypeQL patterns for a comparison filter.
 func (f *ComparisonFilter) ToPatterns(varName string) []string {
+	if !isScalarFilterValue(f.Value) {
+		panic(fmt.Sprintf("gotype: comparison filter %q requires a scalar value, got %T", f.Attr, f.Value))
+	}
 	attrVar := sanitizeVar(varName + "__" + f.Attr)
 	hasPattern := fmt.Sprintf("$%s has %s $%s", varName, f.Attr, attrVar)
 
@@ -44,6 +49,35 @@ func (f *ComparisonFilter) ToPatterns(varName string) []string {
 		return wrapNot(patterns)
 	}
 	return patterns
+}
+
+func isScalarFilterValue(value any) bool {
+	if value == nil {
+		return true
+	}
+
+	v := reflect.ValueOf(value)
+	for v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return true
+		}
+		v = v.Elem()
+		value = v.Interface()
+	}
+
+	if _, ok := value.(time.Time); ok {
+		return true
+	}
+
+	switch v.Kind() {
+	case reflect.Bool, reflect.String,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
 }
 
 // --- Convenience constructors ---

@@ -22,9 +22,6 @@ No remaining open top-priority issues.
 
 ## 6. Low-priority / nits
 
-- `gotype/filter.go:32–41`: `EqualsFilter` builds `$x == val` even for
-  non-scalar `FormatValue(x)`. If `val` is a struct, this silently
-  produces an invalid query.
 - `ast/compiler.go:31`: `"unknown node type: %T"` — include the node's
   position/context if available (currently AST has no position info;
   adding that would pay for itself at the tqlgen level).

@@ -1,6 +1,7 @@
 package gotype
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -11,6 +12,22 @@ func TestEq(t *testing.T) {
 	joined := strings.Join(patterns, " ")
 	assertContains(t, joined, "$e has name $e__name;")
 	assertContains(t, joined, `$e__name == "Alice";`)
+}
+
+func TestEq_NonScalarPanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for non-scalar comparison value")
+		}
+		msg := fmt.Sprintf("%v", r)
+		if !strings.Contains(msg, "requires a scalar value") {
+			t.Fatalf("unexpected panic message: %s", msg)
+		}
+	}()
+
+	type badValue struct{ Name string }
+	_ = Eq("name", badValue{Name: "Alice"}).ToPatterns("e")
 }
 
 func TestNeq(t *testing.T) {
