@@ -99,7 +99,7 @@ var CommonAcronyms = map[string]string{
 ```
 
 <a name="ExtractAnnotations"></a>
-## func [ExtractAnnotations](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L435>)
+## func [ExtractAnnotations](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L524>)
 
 ```go
 func ExtractAnnotations(input string) map[string]map[string]string
@@ -117,7 +117,7 @@ func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error
 Render processes a ParsedSchema and writes the generated Go source code to the provided writer.
 
 <a name="RenderDTO"></a>
-## func [RenderDTO](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto.go#L376>)
+## func [RenderDTO](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto.go#L331>)
 
 ```go
 func RenderDTO(w io.Writer, data *DTOData) error
@@ -126,7 +126,7 @@ func RenderDTO(w io.Writer, data *DTOData) error
 RenderDTO writes a DTO Go file from DTOData.
 
 <a name="RenderLeafConstants"></a>
-## func [RenderLeafConstants](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L540>)
+## func [RenderLeafConstants](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L521>)
 
 ```go
 func RenderLeafConstants(w io.Writer, schema *ParsedSchema, cfg LeafConstantsConfig) error
@@ -135,7 +135,7 @@ func RenderLeafConstants(w io.Writer, schema *ParsedSchema, cfg LeafConstantsCon
 RenderLeafConstants writes a standalone leaf package containing only type, relation, and enum constants. This package has zero internal dependencies, making it safe to import from any package.
 
 <a name="RenderRegistry"></a>
-## func [RenderRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L523>)
+## func [RenderRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L504>)
 
 ```go
 func RenderRegistry(w io.Writer, data *RegistryData) error
@@ -171,7 +171,7 @@ func ToSnakeCase(name string) string
 ToSnakeCase transforms a kebab\-case string into snake\_case.
 
 <a name="Annotation"></a>
-## type [Annotation](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L86-L93>)
+## type [Annotation](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L87-L94>)
 
 Annotation parses: @key, @unique, @abstract, @card\(...\), @regex\(...\), @values\(...\), @range\(...\)
 
@@ -187,7 +187,7 @@ type Annotation struct {
 ```
 
 <a name="AsClause"></a>
-## type [AsClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L81-L83>)
+## type [AsClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L82-L84>)
 
 AsClause parses: as parent\-role
 
@@ -198,7 +198,7 @@ type AsClause struct {
 ```
 
 <a name="AttrDef"></a>
-## type [AttrDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L18-L23>)
+## type [AttrDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L19-L24>)
 
 AttrDef parses: attribute name \[,\] value type \[@constraint\(...\)\];
 
@@ -252,7 +252,7 @@ type BaseStructConfig struct {
 ```
 
 <a name="CardAnnot"></a>
-## type [CardAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L96-L98>)
+## type [CardAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L97-L99>)
 
 CardAnnot parses: @card\(expr\)
 
@@ -371,7 +371,7 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData
 BuildDTOData populates DTOData from a parsed schema. The schema should have AccumulateInheritance\(\) called before this.
 
 <a name="EntityClause"></a>
-## type [EntityClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L40-L43>)
+## type [EntityClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L41-L44>)
 
 EntityClause is one of: owns or plays.
 
@@ -383,7 +383,7 @@ type EntityClause struct {
 ```
 
 <a name="EntityDef"></a>
-## type [EntityDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L26-L32>)
+## type [EntityDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L27-L33>)
 
 EntityDef parses: entity name \[sub parent\] \[@abstract\] \[, clause...\];
 
@@ -456,7 +456,7 @@ type EnumValueCtx = enumValueCtx
 ```
 
 <a name="FunBodyTok"></a>
-## type [FunBodyTok](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L190-L192>)
+## type [FunBodyTok](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L191-L193>)
 
 FunBodyTok matches every token type EXCEPT FunKW. When the parser hits the next \`fun\`, it exits the current FunDef and starts a new one.
 
@@ -467,7 +467,7 @@ type FunBodyTok struct {
 ```
 
 <a name="FunDef"></a>
-## type [FunDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L183-L186>)
+## type [FunDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L184-L187>)
 
 FunDef parses: fun name \<body tokens until next fun or EOF\> The body is captured as a flat list of tokens for signature extraction.
 
@@ -555,7 +555,7 @@ type KVSliceCtx struct {
 ```
 
 <a name="LeafConstantsConfig"></a>
-## type [LeafConstantsConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L528-L535>)
+## type [LeafConstantsConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/registry.go#L509-L516>)
 
 LeafConstantsConfig configures leaf constants package generation.
 
@@ -571,7 +571,7 @@ type LeafConstantsConfig struct {
 ```
 
 <a name="OwnsDef"></a>
-## type [OwnsDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L46-L49>)
+## type [OwnsDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L47-L50>)
 
 OwnsDef parses: owns attr\-name \[@key\] \[@unique\] \[@card\(...\)\]
 
@@ -635,7 +635,7 @@ type ParsedSchema struct {
 ```
 
 <a name="ParseSchema"></a>
-### func [ParseSchema](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L137>)
+### func [ParseSchema](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L138>)
 
 ```go
 func ParseSchema(input string) (*ParsedSchema, error)
@@ -644,7 +644,7 @@ func ParseSchema(input string) (*ParsedSchema, error)
 ParseSchema parses a TypeQL schema string into a ParsedSchema structure. It handles attribute, entity, relation, function, and struct definitions. Function blocks are parsed by the grammar natively — no pre\-processing needed.
 
 <a name="ParseSchemaFile"></a>
-### func [ParseSchemaFile](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L156>)
+### func [ParseSchemaFile](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L157>)
 
 ```go
 func ParseSchemaFile(path string) (*ParsedSchema, error)
@@ -662,7 +662,7 @@ func (s *ParsedSchema) AccumulateInheritance()
 AccumulateInheritance propagates owns/plays from parent entities/relations to their children, so each child has the complete set of fields.
 
 <a name="PlaysDef"></a>
-## type [PlaysDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L52-L55>)
+## type [PlaysDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L53-L56>)
 
 PlaysDef parses: plays relation:role
 
@@ -688,7 +688,7 @@ type PlaysSpec struct {
 ```
 
 <a name="RangeAnnot"></a>
-## type [RangeAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L111-L113>)
+## type [RangeAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L112-L114>)
 
 RangeAnnot parses: @range\(expr\)
 
@@ -699,7 +699,7 @@ type RangeAnnot struct {
 ```
 
 <a name="RegexAnnot"></a>
-## type [RegexAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L101-L103>)
+## type [RegexAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L102-L104>)
 
 RegexAnnot parses: @regex\("pattern"\)
 
@@ -806,7 +806,7 @@ type RelSchemaCtx struct {
 ```
 
 <a name="RelatesDef"></a>
-## type [RelatesDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L74-L78>)
+## type [RelatesDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L75-L79>)
 
 RelatesDef parses: relates role\-name \[as parent\-role\] \[@card\(...\)\]
 
@@ -835,7 +835,7 @@ type RelatesSpec struct {
 ```
 
 <a name="RelationClause"></a>
-## type [RelationClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L67-L71>)
+## type [RelationClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L68-L72>)
 
 RelationClause is one of: relates, owns, or plays.
 
@@ -848,7 +848,7 @@ type RelationClause struct {
 ```
 
 <a name="RelationDef"></a>
-## type [RelationDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L58-L64>)
+## type [RelationDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L59-L65>)
 
 RelationDef parses: relation name \[sub parent\] \[@abstract\] \[, clause...\];
 
@@ -930,7 +930,7 @@ type RoleCtx struct {
 ```
 
 <a name="SimpleDef"></a>
-## type [SimpleDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L173-L179>)
+## type [SimpleDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L174-L180>)
 
 SimpleDef represents a single top\-level definition within a TypeQL define block.
 
@@ -945,7 +945,7 @@ type SimpleDef struct {
 ```
 
 <a name="StructDefP"></a>
-## type [StructDefP](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L118-L121>)
+## type [StructDefP](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L119-L122>)
 
 StructDefP parses: struct name \(: | ,\) field \[, field\]\* \[,\] ; Supports both official TypeQL syntax \(\`:\` separator, \`name value type\`\) and legacy syntax \(\`,\` separator, \`value name type\`\).
 
@@ -957,7 +957,7 @@ type StructDefP struct {
 ```
 
 <a name="StructFieldP"></a>
-## type [StructFieldP](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L126-L130>)
+## type [StructFieldP](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L127-L131>)
 
 StructFieldP parses a struct field in either official or legacy order:
 
@@ -1003,7 +1003,7 @@ type StructSpec struct {
 ```
 
 <a name="SubClause"></a>
-## type [SubClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L35-L37>)
+## type [SubClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L36-L38>)
 
 SubClause parses: sub parent\-name
 
@@ -1014,7 +1014,7 @@ type SubClause struct {
 ```
 
 <a name="TQLFileSimple"></a>
-## type [TQLFileSimple](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L167-L170>)
+## type [TQLFileSimple](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L168-L171>)
 
 TQLFileSimple is the top\-level grammar for a TypeQL define block.
 
@@ -1038,7 +1038,7 @@ type TypeConstCtx struct {
 ```
 
 <a name="ValuesAnnot"></a>
-## type [ValuesAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L106-L108>)
+## type [ValuesAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L107-L109>)
 
 ValuesAnnot parses: @values\("a", "b", ...\)
 

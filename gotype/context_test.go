@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+type testCtxKey string
+
 type contextAwareMockConn struct {
 	*mockConn
 	lastCtx    context.Context
@@ -91,7 +93,7 @@ func TestDatabase_TransactionContext_UsesContextAwareConn(t *testing.T) {
 	}
 	db := NewDatabase(conn, "test_db")
 
-	ctx := context.WithValue(context.Background(), "k", "v")
+	ctx := context.WithValue(context.Background(), testCtxKey("k"), "v")
 	gotTx, err := db.TransactionContext(ctx, WriteTransaction)
 	if err != nil {
 		t.Fatalf("TransactionContext failed: %v", err)
@@ -117,7 +119,7 @@ func TestDatabase_BeginContext_UsesContextAwareConn(t *testing.T) {
 	}
 	db := NewDatabase(conn, "test_db")
 
-	ctx := context.WithValue(context.Background(), "k", "v")
+	ctx := context.WithValue(context.Background(), testCtxKey("k"), "v")
 	tc, err := db.BeginContext(ctx, ReadTransaction)
 	if err != nil {
 		t.Fatalf("BeginContext failed: %v", err)
