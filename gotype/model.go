@@ -282,7 +282,7 @@ func ToInsertQuery[T any](instance *T) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.BuildInsertQuery(info, instance, "e"), nil
+	return s.BuildInsertQuery(info, instance, "e")
 }
 
 // ToMatchQuery generates a TypeQL match clause for the given instance (by key fields).
@@ -291,7 +291,7 @@ func ToMatchQuery[T any](instance *T) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.BuildMatchByKey(info, instance, "e"), nil
+	return s.BuildMatchByKey(info, instance, "e")
 }
 
 func lookupStrategy[T any]() (*ModelInfo, ModelStrategy, error) {

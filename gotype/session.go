@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"sync/atomic"
 )
 
 // TransactionType represents the intended mode of operation for a TypeDB transaction.
@@ -160,7 +161,7 @@ type TransactionContext struct {
 	db     *Database
 	tx     Tx
 	txType TransactionType
-	closed bool
+	closed atomic.Bool
 }
 
 // Begin starts a new TransactionContext.
@@ -173,7 +174,7 @@ func (db *Database) Begin(txType TransactionType) (*TransactionContext, error) {
 	}
 	tc := &TransactionContext{db: db, tx: tx, txType: txType}
 	runtime.SetFinalizer(tc, func(tc *TransactionContext) {
-		if !tc.closed {
+		if !tc.closed.Load() {
 			log.Printf("WARNING: TransactionContext on %q was garbage-collected without being closed (possible transaction leak)", db.dbName)
 		}
 	})
@@ -182,20 +183,26 @@ func (db *Database) Begin(txType TransactionType) (*TransactionContext, error) {
 
 // Commit persists changes in the scoped transaction.
 func (tc *TransactionContext) Commit() error {
-	tc.closed = true
-	return tc.tx.Commit()
+	err := tc.tx.Commit()
+	if err == nil || !tc.tx.IsOpen() {
+		tc.closed.Store(true)
+	}
+	return err
 }
 
 // Rollback discards changes in the scoped transaction.
 func (tc *TransactionContext) Rollback() error {
-	tc.closed = true
-	return tc.tx.Rollback()
+	err := tc.tx.Rollback()
+	if err == nil || !tc.tx.IsOpen() {
+		tc.closed.Store(true)
+	}
+	return err
 }
 
 // Close releases resources associated with the scoped transaction.
 func (tc *TransactionContext) Close() {
-	tc.closed = true
 	tc.tx.Close()
+	tc.closed.Store(true)
 }
 
 // Tx returns the underlying Tx for direct query execution.

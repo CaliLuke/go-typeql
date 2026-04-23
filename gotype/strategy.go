@@ -13,23 +13,23 @@ import (
 // the kind of model (entity or relation).
 type ModelStrategy interface {
 	// BuildInsertQuery generates a TypeQL insert statement for an instance.
-	BuildInsertQuery(info *ModelInfo, instance any, varName string) string
+	BuildInsertQuery(info *ModelInfo, instance any, varName string) (string, error)
 	// BuildPutQuery generates a TypeQL put (upsert) statement for an instance.
-	BuildPutQuery(info *ModelInfo, instance any, varName string) string
+	BuildPutQuery(info *ModelInfo, instance any, varName string) (string, error)
 	// BuildMatchByKey generates a match clause based on the model's key attributes.
-	BuildMatchByKey(info *ModelInfo, instance any, varName string) string
+	BuildMatchByKey(info *ModelInfo, instance any, varName string) (string, error)
 	// BuildMatchByIID generates a match clause based on the internal instance ID.
-	BuildMatchByIID(iid string, varName string) string
+	BuildMatchByIID(iid string, varName string) (string, error)
 	// BuildMatchAll generates a match clause for all instances of the type.
-	BuildMatchAll(info *ModelInfo, varName string) string
+	BuildMatchAll(info *ModelInfo, varName string) (string, error)
 	// BuildFetchAll generates a fetch clause for all attributes of the type.
-	BuildFetchAll(info *ModelInfo, varName string) string
+	BuildFetchAll(info *ModelInfo, varName string) (string, error)
 	// BuildMatchAllStrict generates a strict match clause using isa!.
-	BuildMatchAllStrict(info *ModelInfo, varName string) string
+	BuildMatchAllStrict(info *ModelInfo, varName string) (string, error)
 	// BuildFetchAllWithType generates a fetch clause that includes the type label.
-	BuildFetchAllWithType(info *ModelInfo, varName string) string
+	BuildFetchAllWithType(info *ModelInfo, varName string) (string, error)
 	// BuildFetchWithRoles generates a fetch clause including role player data for relations.
-	BuildFetchWithRoles(info *ModelInfo, varName string) (matchAdditions string, fetchClause string)
+	BuildFetchWithRoles(info *ModelInfo, varName string) (matchAdditions string, fetchClause string, err error)
 }
 
 // strategyFor returns the appropriate strategy for the given model kind.
@@ -44,22 +44,27 @@ func strategyFor(kind ModelKind) ModelStrategy {
 
 type entityStrategy struct{}
 
-func (s *entityStrategy) BuildInsertQuery(info *ModelInfo, instance any, varName string) string {
-	query := s.buildInsertOrPut(info, instance, varName, "insert")
+func (s *entityStrategy) BuildInsertQuery(info *ModelInfo, instance any, varName string) (string, error) {
+	query, err := s.buildInsertOrPut(info, instance, varName, "insert")
+	if err != nil {
+		return "", err
+	}
 
 	// Append fetch clause to retrieve IID in the same query
 	fetch := ast.Fetch(ast.FetchFunc("_iid", "iid", "$"+varName))
-	compiler := &ast.Compiler{}
-	fetchStr, _ := compiler.Compile(fetch)
+	fetchStr, err := compileNode(fetch)
+	if err != nil {
+		return "", err
+	}
 
-	return query + "\n" + fetchStr
+	return query + "\n" + fetchStr, nil
 }
 
-func (s *entityStrategy) BuildPutQuery(info *ModelInfo, instance any, varName string) string {
+func (s *entityStrategy) BuildPutQuery(info *ModelInfo, instance any, varName string) (string, error) {
 	return s.buildInsertOrPut(info, instance, varName, "put")
 }
 
-func (s *entityStrategy) buildInsertOrPut(info *ModelInfo, instance any, varName string, keyword string) string {
+func (s *entityStrategy) buildInsertOrPut(info *ModelInfo, instance any, varName string, keyword string) (string, error) {
 	v := reflectValue(instance)
 
 	// Build AST statements
@@ -83,13 +88,10 @@ func (s *entityStrategy) buildInsertOrPut(info *ModelInfo, instance any, varName
 		clause = ast.Put(statements...)
 	}
 
-	// Compile to TypeQL
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(clause)
-	return result
+	return compileNode(clause)
 }
 
-func (s *entityStrategy) BuildMatchByKey(info *ModelInfo, instance any, varName string) string {
+func (s *entityStrategy) BuildMatchByKey(info *ModelInfo, instance any, varName string) (string, error) {
 	v := reflectValue(instance)
 
 	// Build has constraints for key fields
@@ -106,36 +108,30 @@ func (s *entityStrategy) BuildMatchByKey(info *ModelInfo, instance any, varName 
 		ast.Entity("$"+varName, info.TypeName, constraints...),
 	)
 
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(match)
-	return result
+	return compileNode(match)
 }
 
-func (s *entityStrategy) BuildMatchByIID(iid string, varName string) string {
+func (s *entityStrategy) BuildMatchByIID(iid string, varName string) (string, error) {
 	match := ast.Match(
 		ast.IidPattern{Variable: "$" + varName, IID: iid},
 	)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(match)
-	return result
+	return compileNode(match)
 }
 
-func (s *entityStrategy) BuildMatchAll(info *ModelInfo, varName string) string {
+func (s *entityStrategy) BuildMatchAll(info *ModelInfo, varName string) (string, error) {
 	match := ast.Match(
 		ast.Entity("$"+varName, info.TypeName),
 	)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(match)
-	return result
+	return compileNode(match)
 }
 
-func (s *entityStrategy) BuildFetchAll(info *ModelInfo, varName string) string {
+func (s *entityStrategy) BuildFetchAll(info *ModelInfo, varName string) (string, error) {
 	return buildFetchAll(info, varName)
 }
 
 // buildFetchAll compiles a fetch for every owned attribute plus the synthetic
 // _iid field. Shared by entity and relation strategies.
-func buildFetchAll(info *ModelInfo, varName string) string {
+func buildFetchAll(info *ModelInfo, varName string) (string, error) {
 	items := []ast.FetchItem{ast.FetchFunc("_iid", "iid", "$"+varName)}
 	for _, fi := range info.Fields {
 		if fi.IsSlice {
@@ -148,49 +144,51 @@ func buildFetchAll(info *ModelInfo, varName string) string {
 			items = append(items, ast.FetchAttr(fi.Tag.Name, "$"+varName, fi.Tag.Name))
 		}
 	}
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(ast.Fetch(items...))
-	return result
+	return compileNode(ast.Fetch(items...))
 }
 
-func (s *entityStrategy) BuildMatchAllStrict(info *ModelInfo, varName string) string {
+func (s *entityStrategy) BuildMatchAllStrict(info *ModelInfo, varName string) (string, error) {
 	match := ast.Match(
 		ast.RawPattern{Content: fmt.Sprintf("$%s isa! $t", varName)},
 		ast.SubTypePattern{Variable: "$t", ParentType: info.TypeName},
 	)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(match)
-	return result
+	return compileNode(match)
 }
 
-func (s *entityStrategy) BuildFetchAllWithType(info *ModelInfo, varName string) string {
+func (s *entityStrategy) BuildFetchAllWithType(info *ModelInfo, varName string) (string, error) {
 	return buildFetchAllWithType(info, varName)
 }
 
-func (s *entityStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) (string, string) {
-	return "", s.BuildFetchAll(info, varName)
+func (s *entityStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) (string, string, error) {
+	fetch, err := s.BuildFetchAll(info, varName)
+	return "", fetch, err
 }
 
 // --- Relation Strategy ---
 
 type relationStrategy struct{}
 
-func (s *relationStrategy) BuildInsertQuery(info *ModelInfo, instance any, varName string) string {
-	query := s.buildInsertOrPut(info, instance, varName, "insert")
+func (s *relationStrategy) BuildInsertQuery(info *ModelInfo, instance any, varName string) (string, error) {
+	query, err := s.buildInsertOrPut(info, instance, varName, "insert")
+	if err != nil {
+		return "", err
+	}
 
 	// Append fetch clause to retrieve IID in the same query
 	fetch := ast.Fetch(ast.FetchFunc("_iid", "iid", "$"+varName))
-	compiler := &ast.Compiler{}
-	fetchStr, _ := compiler.Compile(fetch)
+	fetchStr, err := compileNode(fetch)
+	if err != nil {
+		return "", err
+	}
 
-	return query + "\n" + fetchStr
+	return query + "\n" + fetchStr, nil
 }
 
-func (s *relationStrategy) BuildPutQuery(info *ModelInfo, instance any, varName string) string {
+func (s *relationStrategy) BuildPutQuery(info *ModelInfo, instance any, varName string) (string, error) {
 	return s.buildInsertOrPut(info, instance, varName, "put")
 }
 
-func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varName string, keyword string) string {
+func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varName string, keyword string) (string, error) {
 	v := reflectValue(instance)
 
 	var matchPatterns []ast.Pattern
@@ -246,18 +244,20 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 	}
 
 	// Compile query
-	compiler := &ast.Compiler{}
 	query := ""
 	if len(matchPatterns) > 0 {
 		match := ast.Match(matchPatterns...)
-		matchStr, _ := compiler.Compile(match)
+		matchStr, err := compileNode(match)
+		if err != nil {
+			return "", err
+		}
 		query += matchStr + "\n"
 	}
 	query += keyword + "\n" + strings.Join(insertParts, ",\n") + ";"
-	return query
+	return query, nil
 }
 
-func (s *relationStrategy) BuildMatchByKey(info *ModelInfo, instance any, varName string) string {
+func (s *relationStrategy) BuildMatchByKey(info *ModelInfo, instance any, varName string) (string, error) {
 	v := reflectValue(instance)
 	iid := getIIDFromValueInfo(v, info)
 	var match ast.MatchClause
@@ -270,50 +270,42 @@ func (s *relationStrategy) BuildMatchByKey(info *ModelInfo, instance any, varNam
 			ast.Entity("$"+varName, info.TypeName),
 		)
 	}
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(match)
-	return result
+	return compileNode(match)
 }
 
-func (s *relationStrategy) BuildMatchByIID(iid string, varName string) string {
+func (s *relationStrategy) BuildMatchByIID(iid string, varName string) (string, error) {
 	match := ast.Match(
 		ast.IidPattern{Variable: "$" + varName, IID: iid},
 	)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(match)
-	return result
+	return compileNode(match)
 }
 
-func (s *relationStrategy) BuildMatchAll(info *ModelInfo, varName string) string {
+func (s *relationStrategy) BuildMatchAll(info *ModelInfo, varName string) (string, error) {
 	match := ast.Match(
 		ast.Entity("$"+varName, info.TypeName),
 	)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(match)
-	return result
+	return compileNode(match)
 }
 
-func (s *relationStrategy) BuildFetchAll(info *ModelInfo, varName string) string {
+func (s *relationStrategy) BuildFetchAll(info *ModelInfo, varName string) (string, error) {
 	return buildFetchAll(info, varName)
 }
 
-func (s *relationStrategy) BuildMatchAllStrict(info *ModelInfo, varName string) string {
+func (s *relationStrategy) BuildMatchAllStrict(info *ModelInfo, varName string) (string, error) {
 	match := ast.Match(
 		ast.RawPattern{Content: fmt.Sprintf("$%s isa! $t", varName)},
 		ast.SubTypePattern{Variable: "$t", ParentType: info.TypeName},
 	)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(match)
-	return result
+	return compileNode(match)
 }
 
-func (s *relationStrategy) BuildFetchAllWithType(info *ModelInfo, varName string) string {
+func (s *relationStrategy) BuildFetchAllWithType(info *ModelInfo, varName string) (string, error) {
 	return buildFetchAllWithType(info, varName)
 }
 
 // buildFetchAllWithType compiles a fetch for every owned attribute plus
 // synthetic _iid / _type fields. Shared by entity and relation strategies.
-func buildFetchAllWithType(info *ModelInfo, varName string) string {
+func buildFetchAllWithType(info *ModelInfo, varName string) (string, error) {
 	items := []ast.FetchItem{
 		ast.FetchFunc("_iid", "iid", "$"+varName),
 		ast.FetchFunc("_type", "label", "$t"),
@@ -329,12 +321,10 @@ func buildFetchAllWithType(info *ModelInfo, varName string) string {
 			items = append(items, ast.FetchAttr(fi.Tag.Name, "$"+varName, fi.Tag.Name))
 		}
 	}
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(ast.Fetch(items...))
-	return result
+	return compileNode(ast.Fetch(items...))
 }
 
-func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) (string, string) {
+func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) (string, string, error) {
 	// Build match patterns for role players using AST
 	var matchPatterns []ast.Pattern
 	var items []string
@@ -391,7 +381,7 @@ func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) 
 	}
 
 	fetchClause := "fetch {\n" + strings.Join(items, ",\n") + "\n};"
-	return matchAdditions, fetchClause
+	return matchAdditions, fetchClause, nil
 }
 
 // --- Helpers ---
@@ -456,6 +446,10 @@ func getIIDFromValueInfo(v reflect.Value, info *ModelInfo) string {
 		}
 	}
 	return ""
+}
+
+func compileNode(node ast.QueryNode) (string, error) {
+	return (&ast.Compiler{}).Compile(node)
 }
 
 func getIIDFromBaseField(fv reflect.Value) string {

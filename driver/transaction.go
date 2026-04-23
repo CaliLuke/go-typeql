@@ -115,10 +115,18 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 }
 
 // QueryWithContext executes a TypeQL query with context cancellation support.
-// The query runs synchronously inside a goroutine while holding the transaction
-// mutex for the entire FFI call. If the context is cancelled, ctx.Err() is
-// returned but the underlying FFI call is allowed to finish naturally (C calls
-// cannot be safely interrupted mid-flight).
+//
+// Cancellation semantics are intentionally limited by the underlying Rust
+// driver handle:
+//   - The transaction handle is single-threaded, so every FFI call must hold
+//     t.mu for the duration of the synchronous C call.
+//   - If ctx is cancelled, only the caller's goroutine is released early with
+//     ctx.Err(). The in-flight FFI call continues until the driver returns.
+//   - Commit, Rollback, and Close will block behind any in-flight query until
+//     that synchronous FFI call finishes.
+//
+// The goroutine exists only to let the caller stop waiting on a blocking FFI
+// call. It does not make the underlying driver operation interruptible.
 func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map[string]any, error) {
 	queryOp := queryOperation(query)
 	queryFP := queryFingerprint(query)
@@ -130,6 +138,9 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 	if err := ctx.Err(); err != nil {
 		logFFIDebug("tx.query_with_context.cancelled", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "error", err.Error())
 		return nil, err
+	}
+	if ctx.Done() == nil {
+		return t.Query(query)
 	}
 
 	type queryResult struct {

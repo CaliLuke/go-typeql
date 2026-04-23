@@ -71,7 +71,10 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error {
 	if err := checkCtx(ctx, "insert", m.info.TypeName); err != nil {
 		return err
 	}
-	insertQuery := m.strategy.BuildInsertQuery(m.info, instance, "e")
+	insertQuery, err := m.strategy.BuildInsertQuery(m.info, instance, "e")
+	if err != nil {
+		return fmt.Errorf("insert %s: build query: %w", m.info.TypeName, err)
+	}
 
 	tx, autoCommit, err := m.writeTx()
 	if err != nil {
@@ -82,7 +85,7 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error {
 	}
 
 	// Execute insert with fetch - single query now returns IID
-	results, err := tx.Query(insertQuery)
+	results, err := tx.QueryWithContext(ctx, insertQuery)
 	if err != nil {
 		return fmt.Errorf("insert %s: %w", m.info.TypeName, err)
 	}
@@ -105,8 +108,14 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error {
 // Get retrieves instances of T that match the specified attribute filters.
 // filters is a map where keys are TypeDB attribute names and values are the target values.
 func (m *Manager[T]) Get(ctx context.Context, filters map[string]any) ([]*T, error) {
-	matchQuery := m.buildFilteredMatch("e", filters)
-	fetchQuery := m.strategy.BuildFetchAll(m.info, "e")
+	matchQuery, err := m.buildFilteredMatch("e", filters)
+	if err != nil {
+		return nil, fmt.Errorf("get %s: build match: %w", m.info.TypeName, err)
+	}
+	fetchQuery, err := m.strategy.BuildFetchAll(m.info, "e")
+	if err != nil {
+		return nil, fmt.Errorf("get %s: build fetch: %w", m.info.TypeName, err)
+	}
 	query := matchQuery + "\n" + fetchQuery
 
 	results, err := m.readQuery(ctx, query)
@@ -125,8 +134,14 @@ func (m *Manager[T]) All(ctx context.Context) ([]*T, error) {
 // GetWithRoles retrieves instances of T and populates their role players.
 // This is primarily used for relation models.
 func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) ([]*T, error) {
-	matchQuery := m.buildFilteredMatch("e", filters)
-	matchAdditions, fetchQuery := m.strategy.BuildFetchWithRoles(m.info, "e")
+	matchQuery, err := m.buildFilteredMatch("e", filters)
+	if err != nil {
+		return nil, fmt.Errorf("get_with_roles %s: build match: %w", m.info.TypeName, err)
+	}
+	matchAdditions, fetchQuery, err := m.strategy.BuildFetchWithRoles(m.info, "e")
+	if err != nil {
+		return nil, fmt.Errorf("get_with_roles %s: build fetch: %w", m.info.TypeName, err)
+	}
 	if matchAdditions != "" {
 		matchQuery += "\n" + matchAdditions
 	}
@@ -144,7 +159,10 @@ func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) (
 // It returns nil if no instance is found with the given IID.
 func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error) {
 	matchQuery := fmt.Sprintf("match\n$e isa %s, iid %s;", m.info.TypeName, iid)
-	fetchQuery := m.strategy.BuildFetchAll(m.info, "e")
+	fetchQuery, err := m.strategy.BuildFetchAll(m.info, "e")
+	if err != nil {
+		return nil, fmt.Errorf("get_by_iid %s: build fetch: %w", m.info.TypeName, err)
+	}
 	query := matchQuery + "\n" + fetchQuery
 
 	results, err := m.readQuery(ctx, query)
@@ -184,7 +202,7 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error {
 		defer tx.Close()
 	}
 
-	if err := m.updateInstanceInTx(tx, instance); err != nil {
+	if err := m.updateInstanceInTx(ctx, tx, instance); err != nil {
 		return err
 	}
 
@@ -199,7 +217,7 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error {
 // updateInstanceInTx performs a batched update within an existing transaction.
 // It issues one delete query to remove all non-key attribute values, then one
 // insert query to set the new values, minimizing round-trips.
-func (m *Manager[T]) updateInstanceInTx(tx Tx, instance *T) error {
+func (m *Manager[T]) updateInstanceInTx(ctx context.Context, tx Tx, instance *T) error {
 	iid := getIIDOf(instance)
 	if iid == "" {
 		return fmt.Errorf("update %s: instance has no IID", m.info.TypeName)
@@ -236,7 +254,7 @@ func (m *Manager[T]) updateInstanceInTx(tx Tx, instance *T) error {
 	}
 
 	query := buildBatchUpdate(m.info.TypeName, iid, delAttrs, insHas)
-	_, err := tx.Query(query)
+	_, err := tx.QueryWithContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("update %s: %w", m.info.TypeName, err)
 	}
@@ -313,7 +331,7 @@ func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOpti
 
 	query := fmt.Sprintf("match\n$e isa %s, iid %s;\ndelete $e;", m.info.TypeName, iid)
 	if m.tx != nil {
-		_, err := m.tx.Query(query)
+		_, err := m.tx.QueryWithContext(ctx, query)
 		if err != nil {
 			return fmt.Errorf("delete %s: %w", m.info.TypeName, err)
 		}
@@ -372,7 +390,7 @@ func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...Del
 	for i, inst := range instances {
 		iid := getIIDOf(inst)
 		query := fmt.Sprintf("match\n$e isa %s, iid %s;\ndelete $e;", m.info.TypeName, iid)
-		_, err := tx.Query(query)
+		_, err := tx.QueryWithContext(ctx, query)
 		if err != nil {
 			return fmt.Errorf("delete_many %s[%d]: %w", m.info.TypeName, i, err)
 		}
@@ -411,7 +429,7 @@ func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error {
 	}
 
 	for i, inst := range instances {
-		if err := m.updateInstanceInTx(tx, inst); err != nil {
+		if err := m.updateInstanceInTx(ctx, tx, inst); err != nil {
 			return fmt.Errorf("update_many %s[%d]: %w", m.info.TypeName, i, err)
 		}
 	}
@@ -433,7 +451,10 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
 	if err := checkCtx(ctx, "put", m.info.TypeName); err != nil {
 		return err
 	}
-	putQuery := m.strategy.BuildPutQuery(m.info, instance, "e")
+	putQuery, err := m.strategy.BuildPutQuery(m.info, instance, "e")
+	if err != nil {
+		return fmt.Errorf("put %s: build query: %w", m.info.TypeName, err)
+	}
 
 	tx, autoCommit, err := m.writeTx()
 	if err != nil {
@@ -443,18 +464,24 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
 		defer tx.Close()
 	}
 
-	_, err = tx.Query(putQuery)
+	_, err = tx.QueryWithContext(ctx, putQuery)
 	if err != nil {
 		return fmt.Errorf("put %s: %w", m.info.TypeName, err)
 	}
 
 	// Fetch IID in the same transaction via key match
 	if len(m.info.KeyFields) > 0 {
-		matchQuery := m.strategy.BuildMatchByKey(m.info, instance, "e")
+		matchQuery, err := m.strategy.BuildMatchByKey(m.info, instance, "e")
+		if err != nil {
+			return fmt.Errorf("put %s: build iid query: %w", m.info.TypeName, err)
+		}
 		iidQuery := matchQuery + "\n" + `fetch { "_iid": iid($e) };`
 
-		results, err := tx.Query(iidQuery)
-		if err == nil && len(results) == 1 {
+		results, err := tx.QueryWithContext(ctx, iidQuery)
+		if err != nil {
+			return fmt.Errorf("put %s: fetch iid: %w", m.info.TypeName, err)
+		}
+		if len(results) == 1 {
 			if iid := extractIID(results[0]); iid != "" {
 				setIIDOn(instance, iid)
 			}
@@ -486,9 +513,12 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 			return fmt.Errorf("put_many %s[%d]: instance must not be nil", m.info.TypeName, i)
 		}
 		varName := fmt.Sprintf("e%d", i)
-		putQuery := m.strategy.BuildPutQuery(m.info, inst, varName)
+		putQuery, err := m.strategy.BuildPutQuery(m.info, inst, varName)
+		if err != nil {
+			return fmt.Errorf("put_many %s[%d]: build query: %w", m.info.TypeName, i, err)
+		}
 
-		_, err := tx.Query(putQuery)
+		_, err = tx.QueryWithContext(ctx, putQuery)
 		if err != nil {
 			return fmt.Errorf("put_many %s[%d]: %w", m.info.TypeName, i, err)
 		}
@@ -501,11 +531,17 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 	// Fetch IIDs in a read transaction
 	for _, inst := range instances {
 		if len(m.info.KeyFields) > 0 {
-			matchQuery := m.strategy.BuildMatchByKey(m.info, inst, "e")
+			matchQuery, err := m.strategy.BuildMatchByKey(m.info, inst, "e")
+			if err != nil {
+				return fmt.Errorf("put_many %s: build iid query: %w", m.info.TypeName, err)
+			}
 			iidQuery := matchQuery + "\n" + `fetch { "_iid": iid($e) };`
 
 			results, err := m.db.ExecuteRead(ctx, iidQuery)
-			if err == nil && len(results) == 1 {
+			if err != nil {
+				return fmt.Errorf("put_many %s: fetch iid: %w", m.info.TypeName, err)
+			}
+			if len(results) == 1 {
 				if iid := extractIID(results[0]); iid != "" {
 					setIIDOn(inst, iid)
 				}
@@ -546,10 +582,13 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 			return fmt.Errorf("insert_many %s[%d]: instance must not be nil", m.info.TypeName, i)
 		}
 		varName := fmt.Sprintf("e%d", i)
-		insertQuery := m.strategy.BuildInsertQuery(m.info, inst, varName)
+		insertQuery, err := m.strategy.BuildInsertQuery(m.info, inst, varName)
+		if err != nil {
+			return fmt.Errorf("insert_many %s[%d]: build query: %w", m.info.TypeName, i, err)
+		}
 
 		// Execute insert with fetch - get IID in same query
-		results, err := tx.Query(insertQuery)
+		results, err := tx.QueryWithContext(ctx, insertQuery)
 		if err != nil {
 			return fmt.Errorf("insert_many %s[%d]: %w", m.info.TypeName, i, err)
 		}
@@ -582,7 +621,10 @@ func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, s
 
 	// Single query fetches type label + union of all subtype fields
 	matchQuery := fmt.Sprintf("match\n$e isa! $t, iid %s;\n$t sub %s;", iid, m.info.TypeName)
-	fetchQuery := buildPolymorphicFetch(m.info, "e")
+	fetchQuery, err := buildPolymorphicFetch(m.info, "e")
+	if err != nil {
+		return nil, "", fmt.Errorf("get_by_iid_polymorphic %s: build fetch: %w", m.info.TypeName, err)
+	}
 	query := matchQuery + "\n" + fetchQuery
 
 	results, err := m.readQuery(ctx, query)
@@ -619,7 +661,10 @@ func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (an
 
 	// Single query fetches type label + union of all subtype fields
 	matchQuery := fmt.Sprintf("match\n$e isa! $t, iid %s;\n$t sub %s;", iid, m.info.TypeName)
-	fetchQuery := buildPolymorphicFetch(m.info, "e")
+	fetchQuery, err := buildPolymorphicFetch(m.info, "e")
+	if err != nil {
+		return nil, "", fmt.Errorf("get_by_iid_polymorphic_any %s: build fetch: %w", m.info.TypeName, err)
+	}
 	query := matchQuery + "\n" + fetchQuery
 
 	results, err := m.readQuery(ctx, query)
@@ -670,14 +715,14 @@ func (m *Manager[T]) writeTx() (tx Tx, autoCommit bool, err error) {
 // readQuery executes a read query using the bound tx or a new read transaction.
 func (m *Manager[T]) readQuery(ctx context.Context, query string) ([]map[string]any, error) {
 	if m.tx != nil {
-		return m.tx.Query(query)
+		return m.tx.QueryWithContext(ctx, query)
 	}
 	return m.db.ExecuteRead(ctx, query)
 }
 
 // --- Internal helpers ---
 
-func (m *Manager[T]) buildFilteredMatch(varName string, filters map[string]any) string {
+func (m *Manager[T]) buildFilteredMatch(varName string, filters map[string]any) (string, error) {
 	if len(filters) == 0 {
 		return m.strategy.BuildMatchAll(m.info, varName)
 	}
@@ -687,7 +732,7 @@ func (m *Manager[T]) buildFilteredMatch(varName string, filters map[string]any) 
 	for attr, val := range filters {
 		constraints = append(constraints, fmt.Sprintf("has %s %s", attr, FormatValue(val)))
 	}
-	return "match\n" + strings.Join(constraints, ",\n") + ";"
+	return "match\n" + strings.Join(constraints, ",\n") + ";", nil
 }
 
 func (m *Manager[T]) hydrateResults(results []map[string]any) ([]*T, error) {
@@ -766,7 +811,7 @@ func unwrapValue(val any) any {
 // buildPolymorphicFetch builds a fetch clause that includes the type label
 // plus the union of all attribute fields from the base type and all registered
 // subtypes. This allows polymorphic retrieval in a single query.
-func buildPolymorphicFetch(info *ModelInfo, varName string) string {
+func buildPolymorphicFetch(info *ModelInfo, varName string) (string, error) {
 	var items []ast.FetchItem
 	items = append(items, ast.FetchFunc("_iid", "iid", "$"+varName))
 	items = append(items, ast.FetchFunc("_type", "label", "$t"))
@@ -784,9 +829,7 @@ func buildPolymorphicFetch(info *ModelInfo, varName string) string {
 	}
 
 	fetch := ast.Fetch(items...)
-	compiler := &ast.Compiler{}
-	result, _ := compiler.Compile(fetch)
-	return result
+	return compileNode(fetch)
 }
 
 func appendFetchField(items []ast.FetchItem, fi FieldInfo, varName string) []ast.FetchItem {

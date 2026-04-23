@@ -70,7 +70,10 @@ func (q *Query[T]) All(ctx context.Context) ([]*T, error) {
 
 // Execute performs the query against the database and hydrates the results into Go structs.
 func (q *Query[T]) Execute(ctx context.Context) ([]*T, error) {
-	query := q.buildQuery()
+	query, err := q.buildQuery()
+	if err != nil {
+		return nil, fmt.Errorf("query %s: build: %w", q.mgr.info.TypeName, err)
+	}
 	results, err := q.mgr.db.ExecuteRead(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query %s: %w", q.mgr.info.TypeName, err)
@@ -93,7 +96,10 @@ func (q *Query[T]) First(ctx context.Context) (*T, error) {
 
 // Count returns the number of instances matching the query filters.
 func (q *Query[T]) Count(ctx context.Context) (int64, error) {
-	query := q.buildCountQuery()
+	query, err := q.buildCountQuery()
+	if err != nil {
+		return 0, fmt.Errorf("count %s: build: %w", q.mgr.info.TypeName, err)
+	}
 	results, err := q.mgr.db.ExecuteRead(ctx, query)
 	if err != nil {
 		return 0, fmt.Errorf("count %s: %w", q.mgr.info.TypeName, err)
@@ -106,8 +112,11 @@ func (q *Query[T]) Count(ctx context.Context) (int64, error) {
 
 // Delete removes all instances that match the query filters.
 func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
-	query := q.buildDeleteQuery()
-	_, err := q.mgr.db.ExecuteWrite(ctx, query)
+	query, err := q.buildDeleteQuery()
+	if err != nil {
+		return 0, fmt.Errorf("delete %s: build: %w", q.mgr.info.TypeName, err)
+	}
+	_, err = q.mgr.db.ExecuteWrite(ctx, query)
 	if err != nil {
 		return 0, fmt.Errorf("delete %s: %w", q.mgr.info.TypeName, err)
 	}
@@ -116,7 +125,7 @@ func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
 
 // --- Query building ---
 
-func (q *Query[T]) buildMatchClause() string {
+func (q *Query[T]) buildMatchClause() (string, error) {
 	varName := "e"
 	var patterns []string
 	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, q.mgr.info.TypeName))
@@ -125,12 +134,18 @@ func (q *Query[T]) buildMatchClause() string {
 		patterns = append(patterns, f.ToPatterns(varName)...)
 	}
 
-	return "match\n" + strings.Join(patterns, "\n")
+	return "match\n" + strings.Join(patterns, "\n"), nil
 }
 
-func (q *Query[T]) buildQuery() string {
-	match := q.buildMatchClause()
-	fetch := q.mgr.strategy.BuildFetchAll(q.mgr.info, "e")
+func (q *Query[T]) buildQuery() (string, error) {
+	match, err := q.buildMatchClause()
+	if err != nil {
+		return "", err
+	}
+	fetch, err := q.mgr.strategy.BuildFetchAll(q.mgr.info, "e")
+	if err != nil {
+		return "", err
+	}
 
 	var parts []string
 	parts = append(parts, match)
@@ -161,17 +176,23 @@ func (q *Query[T]) buildQuery() string {
 	}
 
 	parts = append(parts, fetch)
-	return strings.Join(parts, "\n")
+	return strings.Join(parts, "\n"), nil
 }
 
-func (q *Query[T]) buildCountQuery() string {
-	match := q.buildMatchClause()
-	return match + "\nreduce $count = count($e);"
+func (q *Query[T]) buildCountQuery() (string, error) {
+	match, err := q.buildMatchClause()
+	if err != nil {
+		return "", err
+	}
+	return match + "\nreduce $count = count($e);", nil
 }
 
-func (q *Query[T]) buildDeleteQuery() string {
-	match := q.buildMatchClause()
-	return match + "\ndelete $e;"
+func (q *Query[T]) buildDeleteQuery() (string, error) {
+	match, err := q.buildMatchClause()
+	if err != nil {
+		return "", err
+	}
+	return match + "\ndelete $e;", nil
 }
 
 // UpdateWith fetches all matching instances, applies fn to each, then updates them all.
@@ -185,8 +206,11 @@ func (q *Query[T]) UpdateWith(ctx context.Context, fn func(*T)) ([]*T, error) {
 	defer tx.Close()
 
 	// Phase 1: fetch matching instances within the write transaction
-	query := q.buildQuery()
-	rawResults, err := tx.Query(query)
+	query, err := q.buildQuery()
+	if err != nil {
+		return nil, fmt.Errorf("update_with %s: build: %w", q.mgr.info.TypeName, err)
+	}
+	rawResults, err := tx.QueryWithContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("update_with %s: fetch: %w", q.mgr.info.TypeName, err)
 	}
@@ -205,7 +229,7 @@ func (q *Query[T]) UpdateWith(ctx context.Context, fn func(*T)) ([]*T, error) {
 
 	// Phase 3: persist all updates in the same transaction
 	for i, inst := range results {
-		if err := q.mgr.updateInstanceInTx(tx, inst); err != nil {
+		if err := q.mgr.updateInstanceInTx(ctx, tx, inst); err != nil {
 			return nil, fmt.Errorf("update_with %s[%d]: %w", q.mgr.info.TypeName, i, err)
 		}
 	}
@@ -225,7 +249,10 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 	}
 
 	// Build match clause from filters
-	match := q.buildMatchClause()
+	match, err := q.buildMatchClause()
+	if err != nil {
+		return 0, fmt.Errorf("bulk_update %s: build: %w", q.mgr.info.TypeName, err)
+	}
 
 	tx, err := q.mgr.db.Transaction(WriteTransaction)
 	if err != nil {
@@ -248,7 +275,7 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 	query := match + "\n" + strings.Join(tryMatches, "\n") +
 		"\ndelete\n" + strings.Join(tryDeletes, "\n") +
 		fmt.Sprintf("\ninsert $e %s;", strings.Join(insHas, ", "))
-	_, err = tx.Query(query)
+	_, err = tx.QueryWithContext(ctx, query)
 	if err != nil {
 		return 0, fmt.Errorf("bulk_update %s: %w", q.mgr.info.TypeName, err)
 	}
