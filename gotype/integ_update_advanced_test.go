@@ -16,7 +16,7 @@ import (
 func TestIntegration_UpdateMany(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	persons := seedPersons(t, ctx, mgr)
 
@@ -49,7 +49,7 @@ func TestIntegration_UpdateMany(t *testing.T) {
 func TestIntegration_UpdateMany_Empty(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	if err := mgr.UpdateMany(ctx, nil); err != nil {
 		t.Fatalf("UpdateMany empty should succeed: %v", err)
@@ -63,7 +63,7 @@ func TestIntegration_UpdateMany_Empty(t *testing.T) {
 func TestIntegration_Query_UpdateWith(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	seedPersons(t, ctx, mgr)
 
@@ -98,7 +98,7 @@ func TestIntegration_Query_UpdateWith(t *testing.T) {
 func TestIntegration_Query_UpdateWith_NoResults(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	seedPersons(t, ctx, mgr)
 
@@ -122,7 +122,7 @@ func TestIntegration_Query_UpdateWith_NoResults(t *testing.T) {
 func TestIntegration_Query_Update_BulkMap(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	seedPersons(t, ctx, mgr)
 
@@ -151,7 +151,7 @@ func TestIntegration_Query_Update_BulkMap(t *testing.T) {
 func TestIntegration_Query_Update_EmptyMap(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	seedPersons(t, ctx, mgr)
 

@@ -34,7 +34,7 @@ func TestIntegration_IntegerKey_InsertAndQuery(t *testing.T) {
 	db := setupIntKeyDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Sensor](db)
+	mgr := gotype.MustNewManager[Sensor](db)
 
 	assertInsert(t, ctx, mgr, &Sensor{SensorID: 100, Location: "Lab A"})
 	assertInsert(t, ctx, mgr, &Sensor{SensorID: 200, Location: "Lab B"})
@@ -54,8 +54,8 @@ func TestIntegration_IntegerKey_VsStringKey(t *testing.T) {
 	db := setupIntKeyDB(t)
 	ctx := context.Background()
 
-	sensorMgr := gotype.NewManager[Sensor](db)
-	personMgr := gotype.NewManager[Person](db)
+	sensorMgr := gotype.MustNewManager[Sensor](db)
+	personMgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, sensorMgr, &Sensor{SensorID: 1, Location: "Office"})
 	assertInsert(t, ctx, personMgr, &Person{Name: "Alice", Email: "alice@intkey.com"})
@@ -70,7 +70,7 @@ func TestIntegration_IntegerKey_DifferentValues(t *testing.T) {
 	db := setupIntKeyDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Sensor](db)
+	mgr := gotype.MustNewManager[Sensor](db)
 
 	for _, id := range []int{10, 20, 30, 40, 50} {
 		assertInsert(t, ctx, mgr, &Sensor{SensorID: id, Location: "Zone"})
@@ -98,7 +98,7 @@ func TestIntegration_IntegerKey_FilterChainable(t *testing.T) {
 	db := setupIntKeyDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Sensor](db)
+	mgr := gotype.MustNewManager[Sensor](db)
 
 	assertInsert(t, ctx, mgr, &Sensor{SensorID: 1, Location: "A", Reading: new(10.5)})
 	assertInsert(t, ctx, mgr, &Sensor{SensorID: 2, Location: "B", Reading: new(20.0)})
@@ -129,7 +129,7 @@ func TestIntegration_IntegerKey_AllAndCount(t *testing.T) {
 	db := setupIntKeyDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Sensor](db)
+	mgr := gotype.MustNewManager[Sensor](db)
 
 	for i := 1; i <= 5; i++ {
 		assertInsert(t, ctx, mgr, &Sensor{SensorID: i * 100, Location: "Zone"})

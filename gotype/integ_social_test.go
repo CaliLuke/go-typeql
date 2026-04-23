@@ -87,13 +87,13 @@ func seedSocial(t *testing.T) socialFixture {
 	db := setupSocialDB(t)
 	ctx := context.Background()
 
-	userMgr := gotype.NewManager[SocialUser](db)
-	postMgr := gotype.NewManager[Post](db)
-	commentMgr := gotype.NewManager[Comment](db)
-	followMgr := gotype.NewManager[Follows](db)
-	friendMgr := gotype.NewManager[SocialFriendship](db)
-	authorMgr := gotype.NewManager[Authored](db)
-	commentOnMgr := gotype.NewManager[CommentedOn](db)
+	userMgr := gotype.MustNewManager[SocialUser](db)
+	postMgr := gotype.MustNewManager[Post](db)
+	commentMgr := gotype.MustNewManager[Comment](db)
+	followMgr := gotype.MustNewManager[Follows](db)
+	friendMgr := gotype.MustNewManager[SocialFriendship](db)
+	authorMgr := gotype.MustNewManager[Authored](db)
+	commentOnMgr := gotype.MustNewManager[CommentedOn](db)
 
 	users := []*SocialUser{
 		{Handle: "alice", DisplayName: "Alice A", Followers: new(100)},
@@ -179,26 +179,26 @@ func TestIntegration_Social_AllEntitiesInserted(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[SocialUser](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[Post](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[Comment](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[SocialUser](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[Post](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[Comment](f.db), 3)
 }
 
 func TestIntegration_Social_AllRelationsInserted(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[Follows](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[SocialFriendship](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Authored](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[CommentedOn](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Follows](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[SocialFriendship](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Authored](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[CommentedOn](f.db), 3)
 }
 
 func TestIntegration_Social_SelfReferentialFollows(t *testing.T) {
 	// Follows is self-referential (SocialUser → SocialUser).
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Follows](f.db)
+	mgr := gotype.MustNewManager[Follows](f.db)
 
 	count, err := mgr.Query().Count(ctx)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestIntegration_Social_SelfReferentialFollows(t *testing.T) {
 func TestIntegration_Social_FilterPopularUsers(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[SocialUser](f.db)
+	mgr := gotype.MustNewManager[SocialUser](f.db)
 
 	// Users with > 50 followers
 	results, err := mgr.Query().
@@ -233,7 +233,7 @@ func TestIntegration_Social_FilterPopularUsers(t *testing.T) {
 func TestIntegration_Social_FilterUserWithoutFollowers(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[SocialUser](f.db)
+	mgr := gotype.MustNewManager[SocialUser](f.db)
 
 	// Eve has no follower-count attribute
 	results, err := mgr.Query().
@@ -253,7 +253,7 @@ func TestIntegration_Social_FilterUserWithoutFollowers(t *testing.T) {
 func TestIntegration_Social_FilterPostsByLikes(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Post](f.db)
+	mgr := gotype.MustNewManager[Post](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Gte("like-count", 50)).
@@ -274,7 +274,7 @@ func TestIntegration_Social_FilterPostsByLikes(t *testing.T) {
 func TestIntegration_Social_SumPostLikes(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Post](f.db)
+	mgr := gotype.MustNewManager[Post](f.db)
 
 	sum, err := mgr.Query().Sum("like-count").Execute(ctx)
 	if err != nil {
@@ -289,7 +289,7 @@ func TestIntegration_Social_SumPostLikes(t *testing.T) {
 func TestIntegration_Social_AvgPostLikes(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Post](f.db)
+	mgr := gotype.MustNewManager[Post](f.db)
 
 	avg, err := mgr.Query().Avg("like-count").Execute(ctx)
 	if err != nil {
@@ -305,7 +305,7 @@ func TestIntegration_Social_AvgPostLikes(t *testing.T) {
 func TestIntegration_Social_ContainsFilter(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Post](f.db)
+	mgr := gotype.MustNewManager[Post](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Contains("content", "great")).
@@ -324,7 +324,7 @@ func TestIntegration_Social_ContainsFilter(t *testing.T) {
 func TestIntegration_Social_UpdatePostLikes(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Post](f.db)
+	mgr := gotype.MustNewManager[Post](f.db)
 
 	post := assertGetOne(t, ctx, mgr, map[string]any{"post-id": "p1"})
 	post.Likes = 43
@@ -339,7 +339,7 @@ func TestIntegration_Social_UpdatePostLikes(t *testing.T) {
 func TestIntegration_Social_PaginatedPosts(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Post](f.db)
+	mgr := gotype.MustNewManager[Post](f.db)
 
 	page1, err := mgr.Query().
 		OrderDesc("like-count").
@@ -373,7 +373,7 @@ func TestIntegration_Social_PaginatedPosts(t *testing.T) {
 func TestIntegration_Social_ExistsPost(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Post](f.db)
+	mgr := gotype.MustNewManager[Post](f.db)
 
 	exists, err := mgr.Query().
 		Filter(gotype.Eq("post-id", "p1")).
@@ -399,7 +399,7 @@ func TestIntegration_Social_ExistsPost(t *testing.T) {
 func TestIntegration_Social_OrFilterPosts(t *testing.T) {
 	f := seedSocial(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Post](f.db)
+	mgr := gotype.MustNewManager[Post](f.db)
 
 	// Posts with > 90 likes OR content containing "world"
 	results, err := mgr.Query().

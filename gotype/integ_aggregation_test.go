@@ -17,7 +17,7 @@ func setupAggDB(t *testing.T) *gotype.Manager[Person] {
 		_ = gotype.Register[Employment]()
 	})
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	seedPersons(t, ctx, mgr)
 	return mgr
 }

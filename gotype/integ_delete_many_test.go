@@ -16,7 +16,7 @@ import (
 func TestIntegration_DeleteMany_Entities(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	persons := seedPersons(t, ctx, mgr)
 	assertCount(t, ctx, mgr, 5)
@@ -33,7 +33,7 @@ func TestIntegration_DeleteMany_Entities(t *testing.T) {
 func TestIntegration_DeleteMany_Empty(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	seedPersons(t, ctx, mgr)
 
@@ -47,7 +47,7 @@ func TestIntegration_DeleteMany_Empty(t *testing.T) {
 func TestIntegration_DeleteMany_AllRecords(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	persons := seedPersons(t, ctx, mgr)
 
@@ -60,7 +60,7 @@ func TestIntegration_DeleteMany_AllRecords(t *testing.T) {
 func TestIntegration_Delete_Strict_NotFound(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	// Insert and get (for IID), then delete it
 	p := insertAndGet(t, ctx, mgr, &Person{Name: "Temp", Email: "temp@test.com"}, "name", "Temp")
@@ -76,7 +76,7 @@ func TestIntegration_Delete_Strict_NotFound(t *testing.T) {
 func TestIntegration_Delete_Strict_Found(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	p := insertAndGet(t, ctx, mgr, &Person{Name: "Exists", Email: "exists@test.com"}, "name", "Exists")
 
@@ -91,7 +91,7 @@ func TestIntegration_Delete_Strict_Found(t *testing.T) {
 func TestIntegration_DeleteMany_Strict(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	persons := seedPersons(t, ctx, mgr)
 

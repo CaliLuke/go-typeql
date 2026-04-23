@@ -20,7 +20,7 @@ func TestIntegration_AttrCRUD_Integer(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	// Insert with integer age.
 	assertInsert(t, ctx, mgr, &Person{Name: "IntTest", Email: "int@test.com", Age: new(42)})
@@ -53,7 +53,7 @@ func TestIntegration_AttrCRUD_Double(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	// Insert with double score.
 	assertInsert(t, ctx, mgr, &Profile{Username: "dbltest", Score: new(3.14)})
@@ -86,7 +86,7 @@ func TestIntegration_AttrCRUD_Boolean(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	// Insert with boolean active=true.
 	assertInsert(t, ctx, mgr, &Profile{Username: "booltest", Active: new(true)})
@@ -117,7 +117,7 @@ func TestIntegration_AttrCRUD_String(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	// Insert.
 	assertInsert(t, ctx, mgr, &Person{Name: "StrTest", Email: "str@test.com"})
@@ -150,7 +150,7 @@ func TestIntegration_AttrCRUD_ZeroValues(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[TypeTest](db)
+	mgr := gotype.MustNewManager[TypeTest](db)
 
 	assertInsert(t, ctx, mgr, &TypeTest{
 		TagName:  "zeros",

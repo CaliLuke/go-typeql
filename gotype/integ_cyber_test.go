@@ -112,16 +112,16 @@ func seedCyber(t *testing.T) cyberFixture {
 	db := setupCyberDB(t)
 	ctx := context.Background()
 
-	actorMgr := gotype.NewManager[ThreatActor](db)
-	malwareMgr := gotype.NewManager[Malware](db)
-	vulnMgr := gotype.NewManager[Vulnerability](db)
-	indicatorMgr := gotype.NewManager[Indicator](db)
-	campaignMgr := gotype.NewManager[Campaign](db)
-	usesMgr := gotype.NewManager[UsesMalware](db)
-	exploitsMgr := gotype.NewManager[Exploits](db)
-	indicatesMgr := gotype.NewManager[IndicatesActor](db)
-	attrMgr := gotype.NewManager[AttributedTo](db)
-	campIndMgr := gotype.NewManager[CampaignUsesIndicator](db)
+	actorMgr := gotype.MustNewManager[ThreatActor](db)
+	malwareMgr := gotype.MustNewManager[Malware](db)
+	vulnMgr := gotype.MustNewManager[Vulnerability](db)
+	indicatorMgr := gotype.MustNewManager[Indicator](db)
+	campaignMgr := gotype.MustNewManager[Campaign](db)
+	usesMgr := gotype.MustNewManager[UsesMalware](db)
+	exploitsMgr := gotype.MustNewManager[Exploits](db)
+	indicatesMgr := gotype.MustNewManager[IndicatesActor](db)
+	attrMgr := gotype.MustNewManager[AttributedTo](db)
+	campIndMgr := gotype.MustNewManager[CampaignUsesIndicator](db)
 
 	actors := []*ThreatActor{
 		{ActorID: "APT-28", ActorAlias: "Fancy Bear", Origin: "Russia", Sophistication: 9},
@@ -223,28 +223,28 @@ func TestIntegration_Cyber_AllEntitiesInserted(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[ThreatActor](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Malware](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[Vulnerability](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Indicator](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[Campaign](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[ThreatActor](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Malware](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[Vulnerability](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Indicator](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[Campaign](f.db), 3)
 }
 
 func TestIntegration_Cyber_AllRelationsInserted(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[UsesMalware](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[Exploits](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[IndicatesActor](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[AttributedTo](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[CampaignUsesIndicator](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[UsesMalware](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[Exploits](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[IndicatesActor](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[AttributedTo](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[CampaignUsesIndicator](f.db), 5)
 }
 
 func TestIntegration_Cyber_FilterActorsByOrigin(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[ThreatActor](f.db)
+	mgr := gotype.MustNewManager[ThreatActor](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("origin", "Russia")).
@@ -264,7 +264,7 @@ func TestIntegration_Cyber_FilterActorsByOrigin(t *testing.T) {
 func TestIntegration_Cyber_FilterHighSophistication(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[ThreatActor](f.db)
+	mgr := gotype.MustNewManager[ThreatActor](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Gte("sophistication", 9)).
@@ -284,7 +284,7 @@ func TestIntegration_Cyber_FilterHighSophistication(t *testing.T) {
 func TestIntegration_Cyber_FilterCriticalVulns(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Vulnerability](f.db)
+	mgr := gotype.MustNewManager[Vulnerability](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Gte("severity", 9.5)).
@@ -301,7 +301,7 @@ func TestIntegration_Cyber_FilterCriticalVulns(t *testing.T) {
 func TestIntegration_Cyber_FilterMalwareByType(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Malware](f.db)
+	mgr := gotype.MustNewManager[Malware](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("malware-type", "Backdoor")).
@@ -318,7 +318,7 @@ func TestIntegration_Cyber_FilterMalwareByType(t *testing.T) {
 func TestIntegration_Cyber_FilterIndicatorsByType(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Indicator](f.db)
+	mgr := gotype.MustNewManager[Indicator](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("indicator-type", "IP")).
@@ -334,7 +334,7 @@ func TestIntegration_Cyber_FilterIndicatorsByType(t *testing.T) {
 func TestIntegration_Cyber_CampaignsByStartYear(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Campaign](f.db)
+	mgr := gotype.MustNewManager[Campaign](f.db)
 
 	results, err := mgr.Query().
 		OrderAsc("start-year").
@@ -356,7 +356,7 @@ func TestIntegration_Cyber_CampaignsByStartYear(t *testing.T) {
 func TestIntegration_Cyber_MaxSeverity(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Vulnerability](f.db)
+	mgr := gotype.MustNewManager[Vulnerability](f.db)
 
 	max, err := mgr.Query().Max("severity").Execute(ctx)
 	if err != nil {
@@ -370,7 +370,7 @@ func TestIntegration_Cyber_MaxSeverity(t *testing.T) {
 func TestIntegration_Cyber_AvgSophistication(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[ThreatActor](f.db)
+	mgr := gotype.MustNewManager[ThreatActor](f.db)
 
 	avg, err := mgr.Query().Avg("sophistication").Execute(ctx)
 	if err != nil {
@@ -385,7 +385,7 @@ func TestIntegration_Cyber_AvgSophistication(t *testing.T) {
 func TestIntegration_Cyber_ContainsSearch(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[ThreatActor](f.db)
+	mgr := gotype.MustNewManager[ThreatActor](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Contains("actor-alias", "Bear")).
@@ -401,7 +401,7 @@ func TestIntegration_Cyber_ContainsSearch(t *testing.T) {
 func TestIntegration_Cyber_InFilterMalware(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Malware](f.db)
+	mgr := gotype.MustNewManager[Malware](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.In("malware-name", []any{"X-Agent", "Mimikatz"})).
@@ -417,7 +417,7 @@ func TestIntegration_Cyber_InFilterMalware(t *testing.T) {
 func TestIntegration_Cyber_UpdateVulnSeverity(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Vulnerability](f.db)
+	mgr := gotype.MustNewManager[Vulnerability](f.db)
 
 	vuln := assertGetOne(t, ctx, mgr, map[string]any{"cve-id": "CVE-2021-34527"})
 	vuln.Severity = 9.0
@@ -432,7 +432,7 @@ func TestIntegration_Cyber_UpdateVulnSeverity(t *testing.T) {
 func TestIntegration_Cyber_RecentCampaigns(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Campaign](f.db)
+	mgr := gotype.MustNewManager[Campaign](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Gte("start-year", 2018)).
@@ -449,7 +449,7 @@ func TestIntegration_Cyber_RecentCampaigns(t *testing.T) {
 func TestIntegration_Cyber_OrFilterActors(t *testing.T) {
 	f := seedCyber(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[ThreatActor](f.db)
+	mgr := gotype.MustNewManager[ThreatActor](f.db)
 
 	// Russian OR sophistication >= 10
 	results, err := mgr.Query().

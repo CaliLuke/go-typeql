@@ -17,7 +17,7 @@ func setupQueryDB(t *testing.T) (*gotype.Database, *gotype.Manager[Person]) {
 		_ = gotype.Register[Employment]()
 	})
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	seedPersons(t, ctx, mgr)
 	return db, mgr
 }

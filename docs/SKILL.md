@@ -47,7 +47,7 @@ schema := gotype.GenerateSchema()
 db.ExecuteSchema(ctx, schema)
 
 // 5. CRUD operations
-persons := gotype.NewManager[Person](db)
+persons := gotype.MustNewManager[Person](db)
 persons.Insert(ctx, &Person{Name: "Alice", Email: "alice@example.com"})
 
 results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
@@ -186,7 +186,7 @@ func TestSomething(t *testing.T) {
 
 ```go
 db := gotype.NewDatabase(conn, "mydb")
-persons := gotype.NewManager[Person](db)
+persons := gotype.MustNewManager[Person](db)
 ```
 
 ### Insert
@@ -219,7 +219,7 @@ results, err := persons.Get(ctx, map[string]any{"name": "Alice"})
 person, err := persons.GetByIID(ctx, "0x1e00000000000000000123")
 
 // Get with role players populated (for relations)
-emps := gotype.NewManager[Employment](db)
+emps := gotype.MustNewManager[Employment](db)
 results, err := emps.GetWithRoles(ctx, nil)
 ```
 
@@ -264,7 +264,7 @@ err := persons.PutMany(ctx, []*Person{...})
 The query builder provides a chainable API for constructing TypeDB queries.
 
 ```go
-persons := gotype.NewManager[Person](db)
+persons := gotype.MustNewManager[Person](db)
 q := persons.Query()
 ```
 
@@ -326,7 +326,7 @@ q.Filter(gotype.Not(gotype.Eq("status", "inactive")))
 Filter relations by properties of their role players:
 
 ```go
-emps := gotype.NewManager[Employment](db)
+emps := gotype.MustNewManager[Employment](db)
 q := emps.Query()
 q.Filter(gotype.RolePlayer("employee", gotype.Eq("name", "Alice")))
 ```
@@ -426,8 +426,8 @@ if err != nil {
 }
 defer tc.Close()
 
-personMgr := gotype.NewManagerWithTx[Person](tc)
-companyMgr := gotype.NewManagerWithTx[Company](tc)
+personMgr := gotype.MustNewManagerWithTx[Person](tc)
+companyMgr := gotype.MustNewManagerWithTx[Company](tc)
 
 personMgr.Insert(ctx, &Person{Name: "Alice"})
 companyMgr.Insert(ctx, &Company{Name: "Acme"})
@@ -581,7 +581,7 @@ gotype.MustRegister[Animal]()
 gotype.MustRegister[Dog]()
 gotype.MustRegister[Cat]()
 
-animals := gotype.NewManager[Animal](db)
+animals := gotype.MustNewManager[Animal](db)
 
 // Polymorphic get by IID - returns *Animal and the concrete type label
 animal, typeLabel, err := animals.GetByIIDPolymorphic(ctx, someIID)
@@ -816,7 +816,7 @@ func TestSomething(t *testing.T) {
     conn := &mockConn{txs: []*mockTx{tx}}
     db := gotype.NewDatabase(conn, "testdb")
 
-    mgr := gotype.NewManager[Person](db)
+    mgr := gotype.MustNewManager[Person](db)
     // ... test CRUD operations
 }
 ```

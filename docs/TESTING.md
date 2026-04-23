@@ -220,7 +220,7 @@ func TestManager_Insert(t *testing.T) {
     }
     mock := &mockConn{txs: []*mockTx{tx}}
     db := gotype.NewDatabase(mock, "testdb")
-    mgr := gotype.NewManager[testPerson](db)
+    mgr := gotype.MustNewManager[testPerson](db)
 
     p := &testPerson{Name: "Alice"}
     err := mgr.Insert(context.Background(), p)

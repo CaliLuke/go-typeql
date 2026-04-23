@@ -100,15 +100,15 @@ func seedIAM(t *testing.T) iamFixture {
 	db := setupIAMDB(t)
 	ctx := context.Background()
 
-	userMgr := gotype.NewManager[IAMUser](db)
-	groupMgr := gotype.NewManager[IAMGroup](db)
-	roleMgr := gotype.NewManager[IAMRole](db)
-	permMgr := gotype.NewManager[IAMPermission](db)
-	resMgr := gotype.NewManager[IAMResource](db)
-	memberMgr := gotype.NewManager[MemberOf](db)
-	hasRoleMgr := gotype.NewManager[HasRole](db)
-	grantsMgr := gotype.NewManager[Grants](db)
-	accessMgr := gotype.NewManager[Accesses](db)
+	userMgr := gotype.MustNewManager[IAMUser](db)
+	groupMgr := gotype.MustNewManager[IAMGroup](db)
+	roleMgr := gotype.MustNewManager[IAMRole](db)
+	permMgr := gotype.MustNewManager[IAMPermission](db)
+	resMgr := gotype.MustNewManager[IAMResource](db)
+	memberMgr := gotype.MustNewManager[MemberOf](db)
+	hasRoleMgr := gotype.MustNewManager[HasRole](db)
+	grantsMgr := gotype.MustNewManager[Grants](db)
+	accessMgr := gotype.MustNewManager[Accesses](db)
 
 	active := true
 	inactive := false
@@ -210,27 +210,27 @@ func TestIntegration_IAM_AllEntitiesInserted(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[IAMUser](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[IAMGroup](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[IAMRole](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[IAMPermission](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[IAMResource](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[IAMUser](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[IAMGroup](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[IAMRole](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[IAMPermission](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[IAMResource](f.db), 3)
 }
 
 func TestIntegration_IAM_AllRelationsInserted(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[MemberOf](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[HasRole](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Grants](f.db), 7)
-	assertCount(t, ctx, gotype.NewManager[Accesses](f.db), 7)
+	assertCount(t, ctx, gotype.MustNewManager[MemberOf](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[HasRole](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Grants](f.db), 7)
+	assertCount(t, ctx, gotype.MustNewManager[Accesses](f.db), 7)
 }
 
 func TestIntegration_IAM_FilterActiveUsers(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[IAMUser](f.db)
+	mgr := gotype.MustNewManager[IAMUser](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("iam-active", true)).
@@ -250,7 +250,7 @@ func TestIntegration_IAM_FilterActiveUsers(t *testing.T) {
 func TestIntegration_IAM_FilterInactiveUsers(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[IAMUser](f.db)
+	mgr := gotype.MustNewManager[IAMUser](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("iam-active", false)).
@@ -269,7 +269,7 @@ func TestIntegration_IAM_FilterInactiveUsers(t *testing.T) {
 func TestIntegration_IAM_RoleLevelFilter(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[IAMRole](f.db)
+	mgr := gotype.MustNewManager[IAMRole](f.db)
 
 	// Roles with level >= 50
 	results, err := mgr.Query().
@@ -290,7 +290,7 @@ func TestIntegration_IAM_RoleLevelFilter(t *testing.T) {
 func TestIntegration_IAM_CountMemberships(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[MemberOf](f.db)
+	mgr := gotype.MustNewManager[MemberOf](f.db)
 
 	count, err := mgr.Query().Count(ctx)
 	if err != nil {
@@ -304,7 +304,7 @@ func TestIntegration_IAM_CountMemberships(t *testing.T) {
 func TestIntegration_IAM_UpdateUserStatus(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[IAMUser](f.db)
+	mgr := gotype.MustNewManager[IAMUser](f.db)
 
 	// Deactivate bob
 	bob := assertGetOne(t, ctx, mgr, map[string]any{"username": "bob"})
@@ -321,7 +321,7 @@ func TestIntegration_IAM_UpdateUserStatus(t *testing.T) {
 func TestIntegration_IAM_FilterResourcesByType(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[IAMResource](f.db)
+	mgr := gotype.MustNewManager[IAMResource](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("resource-type", "database")).
@@ -339,8 +339,8 @@ func TestIntegration_IAM_DeleteGroup(t *testing.T) {
 	ctx := context.Background()
 
 	// First delete memberships and role assignments for "viewers" group
-	memberMgr := gotype.NewManager[MemberOf](f.db)
-	hasRoleMgr := gotype.NewManager[HasRole](f.db)
+	memberMgr := gotype.MustNewManager[MemberOf](f.db)
+	hasRoleMgr := gotype.MustNewManager[HasRole](f.db)
 
 	// Delete memberships referencing viewers group
 	memberships, err := memberMgr.All(ctx)
@@ -364,7 +364,7 @@ func TestIntegration_IAM_DeleteGroup(t *testing.T) {
 func TestIntegration_IAM_PermissionsByAction(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[IAMPermission](f.db)
+	mgr := gotype.MustNewManager[IAMPermission](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.In("action", []any{"read", "write"})).
@@ -381,7 +381,7 @@ func TestIntegration_IAM_PermissionsByAction(t *testing.T) {
 func TestIntegration_IAM_GroupContainsSearch(t *testing.T) {
 	f := seedIAM(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[IAMGroup](f.db)
+	mgr := gotype.MustNewManager[IAMGroup](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Contains("group-description", "team")).

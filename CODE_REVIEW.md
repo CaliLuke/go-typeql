@@ -12,12 +12,6 @@ No remaining open top-priority issues.
 
 ## 3. Debuggability
 
-### 3.3 Panic-on-unregistered in `NewManager`
-
-`crud.go:33, 54`: constructing a manager for an unregistered type panics.
-Fine for startup; bad during a request. Return `(*Manager[T], error)`
-and let callers choose.
-
 ### 3.4 Error messages often lack the query string
 
 When a TypeQL compile/execute fails, the returned error has "update

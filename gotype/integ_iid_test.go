@@ -19,7 +19,7 @@ func TestIntegration_IID_PopulatedAfterGet(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@iid.com", Age: new(30)})
 
@@ -35,7 +35,7 @@ func TestIntegration_IID_PopulatedAfterFilter(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Bob", Email: "bob@iid.com", Age: new(25)})
 
@@ -57,7 +57,7 @@ func TestIntegration_IID_StableAcrossQueries(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Charlie", Email: "charlie@iid.com", Age: new(35)})
 
@@ -77,7 +77,7 @@ func TestIntegration_IID_UniquePerEntity(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "UniqueA", Email: "a@iid.com", Age: new(20)})
 	assertInsert(t, ctx, mgr, &Person{Name: "UniqueB", Email: "b@iid.com", Age: new(21)})
@@ -99,7 +99,7 @@ func TestIntegration_IID_PopulatedAfterAll(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "AllA", Email: "alla@iid.com"})
 	assertInsert(t, ctx, mgr, &Person{Name: "AllB", Email: "allb@iid.com"})
@@ -122,9 +122,9 @@ func TestIntegration_IID_RelationPopulated(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	p := insertAndGet(t, ctx, personMgr, &Person{Name: "Eve", Email: "eve@iid.com", Age: new(28)}, "name", "Eve")
 	c := insertAndGet(t, ctx, companyMgr, &Company{Name: "IIDCorp", Industry: "Tech"}, "name", "IIDCorp")
@@ -143,9 +143,9 @@ func TestIntegration_IID_RelationUniquePerRelation(t *testing.T) {
 	db := setupRelationDB(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	p1 := insertAndGet(t, ctx, personMgr, &Person{Name: "PersonA", Email: "pa@iid.com"}, "name", "PersonA")
 	p2 := insertAndGet(t, ctx, personMgr, &Person{Name: "PersonB", Email: "pb@iid.com"}, "name", "PersonB")
@@ -179,7 +179,7 @@ func TestIntegration_IID_ByIIDFilterConsistent(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "IIDLookup", Email: "lookup@iid.com", Age: new(40)})
 

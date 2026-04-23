@@ -22,7 +22,7 @@ func TestIntegration_UpdateMultipleNoneOptionals(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	// Insert with all optional fields set.
 	assertInsert(t, ctx, mgr, &Profile{

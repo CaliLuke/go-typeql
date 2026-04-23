@@ -96,13 +96,13 @@ func seedInterop(t *testing.T) interopFixture {
 	db := setupInteropDB(t)
 	ctx := context.Background()
 
-	carMgr := gotype.NewManager[Car](db)
-	truckMgr := gotype.NewManager[Truck](db)
-	driverMgr := gotype.NewManager[Driver](db)
-	garageMgr := gotype.NewManager[Garage](db)
-	drivesMgr := gotype.NewManager[Drives](db)
-	drivesTruckMgr := gotype.NewManager[DrivesTruck](db)
-	parkedMgr := gotype.NewManager[ParkedAt](db)
+	carMgr := gotype.MustNewManager[Car](db)
+	truckMgr := gotype.MustNewManager[Truck](db)
+	driverMgr := gotype.MustNewManager[Driver](db)
+	garageMgr := gotype.MustNewManager[Garage](db)
+	drivesMgr := gotype.MustNewManager[Drives](db)
+	drivesTruckMgr := gotype.MustNewManager[DrivesTruck](db)
+	parkedMgr := gotype.MustNewManager[ParkedAt](db)
 
 	cars := []*Car{
 		{Vin: "CAR-001", Make: "Toyota", Year: 2020, Doors: 4},
@@ -170,19 +170,19 @@ func TestIntegration_Interop_AllEntitiesInserted(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[Car](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Truck](f.db), 2)
-	assertCount(t, ctx, gotype.NewManager[Driver](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Garage](f.db), 2)
+	assertCount(t, ctx, gotype.MustNewManager[Car](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Truck](f.db), 2)
+	assertCount(t, ctx, gotype.MustNewManager[Driver](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Garage](f.db), 2)
 }
 
 func TestIntegration_Interop_AllRelationsInserted(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[Drives](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[DrivesTruck](f.db), 2)
-	assertCount(t, ctx, gotype.NewManager[ParkedAt](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Drives](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[DrivesTruck](f.db), 2)
+	assertCount(t, ctx, gotype.MustNewManager[ParkedAt](f.db), 3)
 }
 
 func TestIntegration_Interop_MixedEntityTypesInSameDB(t *testing.T) {
@@ -190,8 +190,8 @@ func TestIntegration_Interop_MixedEntityTypesInSameDB(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
 
-	carMgr := gotype.NewManager[Car](f.db)
-	truckMgr := gotype.NewManager[Truck](f.db)
+	carMgr := gotype.MustNewManager[Car](f.db)
+	truckMgr := gotype.MustNewManager[Truck](f.db)
 
 	// Both types share vin attribute but are distinct entity types.
 	car := assertGetOne(t, ctx, carMgr, map[string]any{"vin": "CAR-001"})
@@ -210,8 +210,8 @@ func TestIntegration_Interop_DriverDrivesMultipleVehicleTypes(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
 
-	drivesMgr := gotype.NewManager[Drives](f.db)
-	drivesTruckMgr := gotype.NewManager[DrivesTruck](f.db)
+	drivesMgr := gotype.MustNewManager[Drives](f.db)
+	drivesTruckMgr := gotype.MustNewManager[DrivesTruck](f.db)
 
 	drivesCount, err := drivesMgr.Query().Count(ctx)
 	if err != nil {
@@ -234,8 +234,8 @@ func TestIntegration_Interop_FilterCrossingTypes(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
 
-	carMgr := gotype.NewManager[Car](f.db)
-	truckMgr := gotype.NewManager[Truck](f.db)
+	carMgr := gotype.MustNewManager[Car](f.db)
+	truckMgr := gotype.MustNewManager[Truck](f.db)
 
 	// Cars from 2022+
 	cars, err := carMgr.Query().
@@ -264,8 +264,8 @@ func TestIntegration_Interop_UpdateDifferentEntityTypes(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
 
-	carMgr := gotype.NewManager[Car](f.db)
-	truckMgr := gotype.NewManager[Truck](f.db)
+	carMgr := gotype.MustNewManager[Car](f.db)
+	truckMgr := gotype.MustNewManager[Truck](f.db)
 
 	// Update car
 	car := assertGetOne(t, ctx, carMgr, map[string]any{"vin": "CAR-001"})
@@ -292,12 +292,12 @@ func TestIntegration_Interop_DeleteEntityDoesNotAffectOtherTypes(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
 
-	driverMgr := gotype.NewManager[Driver](f.db)
+	driverMgr := gotype.MustNewManager[Driver](f.db)
 
 	// Delete a driver — should not affect cars or trucks.
 	// First need to delete relations referencing this driver.
-	drivesMgr := gotype.NewManager[Drives](f.db)
-	drivesTruckMgr := gotype.NewManager[DrivesTruck](f.db)
+	drivesMgr := gotype.MustNewManager[Drives](f.db)
+	drivesTruckMgr := gotype.MustNewManager[DrivesTruck](f.db)
 
 	// Get and delete Carol's drives relation
 	allDrives, err := drivesMgr.All(ctx)
@@ -323,8 +323,8 @@ func TestIntegration_Interop_DeleteEntityDoesNotAffectOtherTypes(t *testing.T) {
 	assertDelete(t, ctx, driverMgr, carol)
 
 	// Cars and trucks should be unaffected
-	assertCount(t, ctx, gotype.NewManager[Car](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Truck](f.db), 2)
+	assertCount(t, ctx, gotype.MustNewManager[Car](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Truck](f.db), 2)
 	assertCount(t, ctx, driverMgr, 2)
 }
 
@@ -333,8 +333,8 @@ func TestIntegration_Interop_BatchInsertMixedTypes(t *testing.T) {
 	db := setupInteropDB(t)
 	ctx := context.Background()
 
-	carMgr := gotype.NewManager[Car](db)
-	truckMgr := gotype.NewManager[Truck](db)
+	carMgr := gotype.MustNewManager[Car](db)
+	truckMgr := gotype.MustNewManager[Truck](db)
 
 	cars := []*Car{
 		{Vin: "BATCH-C1", Make: "BMW", Year: 2025, Doors: 4},
@@ -355,8 +355,8 @@ func TestIntegration_Interop_AggregateAcrossEntityType(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
 
-	carMgr := gotype.NewManager[Car](f.db)
-	truckMgr := gotype.NewManager[Truck](f.db)
+	carMgr := gotype.MustNewManager[Car](f.db)
+	truckMgr := gotype.MustNewManager[Truck](f.db)
 
 	// Avg year of cars
 	carAvg, err := carMgr.Query().Avg("vehicle-year").Execute(ctx)
@@ -382,7 +382,7 @@ func TestIntegration_Interop_AggregateAcrossEntityType(t *testing.T) {
 func TestIntegration_Interop_GarageCapacityFilter(t *testing.T) {
 	f := seedInterop(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Garage](f.db)
+	mgr := gotype.MustNewManager[Garage](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Gte("capacity", 200)).

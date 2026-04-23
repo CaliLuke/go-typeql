@@ -14,7 +14,7 @@ func TestIntegration_ExecuteRead(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@example.com"})
 
 	results, err := db.ExecuteRead(ctx, "match $e isa person; fetch { \"name\": $e.name };")
@@ -35,7 +35,7 @@ func TestIntegration_ExecuteWrite(t *testing.T) {
 		t.Fatalf("ExecuteWrite: %v", err)
 	}
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	assertGetOne(t, ctx, mgr, map[string]any{"name": "WritePerson"})
 }
 
@@ -69,7 +69,7 @@ func TestIntegration_CommitMakesDataVisible(t *testing.T) {
 
 	// Now a read tx should see it.
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	assertGetOne(t, ctx, mgr, map[string]any{"name": "CommitTest"})
 }
 
@@ -93,7 +93,7 @@ func TestIntegration_RollbackMakesDataInvisible(t *testing.T) {
 
 	// Read should see nothing.
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	results, err := mgr.Get(ctx, map[string]any{"name": "RollbackTest"})
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -106,7 +106,7 @@ func TestIntegration_RollbackMakesDataInvisible(t *testing.T) {
 func TestIntegration_MultipleSequentialTransactions(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	names := []string{"Seq1", "Seq2", "Seq3"}
 	for i, name := range names {

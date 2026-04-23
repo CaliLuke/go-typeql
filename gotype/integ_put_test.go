@@ -16,7 +16,7 @@ import (
 func TestIntegration_Put_Entity_New(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	p := &Person{Name: "PutPerson", Email: "put@test.com", Age: new(40)}
 	if err := mgr.Put(ctx, p); err != nil {
@@ -37,7 +37,7 @@ func TestIntegration_Put_Entity_New(t *testing.T) {
 func TestIntegration_Put_Entity_Idempotent(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	// Put the same entity twice — should not create a duplicate
 	p1 := &Person{Name: "Idem", Email: "idem@test.com"}
@@ -57,9 +57,9 @@ func TestIntegration_Put_Relation(t *testing.T) {
 	db := setupRelationDB(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	p := insertAndGet(t, ctx, personMgr, &Person{Name: "PutEmp", Email: "putemp@test.com"}, "name", "PutEmp")
 	c := insertAndGet(t, ctx, companyMgr, &Company{Name: "PutCorp", Industry: "Tech"}, "name", "PutCorp")
@@ -75,7 +75,7 @@ func TestIntegration_Put_Relation(t *testing.T) {
 func TestIntegration_PutMany(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	persons := []*Person{
 		{Name: "PM1", Email: "pm1@test.com"},
@@ -99,7 +99,7 @@ func TestIntegration_PutMany(t *testing.T) {
 func TestIntegration_PutMany_Empty(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	if err := mgr.PutMany(ctx, nil); err != nil {
 		t.Fatalf("PutMany empty should succeed: %v", err)

@@ -18,7 +18,7 @@ func setupTypeTestDB(t *testing.T) *gotype.Database {
 func TestIntegration_TypeRoundTrip_String(t *testing.T) {
 	db := setupTypeTestDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[TypeTest](db)
+	mgr := gotype.MustNewManager[TypeTest](db)
 
 	assertInsert(t, ctx, mgr, &TypeTest{TagName: "str-test", StrVal: "hello world", IntVal: 1, FloatVal: 1.0, BoolVal: true})
 
@@ -31,7 +31,7 @@ func TestIntegration_TypeRoundTrip_String(t *testing.T) {
 func TestIntegration_TypeRoundTrip_Int(t *testing.T) {
 	db := setupTypeTestDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[TypeTest](db)
+	mgr := gotype.MustNewManager[TypeTest](db)
 
 	assertInsert(t, ctx, mgr, &TypeTest{TagName: "int-test", IntVal: 42, FloatVal: 0.0, BoolVal: false, StrVal: "x"})
 
@@ -44,7 +44,7 @@ func TestIntegration_TypeRoundTrip_Int(t *testing.T) {
 func TestIntegration_TypeRoundTrip_Float(t *testing.T) {
 	db := setupTypeTestDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[TypeTest](db)
+	mgr := gotype.MustNewManager[TypeTest](db)
 
 	assertInsert(t, ctx, mgr, &TypeTest{TagName: "float-test", FloatVal: 3.14159, IntVal: 0, BoolVal: false, StrVal: "x"})
 
@@ -57,7 +57,7 @@ func TestIntegration_TypeRoundTrip_Float(t *testing.T) {
 func TestIntegration_TypeRoundTrip_Bool(t *testing.T) {
 	db := setupTypeTestDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[TypeTest](db)
+	mgr := gotype.MustNewManager[TypeTest](db)
 
 	assertInsert(t, ctx, mgr, &TypeTest{TagName: "bool-test", BoolVal: true, IntVal: 0, FloatVal: 0.0, StrVal: "x"})
 
@@ -70,7 +70,7 @@ func TestIntegration_TypeRoundTrip_Bool(t *testing.T) {
 func TestIntegration_TypeRoundTrip_ZeroValues(t *testing.T) {
 	db := setupTypeTestDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[TypeTest](db)
+	mgr := gotype.MustNewManager[TypeTest](db)
 
 	assertInsert(t, ctx, mgr, &TypeTest{TagName: "zeros", IntVal: 0, FloatVal: 0.0, BoolVal: false, StrVal: ""})
 
@@ -92,7 +92,7 @@ func TestIntegration_TypeRoundTrip_ZeroValues(t *testing.T) {
 func TestIntegration_TypeRoundTrip_LargeNumeric(t *testing.T) {
 	db := setupTypeTestDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[TypeTest](db)
+	mgr := gotype.MustNewManager[TypeTest](db)
 
 	assertInsert(t, ctx, mgr, &TypeTest{TagName: "large", IntVal: 999999999, FloatVal: 1.23e15, BoolVal: false, StrVal: "big"})
 

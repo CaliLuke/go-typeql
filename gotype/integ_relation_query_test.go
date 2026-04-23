@@ -24,9 +24,9 @@ func setupRelationQueryDB(t *testing.T) (
 	db := setupRelationDB(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	// Create entities.
 	p1 := insertAndGet(t, ctx, personMgr, &Person{Name: "Ann", Email: "ann@rq.com", Age: new(25)}, "name", "Ann")
@@ -178,9 +178,9 @@ func TestIntegration_Relation_UpdateOptionalAttr(t *testing.T) {
 	db := setupRelationDB(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	memMgr := gotype.NewManager[Membership](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	memMgr := gotype.MustNewManager[Membership](db)
 
 	p := insertAndGet(t, ctx, personMgr, &Person{Name: "OptRel", Email: "optrel@test.com"}, "name", "OptRel")
 	c := insertAndGet(t, ctx, companyMgr, &Company{Name: "OptCorp", Industry: "Test"}, "name", "OptCorp")
@@ -218,9 +218,9 @@ func TestIntegration_Relation_UpdateMultiple(t *testing.T) {
 	db := setupRelationDB(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	p1 := insertAndGet(t, ctx, personMgr, &Person{Name: "Multi1", Email: "m1@test.com"}, "name", "Multi1")
 	p2 := insertAndGet(t, ctx, personMgr, &Person{Name: "Multi2", Email: "m2@test.com"}, "name", "Multi2")

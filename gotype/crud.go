@@ -21,45 +21,66 @@ type Manager[T any] struct {
 
 // NewManager creates a new Manager for the model type T.
 // T must be a struct that has been registered via Register[T]().
-func NewManager[T any](db *Database) *Manager[T] {
-	var zero T
-	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
+func NewManager[T any](db *Database) (*Manager[T], error) {
+	info, err := lookupManagerInfo[T]()
+	if err != nil {
+		return nil, err
 	}
-
-	info, ok := LookupType(t)
-	if !ok {
-		panic(fmt.Sprintf("gotype: type %s is not registered; call Register[%s]() first", t.Name(), t.Name()))
-	}
-
 	return &Manager[T]{
 		db:       db,
 		info:     info,
 		strategy: strategyFor(info.Kind),
+	}, nil
+}
+
+// MustNewManager creates a new Manager for the model type T and panics if the
+// type has not been registered. Prefer NewManager when the caller needs to
+// handle registration failures explicitly.
+func MustNewManager[T any](db *Database) *Manager[T] {
+	mgr, err := NewManager[T](db)
+	if err != nil {
+		panic(err)
 	}
+	return mgr
 }
 
 // NewManagerWithTx creates a Manager bound to an existing transaction context.
 // All operations performed by this manager will use the provided transaction.
-func NewManagerWithTx[T any](tc *TransactionContext) *Manager[T] {
-	var zero T
-	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
+func NewManagerWithTx[T any](tc *TransactionContext) (*Manager[T], error) {
+	info, err := lookupManagerInfo[T]()
+	if err != nil {
+		return nil, err
 	}
-
-	info, ok := LookupType(t)
-	if !ok {
-		panic(fmt.Sprintf("gotype: type %s is not registered; call Register[%s]() first", t.Name(), t.Name()))
-	}
-
 	return &Manager[T]{
 		db:       tc.db,
 		info:     info,
 		strategy: strategyFor(info.Kind),
 		tx:       tc.Tx(),
+	}, nil
+}
+
+// MustNewManagerWithTx creates a Manager bound to an existing transaction
+// context and panics if the model type has not been registered.
+func MustNewManagerWithTx[T any](tc *TransactionContext) *Manager[T] {
+	mgr, err := NewManagerWithTx[T](tc)
+	if err != nil {
+		panic(err)
 	}
+	return mgr
+}
+
+func lookupManagerInfo[T any]() (*ModelInfo, error) {
+	var zero T
+	t := reflect.TypeOf(zero)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	info, ok := LookupType(t)
+	if !ok {
+		return nil, fmt.Errorf("gotype: type %s is not registered; call Register[%s]() first", t.Name(), t.Name())
+	}
+	return info, nil
 }
 
 // Insert adds a new instance of T to the database.

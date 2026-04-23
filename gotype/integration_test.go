@@ -43,7 +43,7 @@ func TestIntegration_InsertEntity(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	alice := &Person{Name: "Alice", Email: "alice@example.com", Age: new(30)}
 	assertInsert(t, ctx, mgr, alice)
@@ -58,7 +58,7 @@ func TestIntegration_InsertAndFetchAll(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@example.com", Age: new(30)})
 
@@ -78,7 +78,7 @@ func TestIntegration_InsertAndGetByFilter(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Alice", Email: "alice@example.com", Age: new(30)})
 	assertInsert(t, ctx, mgr, &Person{Name: "Bob", Email: "bob@example.com", Age: new(25)})
@@ -97,7 +97,7 @@ func TestIntegration_UpdateEntity(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Henry", Email: "henry@example.com", Age: new(25)})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "Henry"})
@@ -119,7 +119,7 @@ func TestIntegration_DeleteEntity(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Jack", Email: "jack@example.com", Age: new(30)})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "Jack"})
@@ -136,7 +136,7 @@ func TestIntegration_InsertMany(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	persons := []*Person{
 		{Name: "Bob", Email: "bob@example.com", Age: new(25)},
@@ -166,13 +166,13 @@ func TestIntegration_InsertRelation(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
 
 	alice := insertAndGet(t, ctx, personMgr, &Person{Name: "Alice", Email: "alice@example.com"}, "name", "Alice")
 	techcorp := insertAndGet(t, ctx, companyMgr, &Company{Name: "TechCorp", Industry: "Technology"}, "name", "TechCorp")
 
-	employmentMgr := gotype.NewManager[Employment](db)
+	employmentMgr := gotype.MustNewManager[Employment](db)
 	employment := &Employment{
 		Employee:  alice,
 		Employer:  techcorp,
@@ -194,7 +194,7 @@ func TestIntegration_OptionalAttributes(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Kate", Email: "kate@example.com", Age: nil})
 
@@ -251,7 +251,7 @@ func TestIntegration_AST_DeleteHasStatement(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	// Insert person with age
 	age := 42

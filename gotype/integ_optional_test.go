@@ -18,7 +18,7 @@ func setupProfileDB(t *testing.T) *gotype.Database {
 func TestIntegration_Optional_AllNil(t *testing.T) {
 	db := setupProfileDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	assertInsert(t, ctx, mgr, &Profile{Username: "ghost"})
 
@@ -40,7 +40,7 @@ func TestIntegration_Optional_AllNil(t *testing.T) {
 func TestIntegration_Optional_AllSet(t *testing.T) {
 	db := setupProfileDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	p := &Profile{
 		Username: "full",
@@ -69,7 +69,7 @@ func TestIntegration_Optional_AllSet(t *testing.T) {
 func TestIntegration_Optional_UpdateNilToValue(t *testing.T) {
 	db := setupProfileDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	assertInsert(t, ctx, mgr, &Profile{Username: "updater"})
 
@@ -86,7 +86,7 @@ func TestIntegration_Optional_UpdateNilToValue(t *testing.T) {
 func TestIntegration_Optional_UpdateExistingValue(t *testing.T) {
 	db := setupProfileDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	assertInsert(t, ctx, mgr, &Profile{Username: "changer", Bio: new("old bio")})
 
@@ -103,7 +103,7 @@ func TestIntegration_Optional_UpdateExistingValue(t *testing.T) {
 func TestIntegration_Optional_FilterHasAttr(t *testing.T) {
 	db := setupProfileDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	assertInsert(t, ctx, mgr, &Profile{Username: "withbio", Bio: new("hi")})
 	assertInsert(t, ctx, mgr, &Profile{Username: "nobio"})
@@ -136,7 +136,7 @@ func TestIntegration_Optional_FilterHasAttr(t *testing.T) {
 func TestIntegration_Optional_MixedNilAndSet(t *testing.T) {
 	db := setupProfileDB(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	assertInsert(t, ctx, mgr, &Profile{
 		Username: "mixed",

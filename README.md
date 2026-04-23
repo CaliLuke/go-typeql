@@ -47,7 +47,7 @@ gotype.Register[Company]()
 gotype.Register[Employment]()
 
 db := gotype.NewDatabase(conn, "my_db")
-persons := gotype.NewManager[Person](db)
+persons := gotype.MustNewManager[Person](db)
 
 persons.Insert(ctx, &Person{Name: "Alice", Email: "alice@example.com"})
 

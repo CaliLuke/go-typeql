@@ -20,7 +20,7 @@ func TestIntegration_UpdatePreservesOtherAttributes(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Diana", Email: "diana@test.com", Age: new(30)})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "Diana"})
@@ -45,7 +45,7 @@ func TestIntegration_UpdateMultipleEntitiesSeparately(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	assertInsert(t, ctx, mgr, &Person{Name: "Grace", Email: "grace@test.com", Age: new(100)})
 	assertInsert(t, ctx, mgr, &Person{Name: "Henry2", Email: "henry2@test.com", Age: new(200)})
@@ -76,7 +76,7 @@ func TestIntegration_UpdateOptional_MultipleAttrs(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	assertInsert(t, ctx, mgr, &Profile{Username: "dave"})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"username": "dave"})
@@ -104,7 +104,7 @@ func TestIntegration_UpdateOptional_ValueToNil(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	// Insert with bio set.
 	assertInsert(t, ctx, mgr, &Profile{Username: "bob", Bio: new("old bio")})
@@ -133,7 +133,7 @@ func TestIntegration_OptionalAttrLifecycle(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Profile](db)
+	mgr := gotype.MustNewManager[Profile](db)
 
 	// 1. Insert without optional attr.
 	assertInsert(t, ctx, mgr, &Profile{Username: "alice"})
@@ -172,9 +172,9 @@ func TestIntegration_DeleteEntityCascadesRelation(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	bob := insertAndGet(t, ctx, personMgr, &Person{Name: "Bob", Email: "bob@test.com"}, "name", "Bob")
 	techcorp := insertAndGet(t, ctx, companyMgr, &Company{Name: "TechCorp", Industry: "Tech"}, "name", "TechCorp")
@@ -208,9 +208,9 @@ func TestIntegration_DeleteRelationThenEntity(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	carol := insertAndGet(t, ctx, personMgr, &Person{Name: "Carol", Email: "carol@test.com"}, "name", "Carol")
 	devcorp := insertAndGet(t, ctx, companyMgr, &Company{Name: "DevCorp", Industry: "Dev"}, "name", "DevCorp")
@@ -237,9 +237,9 @@ func TestIntegration_UpdateRelationPreservesRolePlayers(t *testing.T) {
 	db := setupRelationDB(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	p := insertAndGet(t, ctx, personMgr, &Person{Name: "Preservee", Email: "pres@test.com"}, "name", "Preservee")
 	c := insertAndGet(t, ctx, companyMgr, &Company{Name: "PresCorp", Industry: "Tech"}, "name", "PresCorp")

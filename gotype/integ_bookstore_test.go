@@ -102,15 +102,15 @@ func seedBookstore(t *testing.T) bookstoreFixture {
 	db := setupBookstoreDB(t)
 	ctx := context.Background()
 
-	authorMgr := gotype.NewManager[Author](db)
-	bookMgr := gotype.NewManager[Book](db)
-	pubMgr := gotype.NewManager[Publisher](db)
-	genreMgr := gotype.NewManager[Genre](db)
-	reviewMgr := gotype.NewManager[Review](db)
-	wroteMgr := gotype.NewManager[Wrote](db)
-	pubByMgr := gotype.NewManager[PublishedBy](db)
-	reviewedMgr := gotype.NewManager[Reviewed](db)
-	catMgr := gotype.NewManager[CategorizedAs](db)
+	authorMgr := gotype.MustNewManager[Author](db)
+	bookMgr := gotype.MustNewManager[Book](db)
+	pubMgr := gotype.MustNewManager[Publisher](db)
+	genreMgr := gotype.MustNewManager[Genre](db)
+	reviewMgr := gotype.MustNewManager[Review](db)
+	wroteMgr := gotype.MustNewManager[Wrote](db)
+	pubByMgr := gotype.MustNewManager[PublishedBy](db)
+	reviewedMgr := gotype.MustNewManager[Reviewed](db)
+	catMgr := gotype.MustNewManager[CategorizedAs](db)
 
 	// Authors
 	authors := []*Author{
@@ -210,27 +210,27 @@ func TestIntegration_Bookstore_AllEntitiesInserted(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[Author](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Book](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[Publisher](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Genre](f.db), 2)
-	assertCount(t, ctx, gotype.NewManager[Review](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[Author](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Book](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[Publisher](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Genre](f.db), 2)
+	assertCount(t, ctx, gotype.MustNewManager[Review](f.db), 5)
 }
 
 func TestIntegration_Bookstore_AllRelationsInserted(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[Wrote](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[PublishedBy](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[Reviewed](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[CategorizedAs](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[Wrote](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[PublishedBy](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[Reviewed](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[CategorizedAs](f.db), 5)
 }
 
 func TestIntegration_Bookstore_FilterBooksByYear(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	// Books published before 1952
 	results, err := mgr.Query().
@@ -251,7 +251,7 @@ func TestIntegration_Bookstore_FilterBooksByYear(t *testing.T) {
 func TestIntegration_Bookstore_FilterBooksByPriceRange(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Range("price", 12.0, 15.0)).
@@ -268,7 +268,7 @@ func TestIntegration_Bookstore_FilterBooksByPriceRange(t *testing.T) {
 func TestIntegration_Bookstore_AggregateAvgPrice(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	avg, err := mgr.Query().Avg("price").Execute(ctx)
 	if err != nil {
@@ -283,7 +283,7 @@ func TestIntegration_Bookstore_AggregateAvgPrice(t *testing.T) {
 func TestIntegration_Bookstore_AggregateSumPages(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	sum, err := mgr.Query().Sum("pages").Execute(ctx)
 	if err != nil {
@@ -298,7 +298,7 @@ func TestIntegration_Bookstore_AggregateSumPages(t *testing.T) {
 func TestIntegration_Bookstore_MinMaxYear(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	minYear, err := mgr.Query().Min("year").Execute(ctx)
 	if err != nil {
@@ -320,7 +320,7 @@ func TestIntegration_Bookstore_MinMaxYear(t *testing.T) {
 func TestIntegration_Bookstore_PaginatedBooks(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	// Page 1: first 2 books by year
 	page1, err := mgr.Query().
@@ -356,7 +356,7 @@ func TestIntegration_Bookstore_PaginatedBooks(t *testing.T) {
 func TestIntegration_Bookstore_CountByFilter(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	// Count sci-fi era books (year >= 1950)
 	count, err := mgr.Query().
@@ -374,7 +374,7 @@ func TestIntegration_Bookstore_CountByFilter(t *testing.T) {
 func TestIntegration_Bookstore_ExistsAndNotExists(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	exists, err := mgr.Query().
 		Filter(gotype.Eq("title", "The Hobbit")).
@@ -400,7 +400,7 @@ func TestIntegration_Bookstore_ExistsAndNotExists(t *testing.T) {
 func TestIntegration_Bookstore_FilterAmericanAuthors(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Author](f.db)
+	mgr := gotype.MustNewManager[Author](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("nationality", "American")).
@@ -422,7 +422,7 @@ func TestIntegration_Bookstore_DeleteBookRemovesRelations(t *testing.T) {
 	// But we must first delete the relations referencing it.
 	f := seedBookstore(t)
 	ctx := context.Background()
-	bookMgr := gotype.NewManager[Book](f.db)
+	bookMgr := gotype.MustNewManager[Book](f.db)
 
 	// Verify 5 books initially
 	assertCount(t, ctx, bookMgr, 5)
@@ -439,7 +439,7 @@ func TestIntegration_Bookstore_DeleteBookRemovesRelations(t *testing.T) {
 func TestIntegration_Bookstore_UpdateBookPrice(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	book := assertGetOne(t, ctx, mgr, map[string]any{"title": "The Hobbit"})
 	book.Price = 15.99
@@ -454,7 +454,7 @@ func TestIntegration_Bookstore_UpdateBookPrice(t *testing.T) {
 func TestIntegration_Bookstore_FilterBooksContainingThe(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Contains("title", "The")).
@@ -471,7 +471,7 @@ func TestIntegration_Bookstore_FilterBooksContainingThe(t *testing.T) {
 func TestIntegration_Bookstore_InFilter(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.In("title", []any{"The Hobbit", "Foundation"})).
@@ -488,7 +488,7 @@ func TestIntegration_Bookstore_InFilter(t *testing.T) {
 func TestIntegration_Bookstore_OrFilter(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	// Cheap books (price < 13) OR long books (pages > 500)
 	results, err := mgr.Query().
@@ -511,7 +511,7 @@ func TestIntegration_Bookstore_OrFilter(t *testing.T) {
 func TestIntegration_Bookstore_AndFilter(t *testing.T) {
 	f := seedBookstore(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Book](f.db)
+	mgr := gotype.MustNewManager[Book](f.db)
 
 	// Books that are both expensive (> 14) AND long (> 250 pages)
 	results, err := mgr.Query().

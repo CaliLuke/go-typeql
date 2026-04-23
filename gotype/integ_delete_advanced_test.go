@@ -20,7 +20,7 @@ func TestIntegration_DeleteNonexistent_Idempotent(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 
 	// Insert and get (for IID).
 	p := insertAndGet(t, ctx, mgr, &Person{Name: "Ephemeral", Email: "eph@test.com"}, "name", "Ephemeral")
@@ -42,7 +42,7 @@ func TestIntegration_FilterDelete_NoMatches(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	seedPersons(t, ctx, mgr)
 
 	_, err := mgr.Query().Filter(gotype.Eq("name", "Ghost")).Delete(ctx)
@@ -60,9 +60,9 @@ func TestIntegration_DeleteRelation_Nonexistent_Idempotent(t *testing.T) {
 	db := setupRelationDB(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	p := insertAndGet(t, ctx, personMgr, &Person{Name: "TempPerson", Email: "temp@test.com"}, "name", "TempPerson")
 	c := insertAndGet(t, ctx, companyMgr, &Company{Name: "TempCorp", Industry: "Test"}, "name", "TempCorp")
@@ -87,9 +87,9 @@ func TestIntegration_DeleteRelation_PreservesEntities(t *testing.T) {
 	db := setupRelationDB(t)
 	ctx := context.Background()
 
-	personMgr := gotype.NewManager[Person](db)
-	companyMgr := gotype.NewManager[Company](db)
-	empMgr := gotype.NewManager[Employment](db)
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	empMgr := gotype.MustNewManager[Employment](db)
 
 	p := insertAndGet(t, ctx, personMgr, &Person{Name: "Survivor", Email: "surv@test.com"}, "name", "Survivor")
 	c := insertAndGet(t, ctx, companyMgr, &Company{Name: "SurvCorp", Industry: "Test"}, "name", "SurvCorp")

@@ -90,7 +90,7 @@ func TestManager_Insert(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "alice@example.com"}
 	err := mgr.Insert(context.Background(), p)
@@ -129,7 +129,7 @@ func TestManager_Insert_WrappedIID(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Bob", Email: "bob@example.com"}
 	err := mgr.Insert(context.Background(), p)
@@ -154,7 +154,7 @@ func TestManager_All(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.All(context.Background())
 	if err != nil {
@@ -213,7 +213,7 @@ func TestManager_All_RelationWithRoles(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testEmployment](db)
+	mgr := MustNewManager[testEmployment](db)
 
 	results, err := mgr.All(context.Background())
 	if err != nil {
@@ -259,7 +259,7 @@ func TestManager_Get_WithFilters(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.Get(context.Background(), map[string]any{"name": "Alice"})
 	if err != nil {
@@ -288,7 +288,7 @@ func TestManager_Update(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	age := 31
 	p := &testPerson{Name: "Alice", Email: "alice-new@example.com", Age: &age}
@@ -323,7 +323,7 @@ func TestManager_Update_NilOptionalDeletesOnly(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	// Age is nil — should trigger delete-old but skip insert-new.
 	p := &testPerson{Name: "Alice", Email: "alice@example.com", Age: nil}
@@ -365,7 +365,7 @@ func TestManager_Update_NoIID(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "alice@example.com"}
 	err := mgr.Update(context.Background(), p)
@@ -381,7 +381,7 @@ func TestManager_Delete(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "alice@example.com"}
 	p.SetIID("0xABC123")
@@ -402,7 +402,7 @@ func TestManager_Delete_NoIID(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "alice@example.com"}
 	err := mgr.Delete(context.Background(), p)
@@ -464,7 +464,7 @@ func TestManager_DeleteMany(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p1 := &testPerson{Name: "Alice", Email: "a@example.com"}
 	p1.SetIID("0x001")
@@ -491,7 +491,7 @@ func TestManager_DeleteMany_Empty(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.DeleteMany(context.Background(), nil)
 	if err != nil {
@@ -503,7 +503,7 @@ func TestManager_DeleteMany_NoIID(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "a@example.com"}
 	err := mgr.DeleteMany(context.Background(), []*testPerson{p})
@@ -519,7 +519,7 @@ func TestManager_UpdateMany(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p1 := &testPerson{Name: "Alice", Email: "new-a@example.com"}
 	p1.SetIID("0x001")
@@ -544,7 +544,7 @@ func TestManager_UpdateMany_Empty(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.UpdateMany(context.Background(), nil)
 	if err != nil {
@@ -556,7 +556,7 @@ func TestManager_UpdateMany_NoIID(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "a@example.com"}
 	err := mgr.UpdateMany(context.Background(), []*testPerson{p})
@@ -576,7 +576,7 @@ func TestManager_Delete_Strict_NotFound(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "a@example.com"}
 	p.SetIID("0x001")
@@ -601,7 +601,7 @@ func TestManager_Delete_Strict_Found(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{readTx, writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "a@example.com"}
 	p.SetIID("0x001")
@@ -618,7 +618,7 @@ func TestManager_Delete_BackwardCompat(t *testing.T) {
 	writeTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "a@example.com"}
 	p.SetIID("0x001")
@@ -636,7 +636,7 @@ func TestManager_DeleteMany_Strict(t *testing.T) {
 	readTx2 := &mockTx{responses: [][]map[string]any{{{"count": float64(0)}}}}
 	conn := &mockConn{txs: []*mockTx{readTx1, readTx2}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p1 := &testPerson{Name: "Alice", Email: "a@example.com"}
 	p1.SetIID("0x001")
@@ -660,7 +660,7 @@ func TestManager_Put(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "alice@example.com"}
 	err := mgr.Put(context.Background(), p)
@@ -686,7 +686,7 @@ func TestManager_Put_SetsIID(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p := &testPerson{Name: "Alice", Email: "alice@example.com"}
 	_ = mgr.Put(context.Background(), p)
@@ -707,7 +707,7 @@ func TestManager_PutMany(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{writeTx, readTx, readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p1 := &testPerson{Name: "Alice", Email: "a@example.com"}
 	p2 := &testPerson{Name: "Bob", Email: "b@example.com"}
@@ -740,7 +740,7 @@ func TestManager_InsertMany_CommitFailureDoesNotSetIIDs(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	p1 := &testPerson{Name: "Alice", Email: "alice@example.com"}
 	p2 := &testPerson{Name: "Bob", Email: "bob@example.com"}
@@ -764,7 +764,7 @@ func TestManager_PutMany_Empty(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.PutMany(context.Background(), nil)
 	if err != nil {
@@ -772,7 +772,25 @@ func TestManager_PutMany_Empty(t *testing.T) {
 	}
 }
 
-func TestNewManager_Panics_Unregistered(t *testing.T) {
+func TestNewManager_UnregisteredReturnsError(t *testing.T) {
+	type unregistered struct {
+		BaseEntity
+		X string `typedb:"x"`
+	}
+
+	conn := &mockConn{}
+	db := NewDatabase(conn, "test_db")
+
+	_, err := NewManager[unregistered](db)
+	if err == nil {
+		t.Fatal("expected error for unregistered type")
+	}
+	if !strings.Contains(err.Error(), "not registered") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMustNewManager_Panics_Unregistered(t *testing.T) {
 	type unregistered struct {
 		BaseEntity
 		X string `typedb:"x"`
@@ -791,7 +809,7 @@ func TestNewManager_Panics_Unregistered(t *testing.T) {
 
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	NewManager[unregistered](db)
+	MustNewManager[unregistered](db)
 }
 
 func TestNewManagerWithTx(t *testing.T) {
@@ -812,7 +830,10 @@ func TestNewManagerWithTx(t *testing.T) {
 	}
 	defer tc.Close()
 
-	mgr := NewManagerWithTx[testPerson](tc)
+	mgr, err := NewManagerWithTx[testPerson](tc)
+	if err != nil {
+		t.Fatalf("NewManagerWithTx: %v", err)
+	}
 
 	err = mgr.Insert(context.Background(), &testPerson{Name: "TxAlice", Email: "tx@example.com"})
 	if err != nil {
@@ -844,7 +865,7 @@ func TestManager_GetByIIDPolymorphic(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	result, typeLabel, err := mgr.GetByIIDPolymorphic(context.Background(), "0xABC")
 	if err != nil {
@@ -872,7 +893,7 @@ func TestManager_GetByIIDPolymorphic_NotFound(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	result, typeLabel, err := mgr.GetByIIDPolymorphic(context.Background(), "0xDEAD")
 	if err != nil {
@@ -897,7 +918,7 @@ func TestManager_GetByIIDPolymorphicAny(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	result, typeLabel, err := mgr.GetByIIDPolymorphicAny(context.Background(), "0xABC")
 	if err != nil {
@@ -943,7 +964,7 @@ func TestManager_Insert_NilInstance(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.Insert(context.Background(), nil)
 	if err == nil {
@@ -956,7 +977,7 @@ func TestManager_Update_NilInstance(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.Update(context.Background(), nil)
 	if err == nil {
@@ -969,7 +990,7 @@ func TestManager_Delete_NilInstance(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.Delete(context.Background(), nil)
 	if err == nil {
@@ -982,7 +1003,7 @@ func TestManager_Put_NilInstance(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.Put(context.Background(), nil)
 	if err == nil {
@@ -995,7 +1016,7 @@ func TestManager_DeleteMany_NilElement(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.DeleteMany(context.Background(), []*testPerson{nil})
 	if err == nil {
@@ -1008,7 +1029,7 @@ func TestManager_UpdateMany_NilElement(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	err := mgr.UpdateMany(context.Background(), []*testPerson{nil})
 	if err == nil {
@@ -1023,7 +1044,7 @@ func TestManager_Insert_CancelledContext(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
@@ -1039,7 +1060,7 @@ func TestManager_Update_CancelledContext(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -1057,7 +1078,7 @@ func TestManager_Delete_CancelledContext(t *testing.T) {
 	registerTestTypes(t)
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -9,7 +9,7 @@
 Start from a `Manager[T]`:
 
 ```go
-persons := gotype.NewManager[Person](db)
+persons := gotype.MustNewManager[Person](db)
 q := persons.Query()
 ```
 
@@ -217,7 +217,7 @@ fq := gotype.NewFunctionQuery(db, "compute_total").
 ## Complete Example
 
 ```go
-persons := gotype.NewManager[Person](db)
+persons := gotype.MustNewManager[Person](db)
 ctx := context.Background()
 
 // Complex query with filters, sorting, pagination

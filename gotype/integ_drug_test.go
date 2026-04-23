@@ -99,14 +99,14 @@ func seedDrug(t *testing.T) drugFixture {
 	db := setupDrugDB(t)
 	ctx := context.Background()
 
-	compoundMgr := gotype.NewManager[Compound](db)
-	targetMgr := gotype.NewManager[Target](db)
-	diseaseMgr := gotype.NewManager[Disease](db)
-	trialMgr := gotype.NewManager[Trial](db)
-	interactMgr := gotype.NewManager[InteractsWith](db)
-	treatsMgr := gotype.NewManager[Treats](db)
-	testedMgr := gotype.NewManager[TestedIn](db)
-	tdMgr := gotype.NewManager[TargetDisease](db)
+	compoundMgr := gotype.MustNewManager[Compound](db)
+	targetMgr := gotype.MustNewManager[Target](db)
+	diseaseMgr := gotype.MustNewManager[Disease](db)
+	trialMgr := gotype.MustNewManager[Trial](db)
+	interactMgr := gotype.MustNewManager[InteractsWith](db)
+	treatsMgr := gotype.MustNewManager[Treats](db)
+	testedMgr := gotype.MustNewManager[TestedIn](db)
+	tdMgr := gotype.MustNewManager[TargetDisease](db)
 
 	compounds := []*Compound{
 		{CompoundID: "CPD-001", CompoundName: "Aspirin", MolecularWeight: 180.16, Solubility: 4.6},
@@ -204,26 +204,26 @@ func TestIntegration_Drug_AllEntitiesInserted(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[Compound](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[Target](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[Disease](f.db), 3)
-	assertCount(t, ctx, gotype.NewManager[Trial](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[Compound](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[Target](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[Disease](f.db), 3)
+	assertCount(t, ctx, gotype.MustNewManager[Trial](f.db), 4)
 }
 
 func TestIntegration_Drug_AllRelationsInserted(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
 
-	assertCount(t, ctx, gotype.NewManager[InteractsWith](f.db), 5)
-	assertCount(t, ctx, gotype.NewManager[Treats](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[TestedIn](f.db), 4)
-	assertCount(t, ctx, gotype.NewManager[TargetDisease](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[InteractsWith](f.db), 5)
+	assertCount(t, ctx, gotype.MustNewManager[Treats](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[TestedIn](f.db), 4)
+	assertCount(t, ctx, gotype.MustNewManager[TargetDisease](f.db), 4)
 }
 
 func TestIntegration_Drug_FilterByMolecularWeight(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Compound](f.db)
+	mgr := gotype.MustNewManager[Compound](f.db)
 
 	// Small molecules (MW < 250)
 	results, err := mgr.Query().
@@ -245,7 +245,7 @@ func TestIntegration_Drug_FilterByMolecularWeight(t *testing.T) {
 func TestIntegration_Drug_FilterHighSolubility(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Compound](f.db)
+	mgr := gotype.MustNewManager[Compound](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Gt("solubility", 1.0)).
@@ -262,7 +262,7 @@ func TestIntegration_Drug_FilterHighSolubility(t *testing.T) {
 func TestIntegration_Drug_FilterTrialsByPhase(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Trial](f.db)
+	mgr := gotype.MustNewManager[Trial](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("phase", 3)).
@@ -278,7 +278,7 @@ func TestIntegration_Drug_FilterTrialsByPhase(t *testing.T) {
 func TestIntegration_Drug_AggregateAvgSuccessRate(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Trial](f.db)
+	mgr := gotype.MustNewManager[Trial](f.db)
 
 	avg, err := mgr.Query().Avg("success-rate").Execute(ctx)
 	if err != nil {
@@ -293,7 +293,7 @@ func TestIntegration_Drug_AggregateAvgSuccessRate(t *testing.T) {
 func TestIntegration_Drug_MaxSuccessRate(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Trial](f.db)
+	mgr := gotype.MustNewManager[Trial](f.db)
 
 	max, err := mgr.Query().Max("success-rate").Execute(ctx)
 	if err != nil {
@@ -307,7 +307,7 @@ func TestIntegration_Drug_MaxSuccessRate(t *testing.T) {
 func TestIntegration_Drug_FilterTargetsByOrganism(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Target](f.db)
+	mgr := gotype.MustNewManager[Target](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Eq("organism", "Human")).
@@ -323,7 +323,7 @@ func TestIntegration_Drug_FilterTargetsByOrganism(t *testing.T) {
 func TestIntegration_Drug_FilterDiseasesByCategory(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Disease](f.db)
+	mgr := gotype.MustNewManager[Disease](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Neq("disease-category", "Autoimmune")).
@@ -340,7 +340,7 @@ func TestIntegration_Drug_FilterDiseasesByCategory(t *testing.T) {
 func TestIntegration_Drug_UpdateCompound(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Compound](f.db)
+	mgr := gotype.MustNewManager[Compound](f.db)
 
 	compound := assertGetOne(t, ctx, mgr, map[string]any{"compound-id": "CPD-001"})
 	compound.Solubility = 5.0
@@ -355,7 +355,7 @@ func TestIntegration_Drug_UpdateCompound(t *testing.T) {
 func TestIntegration_Drug_CompoundNameContains(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Compound](f.db)
+	mgr := gotype.MustNewManager[Compound](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Contains("compound-name", "in")).
@@ -372,7 +372,7 @@ func TestIntegration_Drug_CompoundNameContains(t *testing.T) {
 func TestIntegration_Drug_RangeMolecularWeight(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[Compound](f.db)
+	mgr := gotype.MustNewManager[Compound](f.db)
 
 	results, err := mgr.Query().
 		Filter(gotype.Range("molecular-weight", 150.0, 250.0)).
@@ -389,7 +389,7 @@ func TestIntegration_Drug_RangeMolecularWeight(t *testing.T) {
 func TestIntegration_Drug_CountInteractions(t *testing.T) {
 	f := seedDrug(t)
 	ctx := context.Background()
-	mgr := gotype.NewManager[InteractsWith](f.db)
+	mgr := gotype.MustNewManager[InteractsWith](f.db)
 
 	count, err := mgr.Query().Count(ctx)
 	if err != nil {

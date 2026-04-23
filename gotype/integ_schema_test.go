@@ -14,7 +14,7 @@ func TestIntegration_SchemaAcceptedByTypeDB(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	assertInsert(t, ctx, mgr, &Person{Name: "SchemaTest", Email: "st@example.com"})
 	assertCount(t, ctx, mgr, 1)
 }

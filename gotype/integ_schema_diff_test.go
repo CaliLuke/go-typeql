@@ -225,7 +225,7 @@ func TestIntegration_Schema_SafeUpdate(t *testing.T) {
 	ctx := context.Background()
 
 	// Verify we can insert with original schema.
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	assertInsert(t, ctx, mgr, &Person{Name: "Before", Email: "before@test.com"})
 
 	// Migrate: add MigratedPerson which has extra "nickname" attribute.

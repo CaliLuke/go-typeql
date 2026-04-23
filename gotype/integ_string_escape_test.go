@@ -33,7 +33,7 @@ func TestIntegration_String_InsertFetchUpdateDelete(t *testing.T) {
 	db := setupStringDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[StringEntity](db)
+	mgr := gotype.MustNewManager[StringEntity](db)
 
 	// Insert.
 	assertInsert(t, ctx, mgr, &StringEntity{Tag: "s1", Value: "hello world"})
@@ -64,7 +64,7 @@ func TestIntegration_String_SpecialChars_Quotes(t *testing.T) {
 	db := setupStringDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[StringEntity](db)
+	mgr := gotype.MustNewManager[StringEntity](db)
 
 	assertInsert(t, ctx, mgr, &StringEntity{Tag: "q1", Value: `She said "hello"`})
 
@@ -80,7 +80,7 @@ func TestIntegration_String_SpecialChars_Backslash(t *testing.T) {
 	db := setupStringDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[StringEntity](db)
+	mgr := gotype.MustNewManager[StringEntity](db)
 
 	assertInsert(t, ctx, mgr, &StringEntity{Tag: "bs1", Value: `path\to\file`})
 
@@ -96,7 +96,7 @@ func TestIntegration_String_SpecialChars_Mixed(t *testing.T) {
 	db := setupStringDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[StringEntity](db)
+	mgr := gotype.MustNewManager[StringEntity](db)
 
 	mixed := `It's a "test" with \ and \n`
 	assertInsert(t, ctx, mgr, &StringEntity{Tag: "mix1", Value: mixed})
@@ -113,7 +113,7 @@ func TestIntegration_String_EmptyString(t *testing.T) {
 	db := setupStringDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[StringEntity](db)
+	mgr := gotype.MustNewManager[StringEntity](db)
 
 	assertInsert(t, ctx, mgr, &StringEntity{Tag: "empty1", Value: ""})
 
@@ -128,7 +128,7 @@ func TestIntegration_String_Update_SpecialChars(t *testing.T) {
 	db := setupStringDB(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[StringEntity](db)
+	mgr := gotype.MustNewManager[StringEntity](db)
 
 	assertInsert(t, ctx, mgr, &StringEntity{Tag: "upd1", Value: "normal"})
 	fetched := assertGetOne(t, ctx, mgr, map[string]any{"tag": "upd1"})

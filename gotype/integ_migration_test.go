@@ -85,7 +85,7 @@ func TestIntegration_Migration_AddEntityType(t *testing.T) {
 	}
 
 	// Verify new entity is usable.
-	mgr := gotype.NewManager[NewEntity](db)
+	mgr := gotype.MustNewManager[NewEntity](db)
 	if err := mgr.Insert(ctx, &NewEntity{Code: "X1", Summary: "test"}); err != nil {
 		t.Fatalf("insert new entity: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestIntegration_MigrateFromEmpty(t *testing.T) {
 	}
 
 	// Verify schema was applied.
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	if err := mgr.Insert(ctx, &Person{Name: "FromEmpty", Email: "empty@test.com"}); err != nil {
 		t.Fatalf("insert after MigrateFromEmpty: %v", err)
 	}

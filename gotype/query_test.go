@@ -19,7 +19,7 @@ func TestQuery_Execute(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.Query().
 		Filter(Eq("name", "Alice")).
@@ -50,7 +50,7 @@ func TestQuery_MultipleFilters(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	_, _ = mgr.Query().
 		Filter(Gt("age", 25), Lt("age", 50)).
@@ -68,7 +68,7 @@ func TestQuery_OrFilter(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	_, _ = mgr.Query().
 		Filter(Or(Eq("name", "Alice"), Eq("name", "Bob"))).
@@ -84,7 +84,7 @@ func TestQuery_Limit(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	_, _ = mgr.Query().
 		Limit(10).
@@ -100,7 +100,7 @@ func TestQuery_Offset(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	_, _ = mgr.Query().
 		Offset(5).
@@ -124,7 +124,7 @@ func TestQuery_OrderBy(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	_, _ = mgr.Query().
 		OrderAsc("name").
@@ -141,7 +141,7 @@ func TestQuery_OrderByDesc(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	_, _ = mgr.Query().
 		OrderDesc("age").
@@ -163,7 +163,7 @@ func TestQuery_First(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	result, err := mgr.Query().First(context.Background())
 	if err != nil {
@@ -184,7 +184,7 @@ func TestQuery_First_NoResults(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	result, err := mgr.Query().
 		Filter(Eq("name", "NonExistent")).
@@ -207,7 +207,7 @@ func TestQuery_Count(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	count, err := mgr.Query().Count(context.Background())
 	if err != nil {
@@ -251,7 +251,7 @@ func TestQuery_Count_WithFilter(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	count, err := mgr.Query().
 		Filter(Gt("age", 25)).
@@ -278,7 +278,7 @@ func TestQuery_Delete(t *testing.T) {
 	}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	count, err := mgr.Query().
 		Filter(Eq("name", "Alice")).
@@ -311,7 +311,7 @@ func TestQuery_Sum(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	sum, err := mgr.Query().Sum("age").Execute(context.Background())
 	if err != nil {
@@ -333,7 +333,7 @@ func TestQuery_Avg(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	avg, err := mgr.Query().Avg("age").Execute(context.Background())
 	if err != nil {
@@ -352,7 +352,7 @@ func TestQuery_MinMax(t *testing.T) {
 	maxTx := &mockTx{responses: [][]map[string]any{{{"result": float64(50)}}}}
 	conn := &mockConn{txs: []*mockTx{minTx, maxTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	minVal, err := mgr.Query().Min("age").Execute(context.Background())
 	if err != nil {
@@ -388,7 +388,7 @@ func TestQuery_UpdateWith(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.Query().UpdateWith(context.Background(), func(p *testPerson) {
 		p.Email = "updated@example.com"
@@ -424,7 +424,7 @@ func TestQuery_UpdateWith_NoResults(t *testing.T) {
 
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.Query().UpdateWith(context.Background(), func(p *testPerson) {
 		p.Email = "should-not-matter"
@@ -446,7 +446,7 @@ func TestQuery_Update_BulkMap(t *testing.T) {
 	}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	count, err := mgr.Query().Update(context.Background(), map[string]any{
 		"email": "bulk@example.com",
@@ -481,7 +481,7 @@ func TestQuery_Update_EmptyMap(t *testing.T) {
 
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	count, err := mgr.Query().Update(context.Background(), map[string]any{})
 	if err != nil {
@@ -503,7 +503,7 @@ func TestQuery_Update_ReturnsMatchedCount(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	count, err := mgr.Query().Update(context.Background(), map[string]any{
 		"email": "bulk@example.com",
@@ -531,7 +531,7 @@ func TestQuery_Delete_ReturnsMatchedCount(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	count, err := mgr.Query().Filter(Gt("age", 20)).Delete(context.Background())
 	if err != nil {
@@ -557,7 +557,7 @@ func TestQuery_Exists_True(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	exists, err := mgr.Query().Filter(Eq("name", "Alice")).Exists(context.Background())
 	if err != nil {
@@ -578,7 +578,7 @@ func TestQuery_Exists_False(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	exists, err := mgr.Query().Filter(Eq("name", "Nobody")).Exists(context.Background())
 	if err != nil {
@@ -602,7 +602,7 @@ func TestQuery_All(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.Query().All(context.Background())
 	if err != nil {
@@ -623,7 +623,7 @@ func TestQuery_Median(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	val, err := mgr.Query().Median("age").Execute(context.Background())
 	if err != nil {
@@ -645,7 +645,7 @@ func TestQuery_Std(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	val, err := mgr.Query().Std("age").Execute(context.Background())
 	if err != nil {
@@ -667,7 +667,7 @@ func TestQuery_Variance(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	val, err := mgr.Query().Variance("age").Execute(context.Background())
 	if err != nil {
@@ -690,7 +690,7 @@ func TestQuery_Aggregate_Multi(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.Query().Aggregate(context.Background(),
 		AggregateSpec{Attr: "age", Fn: "sum"},
@@ -718,7 +718,7 @@ func TestQuery_Aggregate_Empty(t *testing.T) {
 
 	conn := &mockConn{}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.Query().Aggregate(context.Background())
 	if err != nil {
@@ -742,7 +742,7 @@ func TestQuery_GroupBy(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	results, err := mgr.Query().GroupBy("name").Aggregate(context.Background(),
 		AggregateSpec{Attr: "age", Fn: "sum"},
@@ -770,7 +770,7 @@ func TestManager_GetByIID(t *testing.T) {
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	result, err := mgr.GetByIID(context.Background(), "0xABC")
 	if err != nil {
@@ -794,7 +794,7 @@ func TestManager_GetByIID_NotFound(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	result, err := mgr.GetByIID(context.Background(), "0xDEAD")
 	if err != nil {
@@ -859,7 +859,7 @@ func TestQuery_Chaining(t *testing.T) {
 	readTx := &mockTx{responses: [][]map[string]any{nil}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
-	mgr := NewManager[testPerson](db)
+	mgr := MustNewManager[testPerson](db)
 
 	// Test full chaining
 	_, _ = mgr.Query().

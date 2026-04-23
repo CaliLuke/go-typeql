@@ -8,7 +8,7 @@ The `Manager[T]` generic type provides Insert, Get, Update, Delete, Put (upsert)
 
 ```go
 db := gotype.NewDatabase(conn, "my_db")
-persons := gotype.NewManager[Person](db)
+persons := gotype.MustNewManager[Person](db)
 ```
 
 `NewManager` panics if type `T` has not been registered via `Register[T]()`.
@@ -43,7 +43,7 @@ Other retrieval methods:
 
 ```go
 // Get relations with role players populated
-jobs := gotype.NewManager[Employment](db)
+jobs := gotype.MustNewManager[Employment](db)
 results, err := jobs.GetWithRoles(ctx, nil)
 // results[0].Employee is populated with the Person data
 // results[0].Employer is populated with the Company data
@@ -89,8 +89,8 @@ For explicit transaction control across multiple managers, use `TransactionConte
 tc, err := db.Begin(gotype.WriteTransaction)
 defer tc.Close()
 
-persons := gotype.NewManagerWithTx[Person](tc)
-companies := gotype.NewManagerWithTx[Company](tc)
+persons := gotype.MustNewManagerWithTx[Person](tc)
+companies := gotype.MustNewManagerWithTx[Company](tc)
 
 persons.Insert(ctx, &Person{Name: "Alice"})
 companies.Insert(ctx, &Company{Name: "Acme"})
@@ -163,16 +163,16 @@ defer db.Close()
 gotype.MigrateFromEmpty(ctx, db)
 
 // Insert
-persons := gotype.NewManager[Person](db)
+persons := gotype.MustNewManager[Person](db)
 alice := &Person{Name: "Alice", Email: "alice@example.com"}
 persons.Insert(ctx, alice)
 
-companies := gotype.NewManager[Company](db)
+companies := gotype.MustNewManager[Company](db)
 acme := &Company{Name: "Acme Corp"}
 companies.Insert(ctx, acme)
 
 // Create relation
-jobs := gotype.NewManager[Employment](db)
+jobs := gotype.MustNewManager[Employment](db)
 jobs.Insert(ctx, &Employment{
     Employee: alice,
     Employer: acme,

@@ -125,7 +125,7 @@ func TestIntegration_ConnectionPool_ConcurrentQueries(t *testing.T) {
 	}
 	defer db.Close()
 
-	mgr := NewManager[poolTestPerson](db)
+	mgr := MustNewManager[poolTestPerson](db)
 
 	// Insert some initial data
 	ctx := context.Background()
@@ -259,7 +259,7 @@ func TestIntegration_ConnectionPool_Transactions(t *testing.T) {
 	}
 	defer db.Close()
 
-	mgr := NewManager[poolTestPerson](db)
+	mgr := MustNewManager[poolTestPerson](db)
 
 	ctx := context.Background()
 

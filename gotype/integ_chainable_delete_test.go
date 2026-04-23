@@ -19,7 +19,7 @@ func TestIntegration_ChainableDelete_ExpressionFilter(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	seedPersons(t, ctx, mgr)
 
 	// Delete persons with age > 30 → Charlie(35)
@@ -49,7 +49,7 @@ func TestIntegration_ChainableDelete_MultipleFilters(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	seedPersons(t, ctx, mgr)
 
 	// Delete persons with age >= 28 AND age <= 30 → Diana(28), Alice(30)
@@ -81,7 +81,7 @@ func TestIntegration_ChainableDelete_NoMatches(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	seedPersons(t, ctx, mgr)
 
 	_, err := mgr.Query().Filter(gotype.Eq("name", "NonExistent")).Delete(ctx)
@@ -99,7 +99,7 @@ func TestIntegration_ChainableDelete_RangeFilter(t *testing.T) {
 	db := setupTestDBDefault(t)
 	ctx := context.Background()
 
-	mgr := gotype.NewManager[Person](db)
+	mgr := gotype.MustNewManager[Person](db)
 	seedPersons(t, ctx, mgr)
 
 	// Delete persons with 25 <= age < 30 → Bob(25), Diana(28)
