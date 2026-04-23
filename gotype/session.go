@@ -59,6 +59,10 @@ type Conn interface {
 	IsOpen() bool
 }
 
+type contextTransactionConn interface {
+	TransactionContext(ctx context.Context, dbName string, txType int) (Tx, error)
+}
+
 // EnsureDatabase checks whether a database exists and creates it if not.
 // Returns true if the database was newly created, false if it already existed.
 func EnsureDatabase(ctx context.Context, conn Conn, name string) (bool, error) {
@@ -121,6 +125,22 @@ func (db *Database) Transaction(txType TransactionType) (Tx, error) {
 	return db.conn.Transaction(db.dbName, int(txType))
 }
 
+// TransactionContext opens a new transaction of the specified type and lets
+// context-aware Conn implementations honor cancellation while acquiring it.
+func (db *Database) TransactionContext(ctx context.Context, txType TransactionType) (Tx, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("open transaction: context cancelled: %w", err)
+	}
+	return db.openTransaction(ctx, txType)
+}
+
+func (db *Database) openTransaction(ctx context.Context, txType TransactionType) (Tx, error) {
+	if connWithContext, ok := db.conn.(contextTransactionConn); ok {
+		return connWithContext.TransactionContext(ctx, db.dbName, int(txType))
+	}
+	return db.conn.Transaction(db.dbName, int(txType))
+}
+
 // ExecuteWrite executes a query in a new write transaction and commits it.
 // If Commit fails, the underlying transaction has already been consumed by the
 // driver and cannot be rolled back or reused.
@@ -128,7 +148,7 @@ func (db *Database) ExecuteWrite(ctx context.Context, query string) ([]map[strin
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("write: context cancelled: %w", err)
 	}
-	tx, err := db.Transaction(WriteTransaction)
+	tx, err := db.openTransaction(ctx, WriteTransaction)
 	if err != nil {
 		return nil, fmt.Errorf("open write transaction: %w", err)
 	}
@@ -149,7 +169,7 @@ func (db *Database) ExecuteRead(ctx context.Context, query string) ([]map[string
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("read: context cancelled: %w", err)
 	}
-	tx, err := db.Transaction(ReadTransaction)
+	tx, err := db.openTransaction(ctx, ReadTransaction)
 	if err != nil {
 		return nil, fmt.Errorf("open read transaction: %w", err)
 	}
@@ -170,7 +190,14 @@ type TransactionContext struct {
 // The caller must call Close() when done. A finalizer will log a warning
 // if the transaction is garbage-collected without being closed.
 func (db *Database) Begin(txType TransactionType) (*TransactionContext, error) {
-	tx, err := db.Transaction(txType)
+	return db.BeginContext(context.Background(), txType)
+}
+
+// BeginContext starts a new TransactionContext with a ctx-aware transaction open.
+// The caller must call Close() when done. A finalizer will log a warning
+// if the transaction is garbage-collected without being closed.
+func (db *Database) BeginContext(ctx context.Context, txType TransactionType) (*TransactionContext, error) {
+	tx, err := db.openTransaction(ctx, txType)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
@@ -217,7 +244,7 @@ func (db *Database) ExecuteSchema(ctx context.Context, query string) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("schema: context cancelled: %w", err)
 	}
-	tx, err := db.Transaction(SchemaTransaction)
+	tx, err := db.openTransaction(ctx, SchemaTransaction)
 	if err != nil {
 		return fmt.Errorf("open schema transaction: %w", err)
 	}

@@ -701,3 +701,34 @@ func TestPooledTx_ReturnsConnectionOnCommit(t *testing.T) {
 		t.Errorf("Expected connection available after Commit, got %d", stats.Available)
 	}
 }
+
+func TestPoolConnAdapter_TransactionContext_UsesCallerContext(t *testing.T) {
+	factory := func() (Conn, error) {
+		return newPoolMockConn(1), nil
+	}
+
+	config := PoolConfig{MinSize: 0, MaxSize: 1}
+	pool, err := NewConnPool(config, factory)
+	if err != nil {
+		t.Fatalf("NewConnPool failed: %v", err)
+	}
+	defer pool.Close()
+
+	adapter := &poolConnAdapter{pool: pool, dbName: "testdb"}
+	conn, err := pool.Get(context.Background())
+	if err != nil {
+		t.Fatalf("initial Get failed: %v", err)
+	}
+	defer pool.Put(conn)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = adapter.TransactionContext(ctx, "testdb", 0)
+	if err == nil {
+		t.Fatal("expected TransactionContext to fail for cancelled ctx")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}

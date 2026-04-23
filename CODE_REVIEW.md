@@ -10,15 +10,6 @@ No remaining open top-priority issues.
 
 ## 2. Correctness — secondary
 
-### 2.3 `Database.Transaction()` has no ctx parameter
-
-`session.go:119–121`: callers pass `ctx` to `ExecuteWrite`, which then
-calls `Transaction(...)` — but transaction-open itself isn't
-ctx-aware. The pool adapter confirms this:
-`pool.go:388` passes `context.Background()` to `pool.Get`. If the pool
-is saturated, the caller's deadline is ignored until a connection frees.
-This is a breaking API change; consider `TransactionCtx(ctx, txType)`.
-
 ## 3. Debuggability
 
 ### 3.2 `TransactionContext` leak warning is log-only
@@ -82,4 +73,4 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **2.3** (correctness/API cleanup) — highest remaining leverage.
+No remaining explicit ordering; the open items are mostly debuggability and lower-priority cleanup.

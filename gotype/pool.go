@@ -405,7 +405,13 @@ type poolConnAdapter struct {
 // Transaction opens a transaction using a connection from the pool.
 // The transaction holds the connection until Close/Commit/Rollback is called.
 func (pca *poolConnAdapter) Transaction(dbName string, txType int) (Tx, error) {
-	conn, err := pca.pool.Get(context.Background())
+	return pca.TransactionContext(context.Background(), dbName, txType)
+}
+
+// TransactionContext opens a transaction using a connection from the pool
+// while honoring caller cancellation during pool acquisition.
+func (pca *poolConnAdapter) TransactionContext(ctx context.Context, dbName string, txType int) (Tx, error) {
+	conn, err := pca.pool.Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get connection from pool: %w", err)
 	}
