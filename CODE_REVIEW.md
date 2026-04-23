@@ -16,8 +16,6 @@ No remaining open top-priority issues.
 
 ## 5. Performance — smaller
 
-- `ast.Compiler{}` is allocated on every call to `BuildX` in `strategy.go`.
-  The compiler is stateless; make it a package-level `var defaultCompiler = &Compiler{}`.
 - `coerceTimeFast` (`hydrate.go:465`) loops three layouts on every time
   field. Cache the last-successful layout per ModelInfo field.
 - `Registry.LookupByGoName` (`registry.go:142–151`) linear-scans and

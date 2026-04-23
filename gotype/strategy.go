@@ -46,6 +46,8 @@ type ModelStrategy interface {
 	FetchBuilder
 }
 
+var defaultCompiler = &ast.Compiler{}
+
 // strategyFor returns the appropriate strategy for the given model kind.
 func strategyFor(kind ModelKind) ModelStrategy {
 	if kind == ModelKindRelation {
@@ -437,7 +439,7 @@ func getIIDFromValueInfo(v reflect.Value, info *ModelInfo) string {
 }
 
 func compileNode(node ast.QueryNode) (string, error) {
-	return (&ast.Compiler{}).Compile(node)
+	return defaultCompiler.Compile(node)
 }
 
 func appendFetchProjectionItems(items []string, fields []FieldInfo, varName string) []string {
