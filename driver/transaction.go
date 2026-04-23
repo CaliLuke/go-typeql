@@ -123,7 +123,7 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 	var queryErr *C.char
 	buf := C.typedb_transaction_query(t.ptr, cQuery, cOpts, &outLen, &queryErr)
 	if buf == nil {
-		if err := getError(queryErr); err != nil {
+		if err := withQuery(getError(queryErr), query); err != nil {
 			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, "with_options", opts != nil)
 			return nil, err
 		}
@@ -132,6 +132,7 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 	}
 	defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
 	results, err := decodeMsgpack(buf, outLen)
+	err = withQuery(err, query)
 	if err != nil {
 		t.logQueryDuration(start, query, queryOp, queryFP, 0, int(outLen), err, "with_options", opts != nil)
 		return nil, err
@@ -197,7 +198,7 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 		var queryErr *C.char
 		buf := C.typedb_transaction_query(t.ptr, cQuery, nil, &outLen, &queryErr)
 		if buf == nil {
-			if err := getError(queryErr); err != nil {
+			if err := withQuery(getError(queryErr), query); err != nil {
 				t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, "with_context", true)
 				ch <- queryResult{err: err}
 				return
@@ -209,6 +210,7 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 		defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
 
 		results, err := decodeMsgpack(buf, outLen)
+		err = withQuery(err, query)
 		t.logQueryDuration(start, query, queryOp, queryFP, len(results), int(outLen), err, "with_context", true)
 		ch <- queryResult{results: results, err: err}
 	}()

@@ -12,10 +12,36 @@ import (
 type DriverError struct {
 	// Message is the error message returned from the driver.
 	Message string
+	// Query is the TypeQL statement associated with the error, when available.
+	Query string
 }
 
 func (e *DriverError) Error() string {
+	if e.Query != "" {
+		return e.Message + "\nquery:\n" + e.Query
+	}
 	return e.Message
+}
+
+func withQuery(err error, query string) error {
+	if err == nil || query == "" {
+		return err
+	}
+
+	var driverErr *DriverError
+	if errors.As(err, &driverErr) {
+		if driverErr.Query != "" {
+			return err
+		}
+		clone := *driverErr
+		clone.Query = query
+		return &clone
+	}
+
+	return &DriverError{
+		Message: err.Error(),
+		Query:   query,
+	}
 }
 
 var (

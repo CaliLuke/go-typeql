@@ -12,13 +12,6 @@ No remaining open top-priority issues.
 
 ## 3. Debuggability
 
-### 3.4 Error messages often lack the query string
-
-When a TypeQL compile/execute fails, the returned error has "update
-person: &lt;driver error&gt;" but no query text. During development this is
-the #1 time-waster. Gate a `DEBUG`-level log (or optional
-`err.(*DriverError).Query`) to include the offending query.
-
 ## 4. Speed of development
 
 ## 5. Performance — smaller
