@@ -64,7 +64,7 @@ fi
 
 run_gate "staticcheck" "$HOME/go/bin/staticcheck" "${UNIT_PKGS[@]}"
 
-run_gate "go test" go test "${UNIT_PKGS[@]}" -timeout 120s
+run_gate "go test (-race)" go test -race "${UNIT_PKGS[@]}" -timeout 180s
 
 # Non-test Go sources for the gocyclo / dupl blocking gates — production code
 # only. Test files routinely have high parallel-symmetry (deliberate) and
@@ -79,8 +79,8 @@ run_gate "gocyclo (>20, non-test)" bash -c "
   fi
 "
 
-run_gate "dupl (>=100 tokens, non-test)" bash -c "
-  out=\$(dupl -threshold 100 $NON_TEST_GO 2>/dev/null)
+run_gate "dupl (>=75 tokens, non-test)" bash -c "
+  out=\$(dupl -threshold 75 $NON_TEST_GO 2>/dev/null)
   groups=\$(echo \"\$out\" | grep -c '^found')
   if [ \"\$groups\" -gt 0 ]; then
     echo \"\$out\"

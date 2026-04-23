@@ -86,20 +86,7 @@ func (c *Compiler) compileClause(clause Clause) (string, error) {
 }
 
 func (c *Compiler) compileMatchClause(cl MatchClause) (string, error) {
-	var b strings.Builder
-	b.WriteString("match\n")
-	for i, p := range cl.Patterns {
-		if i > 0 {
-			b.WriteString(";\n")
-		}
-		s, err := c.compilePattern(p)
-		if err != nil {
-			return "", err
-		}
-		b.WriteString(s)
-	}
-	b.WriteByte(';')
-	return b.String(), nil
+	return joinCompiled("match\n", ";\n", ";", cl.Patterns, c.compilePattern)
 }
 
 func (c *Compiler) compileStmtBlock(keyword string, statements []Statement) (string, error) {
@@ -115,19 +102,25 @@ func (c *Compiler) compileStmtBlock(keyword string, statements []Statement) (str
 }
 
 func (c *Compiler) compileFetchClause(cl FetchClause) (string, error) {
+	return joinCompiled("fetch {\n  ", ",\n  ", "\n};", cl.Items, c.compileFetchItem)
+}
+
+// joinCompiled compiles each item and concatenates prefix + items (separated) + suffix.
+// Used by clause compilers that share this shape (match, fetch).
+func joinCompiled[T any](prefix, separator, suffix string, items []T, compile func(T) (string, error)) (string, error) {
 	var b strings.Builder
-	b.WriteString("fetch {\n  ")
-	for i, item := range cl.Items {
+	b.WriteString(prefix)
+	for i, item := range items {
 		if i > 0 {
-			b.WriteString(",\n  ")
+			b.WriteString(separator)
 		}
-		compiled, err := c.compileFetchItem(item)
+		s, err := compile(item)
 		if err != nil {
 			return "", err
 		}
-		b.WriteString(compiled)
+		b.WriteString(s)
 	}
-	b.WriteString("\n};")
+	b.WriteString(suffix)
 	return b.String(), nil
 }
 

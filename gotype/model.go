@@ -278,36 +278,33 @@ func FromDict[T any](data map[string]any) (*T, error) {
 
 // ToInsertQuery generates a TypeQL insert query string for the given instance.
 func ToInsertQuery[T any](instance *T) (string, error) {
-	var zero T
-	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
+	info, s, err := lookupStrategy[T]()
+	if err != nil {
+		return "", err
 	}
-
-	info, ok := LookupType(t)
-	if !ok {
-		return "", fmt.Errorf("gotype: type %s is not registered", t.Name())
-	}
-
-	s := strategyFor(info.Kind)
 	return s.BuildInsertQuery(info, instance, "e"), nil
 }
 
 // ToMatchQuery generates a TypeQL match clause for the given instance (by key fields).
 func ToMatchQuery[T any](instance *T) (string, error) {
+	info, s, err := lookupStrategy[T]()
+	if err != nil {
+		return "", err
+	}
+	return s.BuildMatchByKey(info, instance, "e"), nil
+}
+
+func lookupStrategy[T any]() (*ModelInfo, ModelStrategy, error) {
 	var zero T
 	t := reflect.TypeOf(zero)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-
 	info, ok := LookupType(t)
 	if !ok {
-		return "", fmt.Errorf("gotype: type %s is not registered", t.Name())
+		return nil, nil, fmt.Errorf("gotype: type %s is not registered", t.Name())
 	}
-
-	s := strategyFor(info.Kind)
-	return s.BuildMatchByKey(info, instance, "e"), nil
+	return info, strategyFor(info.Kind), nil
 }
 
 // toKebabCase converts a PascalCase Go struct name to kebab-case.
