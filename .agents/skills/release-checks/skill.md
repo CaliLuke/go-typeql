@@ -82,7 +82,30 @@ go test ./ast/... ./gotype/... ./tqlgen/... -v 2>&1 | grep -c "^--- PASS"
 
 Update the number in the comment at the top of the Commands section in `AGENTS.md`. `CLAUDE.md` is a symlink to `AGENTS.md`. If the comment is no longer at that location, grep for the prior count to find it.
 
-## 8. Update installation and release docs
+## 8. Verify upstream dependency versions
+
+Check that all upstream version pins are consistent with each other and with the target release. The canonical locations are:
+
+| Dependency                        | File                           | Field                                     |
+| --------------------------------- | ------------------------------ | ----------------------------------------- |
+| `typedb-driver` (Rust crate)      | `driver/rust/Cargo.toml`       | `typedb-driver = { version = "..." }`     |
+| `typeql` (Rust crate)             | `driver/rust/Cargo.toml`       | `typeql = "..."`                          |
+| TypeDB server (integration tests) | `docker-compose.yml`           | `image: typedb/typedb:...`                |
+| TypeQL grammar reference          | `typeql-reference/README.md`   | tag mention in prose                      |
+| TypeQL grammar file               | `typeql-reference/typeql.pest` | vendored copy — diff against upstream tag |
+| Driver version mention            | `docs/DEVELOPMENT.md`          | prose reference                           |
+| Driver version mention            | `docs/api/driver.md`           | prose reference                           |
+
+Version sources to check:
+
+- `typedb-driver` crate: <https://crates.io/crates/typedb-driver>
+- `typeql` crate: <https://crates.io/crates/typeql>
+- TypeDB server releases: <https://github.com/typedb/typedb/releases>
+- TypeQL grammar releases: <https://github.com/typedb/typeql/releases>
+
+After updating `Cargo.toml`, always run `cargo update` inside `driver/rust/` to regenerate `Cargo.lock` — the lock file is what actually determines what gets downloaded during `make build-rust`.
+
+## 9. Update installation and release docs
 
 Update every user-facing version reference and artifact instruction:
 
@@ -94,14 +117,14 @@ Specifically verify:
 
 - `README.md` uses the new version in both `go get` and `gh release download` examples.
 - Build/install docs reference the generic archive name `libtypedb_go_ffi.a` (the name after download/rename).
-- Release-download docs reference the per-platform names (`libtypedb_go_ffi-<os>-<arch>.a`, see step 13).
+- Release-download docs reference the per-platform names (`libtypedb_go_ffi-<os>-<arch>.a`, see step 14).
 - Docs clearly state that `go get` downloads source only; it does not build the Rust archive automatically.
 
-## 9. Commit outstanding changes
+## 10. Commit outstanding changes
 
-Commit everything from steps 5–8.
+Commit everything from steps 5–9.
 
-## 10. Tag the release
+## 11. Tag the release
 
 Push `main` first so CI can verify before the tag goes out:
 
@@ -111,23 +134,23 @@ git tag $ARGUMENTS
 git push origin $ARGUMENTS
 ```
 
-## 11. Create a GitHub release
+## 12. Create a GitHub release
 
-Use `--generate-notes` to seed an initial changelog from commits — you'll replace it in step 12.
+Use `--generate-notes` to seed an initial changelog from commits — you'll replace it in step 13.
 
 ```bash
 gh release create $ARGUMENTS --generate-notes --title "$ARGUMENTS"
 ```
 
-## 12. Write a changelog
+## 13. Write a changelog
 
-Edit the release notes with a human-written summary: new features, new types/functions, options, documentation changes. Use the auto-generated notes from step 11 as a reference. Omit internal-only changes (instruction-file edits, benchmark DB churn, local housekeeping).
+Edit the release notes with a human-written summary: new features, new types/functions, options, documentation changes. Use the auto-generated notes from step 12 as a reference. Omit internal-only changes (instruction-file edits, benchmark DB churn, local housekeeping).
 
 ```bash
 gh release edit $ARGUMENTS --notes "..."
 ```
 
-## 13. Verify published assets and pkg.go.dev
+## 14. Verify published assets and pkg.go.dev
 
 Visit `https://pkg.go.dev/github.com/CaliLuke/go-typeql@$ARGUMENTS`. Force indexing if needed:
 
@@ -141,7 +164,7 @@ Also verify the GitHub release contains the expected Rust static libraries and t
 - `libtypedb_go_ffi-darwin-amd64.a`
 - `libtypedb_go_ffi-darwin-arm64.a`
 
-## 14. Report completion
+## 15. Report completion
 
 Report back to the user with:
 

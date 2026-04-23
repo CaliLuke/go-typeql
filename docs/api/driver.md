@@ -4,7 +4,7 @@
 
 The `driver` package provides Go bindings to the official TypeDB `typedb-driver` 3.x Rust crate via CGo. All files are gated with `//go:build cgo && typedb` so they don't affect builds that don't need the driver.
 
-The bundled Rust FFI crate currently depends on `typedb-driver` `3.8.4-rc0`.
+The bundled Rust FFI crate currently depends on `typedb-driver` `3.10.0`.
 
 `go get` only downloads the module source. It does not build the Rust static library automatically. If you import `driver/`, you must either run `make build-rust` in the module tree that Go is compiling, or provide a prebuilt `libtypedb_go_ffi.a` and build with the `typedb_prebuilt` tag. Release archives are published for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`.
 
