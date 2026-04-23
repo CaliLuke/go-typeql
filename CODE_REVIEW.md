@@ -18,13 +18,6 @@ count via `reduce $c = count($e);` in the same tx. Either plumb that
 through or change the signature to `error` (not `(int64, error)`) to
 stop misleading callers.
 
-### 2.2 `getIIDOf` / `setIIDOn` do a registry lookup per call
-
-`crud.go:710–727`: both helpers do `LookupType(v.Type())` every call,
-even though `Manager[T]` already has `m.info` cached. In a tight insert
-loop this is one `sync.RWMutex` acquisition per row per field. Either
-pass `info` in or add a fast-path.
-
 ### 2.3 `Database.Transaction()` has no ctx parameter
 
 `session.go:119–121`: callers pass `ctx` to `ExecuteWrite`, which then
@@ -106,4 +99,4 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **2.1 / 2.2 / 2.3** (correctness/API cleanup) — highest remaining leverage.
+1. **2.1 / 2.3** (correctness/API cleanup) — highest remaining leverage.

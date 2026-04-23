@@ -93,7 +93,7 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error {
 	// Parse IID from insert result (fetch clause returns it)
 	if len(results) == 1 {
 		if iid := extractIID(results[0]); iid != "" {
-			setIIDOn(instance, iid)
+			setIIDOnInfo(instance, m.info, iid)
 		}
 	}
 
@@ -189,7 +189,7 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error {
 	if err := checkCtx(ctx, "update", m.info.TypeName); err != nil {
 		return err
 	}
-	iid := getIIDOf(instance)
+	iid := getIIDOfInfo(instance, m.info)
 	if iid == "" {
 		return fmt.Errorf("update %s: instance has no IID", m.info.TypeName)
 	}
@@ -206,7 +206,7 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error {
 // It issues one delete query to remove all non-key attribute values, then one
 // insert query to set the new values, minimizing round-trips.
 func (m *Manager[T]) updateInstanceInTx(ctx context.Context, tx Tx, instance *T) error {
-	iid := getIIDOf(instance)
+	iid := getIIDOfInfo(instance, m.info)
 	if iid == "" {
 		return fmt.Errorf("update %s: instance has no IID", m.info.TypeName)
 	}
@@ -297,7 +297,7 @@ func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOpti
 	if err := checkCtx(ctx, "delete", m.info.TypeName); err != nil {
 		return err
 	}
-	iid := getIIDOf(instance)
+	iid := getIIDOfInfo(instance, m.info)
 	if iid == "" {
 		return fmt.Errorf("delete %s: instance has no IID", m.info.TypeName)
 	}
@@ -348,7 +348,7 @@ func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...Del
 		if inst == nil {
 			return fmt.Errorf("delete_many %s[%d]: instance must not be nil", m.info.TypeName, i)
 		}
-		if getIIDOf(inst) == "" {
+		if getIIDOfInfo(inst, m.info) == "" {
 			return fmt.Errorf("delete_many %s[%d]: instance has no IID", m.info.TypeName, i)
 		}
 	}
@@ -356,7 +356,7 @@ func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...Del
 	// Strict mode: pre-check existence of all instances
 	if cfg.strict {
 		for i, inst := range instances {
-			iid := getIIDOf(inst)
+			iid := getIIDOfInfo(inst, m.info)
 			count, err := m.countByIID(ctx, iid)
 			if err != nil {
 				return fmt.Errorf("delete_many %s[%d]: strict check: %w", m.info.TypeName, i, err)
@@ -369,7 +369,7 @@ func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...Del
 
 	return m.withWriteTx(ctx, "delete_many", m.writeTx, func(tx Tx) error {
 		for i, inst := range instances {
-			iid := getIIDOf(inst)
+			iid := getIIDOfInfo(inst, m.info)
 			query := fmt.Sprintf("match\n$e isa %s, iid %s;\ndelete $e;", m.info.TypeName, iid)
 			_, err := tx.QueryWithContext(ctx, query)
 			if err != nil {
@@ -391,7 +391,7 @@ func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error {
 		if inst == nil {
 			return fmt.Errorf("update_many %s[%d]: instance must not be nil", m.info.TypeName, i)
 		}
-		if getIIDOf(inst) == "" {
+		if getIIDOfInfo(inst, m.info) == "" {
 			return fmt.Errorf("update_many %s[%d]: instance has no IID", m.info.TypeName, i)
 		}
 	}
@@ -440,7 +440,7 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
 			}
 			if len(results) == 1 {
 				if iid := extractIID(results[0]); iid != "" {
-					setIIDOn(instance, iid)
+					setIIDOnInfo(instance, m.info, iid)
 				}
 			}
 		}
@@ -491,7 +491,7 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 			}
 			if len(results) == 1 {
 				if iid := extractIID(results[0]); iid != "" {
-					setIIDOn(inst, iid)
+					setIIDOnInfo(inst, m.info, iid)
 				}
 			}
 		}
@@ -552,7 +552,7 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 
 	for i, iid := range pendingIIDs {
 		if iid != "" {
-			setIIDOn(instances[i], iid)
+			setIIDOnInfo(instances[i], m.info, iid)
 		}
 	}
 
@@ -738,23 +738,23 @@ func (m *Manager[T]) hydrateResults(results []map[string]any) ([]*T, error) {
 	return instances, nil
 }
 
-// getIIDOf extracts the IID from any entity or relation pointer.
-func getIIDOf[T any](instance *T) string {
+// getIIDOfInfo extracts the IID from any entity or relation pointer using
+// the already-resolved model info when available.
+func getIIDOfInfo[T any](instance *T, info *ModelInfo) string {
 	v := reflect.ValueOf(instance)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	info, _ := LookupType(v.Type())
 	return getIIDFromValueInfo(v, info)
 }
 
-// setIIDOn sets the IID on an entity or relation instance.
-func setIIDOn[T any](instance *T, iid string) {
+// setIIDOnInfo sets the IID on an entity or relation instance using the
+// already-resolved model info when available.
+func setIIDOnInfo[T any](instance *T, info *ModelInfo, iid string) {
 	v := reflect.ValueOf(instance)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	info, _ := LookupType(v.Type())
 	setIIDWithInfo(v, info, iid)
 }
 
