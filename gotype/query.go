@@ -128,14 +128,21 @@ func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
 
 func (q *Query[T]) buildMatchClause() (string, error) {
 	varName := "e"
-	var patterns []string
-	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, q.mgr.info.TypeName))
+	var b strings.Builder
+	b.WriteString("match\n$")
+	b.WriteString(varName)
+	b.WriteString(" isa ")
+	b.WriteString(q.mgr.info.TypeName)
+	b.WriteString(";")
 
 	for _, f := range q.filters {
-		patterns = append(patterns, f.ToPatterns(varName)...)
+		for _, pattern := range f.ToPatterns(varName) {
+			b.WriteByte('\n')
+			b.WriteString(pattern)
+		}
 	}
 
-	return "match\n" + strings.Join(patterns, "\n"), nil
+	return b.String(), nil
 }
 
 func (q *Query[T]) buildQuery() (string, error) {
@@ -148,36 +155,52 @@ func (q *Query[T]) buildQuery() (string, error) {
 		return "", err
 	}
 
-	var parts []string
-	parts = append(parts, match)
+	var b strings.Builder
+	b.WriteString(match)
 
 	// Sort
 	if len(q.orderBy) > 0 {
-		var sorts []string
 		for _, o := range q.orderBy {
 			attrVar := sanitizeVar("e__" + o.Attr)
 			// Ensure we have a has pattern for the sort attribute
-			match += fmt.Sprintf("\n$e has %s $%s;", o.Attr, attrVar)
-			dir := "asc"
-			if o.Desc {
-				dir = "desc"
-			}
-			sorts = append(sorts, fmt.Sprintf("$%s %s", attrVar, dir))
+			b.WriteString("\n$e has ")
+			b.WriteString(o.Attr)
+			b.WriteString(" $")
+			b.WriteString(attrVar)
+			b.WriteString(";")
 		}
-		parts = []string{match} // rebuild with added has patterns
-		parts = append(parts, "sort "+strings.Join(sorts, ", ")+";")
+
+		b.WriteString("\nsort ")
+		for i, o := range q.orderBy {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteByte('$')
+			b.WriteString(sanitizeVar("e__" + o.Attr))
+			if o.Desc {
+				b.WriteString(" desc")
+			} else {
+				b.WriteString(" asc")
+			}
+		}
+		b.WriteString(";")
 	}
 
 	// Pagination
 	if q.offset > 0 {
-		parts = append(parts, fmt.Sprintf("offset %d;", q.offset))
+		b.WriteString("\noffset ")
+		b.WriteString(strconv.Itoa(q.offset))
+		b.WriteString(";")
 	}
 	if q.limit > 0 {
-		parts = append(parts, fmt.Sprintf("limit %d;", q.limit))
+		b.WriteString("\nlimit ")
+		b.WriteString(strconv.Itoa(q.limit))
+		b.WriteString(";")
 	}
 
-	parts = append(parts, fetch)
-	return strings.Join(parts, "\n"), nil
+	b.WriteByte('\n')
+	b.WriteString(fetch)
+	return b.String(), nil
 }
 
 func (q *Query[T]) buildCountQuery() (string, error) {
@@ -185,7 +208,10 @@ func (q *Query[T]) buildCountQuery() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return match + "\nreduce $count = count($e);", nil
+	var b strings.Builder
+	b.WriteString(match)
+	b.WriteString("\nreduce $count = count($e);")
+	return b.String(), nil
 }
 
 func (q *Query[T]) buildDeleteQuery() (string, error) {
@@ -193,7 +219,10 @@ func (q *Query[T]) buildDeleteQuery() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return match + "\ndelete $e;", nil
+	var b strings.Builder
+	b.WriteString(match)
+	b.WriteString("\ndelete $e;")
+	return b.String(), nil
 }
 
 // UpdateWith fetches all matching instances, applies fn to each, then updates them all.

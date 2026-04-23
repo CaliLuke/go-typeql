@@ -727,12 +727,19 @@ func (m *Manager[T]) buildFilteredMatch(varName string, filters map[string]any) 
 		return m.strategy.BuildMatchAll(m.info, varName)
 	}
 
-	var constraints []string
-	constraints = append(constraints, fmt.Sprintf("$%s isa %s", varName, m.info.TypeName))
+	var b strings.Builder
+	b.WriteString("match\n$")
+	b.WriteString(varName)
+	b.WriteString(" isa ")
+	b.WriteString(m.info.TypeName)
 	for attr, val := range filters {
-		constraints = append(constraints, fmt.Sprintf("has %s %s", attr, FormatValue(val)))
+		b.WriteString(",\nhas ")
+		b.WriteString(attr)
+		b.WriteByte(' ')
+		b.WriteString(FormatValue(val))
 	}
-	return "match\n" + strings.Join(constraints, ",\n") + ";", nil
+	b.WriteString(";")
+	return b.String(), nil
 }
 
 func (m *Manager[T]) hydrateResults(results []map[string]any) ([]*T, error) {

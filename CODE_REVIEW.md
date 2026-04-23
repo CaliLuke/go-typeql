@@ -6,23 +6,7 @@ Section 1 ("Top issues") is the highest-signal list; later sections are broader 
 
 ## 1. Top issues
 
-### 1.1 Hot-path query builders use `fmt.Sprintf` + `strings.Join` + `[]string` accumulation
-
-`gotype/query.go:119–169, 222–260, 308–330, 417–476`,
-`gotype/crud.go:680–691`, `gotype/filter.go` (~30 call sites). Every
-call path that produces a query slices-up little `fmt.Sprintf` results,
-appends them, and joins. For a single read this is fine; under load
-(e.g. an HTTP handler firing one query per request) it's a lot of
-garbage. A single `strings.Builder` threaded through the builder chain
-would cut allocations by ~4–10× on measured paths.
-
-Related: `query.go:131–165` (`buildQuery`) performs the
-double-build dance — `match := ...buildMatchClause()`, then inside
-the `if len(q.orderBy) > 0` branch `match +=` mutates it, then
-`parts = []string{match}` discards the initially-appended version.
-Refactor to build a single time.
-
-### 1.2 `extractFieldValues` allocates a 1-slot slice per scalar field
+### 1.1 `extractFieldValues` allocates a 1-slot slice per scalar field
 
 `gotype/strategy.go:423–445`: the common case (scalar, non-slice) goes
 through `return []any{val}`. Callers iterate the slice with one element.
@@ -187,6 +171,6 @@ For contrast — these are well-done and worth preserving when refactoring:
 ## 8. Suggested ordering for fixes
 
 1. **2.6** (partial-success mutation) — small and correctness-sensitive.
-2. **1.1, 1.2** (perf quick wins) — contained, benchmarkable.
+2. **1.1** (perf quick win) — contained and benchmarkable.
 3. **2.5** (pool concurrency) — bug potential grows with adoption.
 4. **3.1, 4.1, 4.3** (refactors) — do after the above to avoid merge pain.
