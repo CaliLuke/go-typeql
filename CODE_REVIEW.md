@@ -16,11 +16,9 @@ No remaining open top-priority issues.
 
 ## 5. Performance — smaller
 
-- `validateModelNames` (`registry.go:74–111`) runs `IsReservedWord` +
-  `ValidateIdentifier` on every field of every register call; if
-  `reserved.go` uses a slice scan, replace with `map[string]struct{}`.
+No remaining concrete performance fixes from this review pass.
 
-## 6. Low-priority / nits
+## 6. Follow-up Review Notes
 
 - `ast/compiler.go:31`: `"unknown node type: %T"` — include the node's
   position/context if available (currently AST has no position info;
