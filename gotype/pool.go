@@ -117,83 +117,103 @@ func (p *ConnPool) Get(ctx context.Context) (Conn, error) {
 		return nil, err
 	}
 
-	p.mu.Lock()
+	for {
+		p.mu.Lock()
 
-	if p.closed {
-		p.mu.Unlock()
-		return nil, ErrPoolClosed
-	}
-
-	// Try to get an available connection
-	for len(p.conns) > 0 {
-		pc := p.conns[len(p.conns)-1]
-		p.conns = p.conns[:len(p.conns)-1]
-
-		// Validate connection before returning
-		if pc.conn.IsOpen() {
+		if p.closed {
 			p.mu.Unlock()
-			return pc.conn, nil
+			return nil, ErrPoolClosed
 		}
 
-		// Connection is dead, close it and try next one
-		pc.conn.Close()
-		p.numOpen--
-	}
+		// Try to get an available connection.
+		if n := len(p.conns); n > 0 {
+			pc := p.conns[n-1]
+			p.conns = p.conns[:n-1]
+			p.mu.Unlock()
 
-	// No available connections - try to create a new one
-	if p.config.MaxSize == 0 || p.numOpen < p.config.MaxSize {
-		p.numOpen++
-		p.mu.Unlock()
+			// Validate the connection outside the pool mutex so one slow FFI
+			// health check does not block unrelated Get/Put operations.
+			if pc.conn.IsOpen() {
+				p.mu.Lock()
+				closed := p.closed
+				p.mu.Unlock()
+				if closed {
+					pc.conn.Close()
+					return nil, ErrPoolClosed
+				}
+				return pc.conn, nil
+			}
 
-		conn, err := p.connFactory()
-		if err != nil {
+			pc.conn.Close()
 			p.mu.Lock()
 			p.numOpen--
 			p.mu.Unlock()
-			return nil, fmt.Errorf("failed to create connection: %w", err)
+			continue
 		}
-		return conn, nil
-	}
 
-	// Pool is at max capacity - must wait for a connection
-	waiter := &poolWaiter{
-		result: make(chan poolWaitResult),
-		done:   make(chan struct{}),
-	}
-	p.waitQueue = append(p.waitQueue, waiter)
-	p.mu.Unlock()
+		// No available connections - try to create a new one.
+		if p.config.MaxSize == 0 || p.numOpen < p.config.MaxSize {
+			p.numOpen++
+			p.mu.Unlock()
 
-	// Determine wait timeout
-	waitCtx := ctx
-	if p.config.WaitTimeout > 0 {
-		var cancel context.CancelFunc
-		waitCtx, cancel = context.WithTimeout(ctx, p.config.WaitTimeout)
-		defer cancel()
-	}
+			conn, err := p.connFactory()
+			if err != nil {
+				p.mu.Lock()
+				p.numOpen--
+				p.mu.Unlock()
+				return nil, fmt.Errorf("failed to create connection: %w", err)
+			}
 
-	select {
-	case result := <-waiter.result:
-		if result.err != nil {
-			return nil, result.err
+			p.mu.Lock()
+			closed := p.closed
+			p.mu.Unlock()
+			if closed {
+				conn.Close()
+				return nil, ErrPoolClosed
+			}
+			return conn, nil
 		}
-		p.mu.Lock()
-		closed := p.closed
-		if result.accepted != nil {
-			result.accepted <- !closed
+
+		// Pool is at max capacity - must wait for a connection.
+		waiter := &poolWaiter{
+			result: make(chan poolWaitResult),
+			done:   make(chan struct{}),
 		}
+		p.waitQueue = append(p.waitQueue, waiter)
 		p.mu.Unlock()
-		if closed {
-			return nil, ErrPoolClosed
-		}
-		return result.conn, nil
-	case <-waitCtx.Done():
-		close(waiter.done)
-		p.removeWaiter(waiter)
 
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+		// Determine wait timeout
+		waitCtx := ctx
+		if p.config.WaitTimeout > 0 {
+			var cancel context.CancelFunc
+			waitCtx, cancel = context.WithTimeout(ctx, p.config.WaitTimeout)
+			defer cancel()
 		}
-		return nil, ErrPoolTimeout
+
+		select {
+		case result := <-waiter.result:
+			if result.err != nil {
+				return nil, result.err
+			}
+			p.mu.Lock()
+			closed := p.closed
+			if result.accepted != nil {
+				result.accepted <- !closed
+			}
+			p.mu.Unlock()
+			if closed {
+				return nil, ErrPoolClosed
+			}
+			return result.conn, nil
+		case <-waitCtx.Done():
+			close(waiter.done)
+			p.removeWaiter(waiter)
+
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, ErrPoolTimeout
+		}
 	}
 }
 

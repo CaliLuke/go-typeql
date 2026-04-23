@@ -23,9 +23,24 @@ type poolMockConn struct {
 	closed atomic.Bool
 }
 
+type blockingIsOpenConn struct {
+	poolMockConn
+	started chan struct{}
+	release chan struct{}
+}
+
 func newPoolMockConn(id int) *poolMockConn {
 	mc := &poolMockConn{id: id}
 	mc.open.Store(true)
+	return mc
+}
+
+func newBlockingIsOpenConn(id int) *blockingIsOpenConn {
+	mc := &blockingIsOpenConn{
+		poolMockConn: *newPoolMockConn(id),
+		started:      make(chan struct{}),
+		release:      make(chan struct{}),
+	}
 	return mc
 }
 
@@ -55,6 +70,12 @@ func (mc *poolMockConn) Close() {
 }
 
 func (mc *poolMockConn) IsOpen() bool {
+	return mc.open.Load()
+}
+
+func (mc *blockingIsOpenConn) IsOpen() bool {
+	close(mc.started)
+	<-mc.release
 	return mc.open.Load()
 }
 
@@ -246,6 +267,46 @@ func TestConnPool_DeadConnectionDiscarded(t *testing.T) {
 	}
 
 	pool.Put(conn2)
+}
+
+func TestConnPool_GetDoesNotHoldMutexDuringIsOpen(t *testing.T) {
+	pool := &ConnPool{
+		conns:   make([]pooledConn, 0, 1),
+		numOpen: 1,
+	}
+
+	blockingConn := newBlockingIsOpenConn(1)
+	pool.conns = append(pool.conns, pooledConn{conn: blockingConn, idleSince: time.Now()})
+
+	getDone := make(chan struct{})
+	go func() {
+		defer close(getDone)
+		conn, err := pool.Get(context.Background())
+		if err != nil {
+			t.Errorf("Get failed: %v", err)
+			return
+		}
+		if conn != blockingConn {
+			t.Errorf("Get returned unexpected connection")
+		}
+	}()
+
+	<-blockingConn.started
+
+	putDone := make(chan struct{})
+	go func() {
+		pool.Put(newPoolMockConn(2))
+		close(putDone)
+	}()
+
+	select {
+	case <-putDone:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Put blocked while Get was waiting in IsOpen")
+	}
+
+	close(blockingConn.release)
+	<-getDone
 }
 
 func TestConnPool_ConcurrentAccess(t *testing.T) {

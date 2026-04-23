@@ -43,14 +43,6 @@ to roll back (driver state is already half-gone), so the behavior is
 correct but the ergonomics are confusing. Document that a failed commit
 leaves the tx unusable and no rollback is possible.
 
-### 2.5 Pool: `IsOpen()` under pool mutex
-
-`pool.go:133`: the pool acquires `p.mu` and then calls
-`pc.conn.IsOpen()`, which makes an FFI call. Every `Get` stalls
-every other `Get`/`Put` for a network-bound check. Move validation
-outside the lock (pop the conn under lock, validate unlocked, re-try
-if dead).
-
 ## 3. Debuggability
 
 ### 3.1 Seven-way `logFFIDuration` call sites in `QueryWithOptions`
@@ -155,5 +147,4 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **2.5** (pool concurrency) — bug potential grows with adoption.
-2. **3.1, 4.1, 4.3** (refactors) — do after the above to avoid merge pain.
+1. **3.1, 4.1, 4.3** (refactors) — highest remaining leverage.
