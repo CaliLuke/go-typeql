@@ -16,6 +16,14 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+var msgpackDecoderPool = sync.Pool{
+	New: func() any {
+		dec := msgpack.NewDecoder(bytes.NewReader(nil))
+		dec.UseLooseInterfaceDecoding(true)
+		return dec
+	},
+}
+
 // Transaction represents an active unit of work in a TypeDB database.
 // Transactions are used to execute queries and must be either committed or closed.
 type Transaction struct {
@@ -203,8 +211,14 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 // decodeMsgpack decodes a MessagePack byte buffer into a slice of maps.
 func decodeMsgpack(buf *C.uchar, outLen C.size_t) ([]map[string]any, error) {
 	goBytes := C.GoBytes(unsafe.Pointer(buf), C.int(outLen))
-	dec := msgpack.NewDecoder(bytes.NewReader(goBytes))
+	var reader bytes.Reader
+	reader.Reset(goBytes)
+
+	dec := msgpackDecoderPool.Get().(*msgpack.Decoder)
+	defer msgpackDecoderPool.Put(dec)
+	dec.Reset(&reader)
 	dec.UseLooseInterfaceDecoding(true)
+
 	var results []map[string]any
 	if err := dec.Decode(&results); err != nil {
 		return nil, &DriverError{Message: "failed to decode msgpack query results: " + err.Error()}

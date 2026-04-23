@@ -6,18 +6,7 @@ Section 1 ("Top issues") is the highest-signal list; later sections are broader 
 
 ## 1. Top issues
 
-### 1.1 `decodeMsgpack` allocates per query
-
-`driver/transaction.go:193–202`: `C.GoBytes` (full copy),
-`bytes.NewReader`, `msgpack.NewDecoder` (encoder config), `Decode`. For
-small result sets this is pure overhead. Options: (a) use
-`msgpack.Unmarshal` directly against a `C.GoBytes` slice, skipping the
-Reader; (b) keep a `sync.Pool` of decoders; (c) use
-`unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(outLen))` when the
-decoder promises not to retain the bytes (it doesn't — msgpack-v5 can
-alias strings via zero-copy), so stick with the copy but skip the Reader.
-
-### 1.2 Hot-path query builders use `fmt.Sprintf` + `strings.Join` + `[]string` accumulation
+### 1.1 Hot-path query builders use `fmt.Sprintf` + `strings.Join` + `[]string` accumulation
 
 `gotype/query.go:119–169, 222–260, 308–330, 417–476`,
 `gotype/crud.go:680–691`, `gotype/filter.go` (~30 call sites). Every
@@ -33,7 +22,7 @@ the `if len(q.orderBy) > 0` branch `match +=` mutates it, then
 `parts = []string{match}` discards the initially-appended version.
 Refactor to build a single time.
 
-### 1.3 `extractFieldValues` allocates a 1-slot slice per scalar field
+### 1.2 `extractFieldValues` allocates a 1-slot slice per scalar field
 
 `gotype/strategy.go:423–445`: the common case (scalar, non-slice) goes
 through `return []any{val}`. Callers iterate the slice with one element.
@@ -198,6 +187,6 @@ For contrast — these are well-done and worth preserving when refactoring:
 ## 8. Suggested ordering for fixes
 
 1. **2.6** (partial-success mutation) — small and correctness-sensitive.
-2. **1.1, 1.3** (perf quick wins) — contained, benchmarkable.
+2. **1.1, 1.2** (perf quick wins) — contained, benchmarkable.
 3. **2.5** (pool concurrency) — bug potential grows with adoption.
 4. **3.1, 4.1, 4.3** (refactors) — do after the above to avoid merge pain.
