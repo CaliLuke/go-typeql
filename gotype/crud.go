@@ -577,6 +577,8 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 	}
 	defer tx.Close()
 
+	pendingIIDs := make([]string, len(instances))
+
 	for i, inst := range instances {
 		if inst == nil {
 			return fmt.Errorf("insert_many %s[%d]: instance must not be nil", m.info.TypeName, i)
@@ -596,13 +598,19 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 		// Parse IID from insert result (fetch clause returns it)
 		if len(results) == 1 {
 			if iid := extractIID(results[0]); iid != "" {
-				setIIDOn(inst, iid)
+				pendingIIDs[i] = iid
 			}
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("insert_many %s: commit: %w", m.info.TypeName, err)
+	}
+
+	for i, iid := range pendingIIDs {
+		if iid != "" {
+			setIIDOn(instances[i], iid)
+		}
 	}
 
 	return nil

@@ -15,6 +15,7 @@ type mockTx struct {
 	idx       int
 	committed bool
 	closed    bool
+	commitErr error
 }
 
 func (m *mockTx) Query(query string) ([]map[string]any, error) {
@@ -36,6 +37,9 @@ func (m *mockTx) QueryWithContext(ctx context.Context, query string) ([]map[stri
 }
 
 func (m *mockTx) Commit() error {
+	if m.commitErr != nil {
+		return m.commitErr
+	}
 	m.committed = true
 	return nil
 }
@@ -720,6 +724,39 @@ func TestManager_PutMany(t *testing.T) {
 	assertContains(t, writeTx.queries[1], "put")
 	if !writeTx.committed {
 		t.Error("transaction was not committed")
+	}
+}
+
+func TestManager_InsertMany_CommitFailureDoesNotSetIIDs(t *testing.T) {
+	registerTestTypes(t)
+
+	writeTx := &mockTx{
+		responses: [][]map[string]any{
+			{{"_iid": "0xI1"}},
+			{{"_iid": "0xI2"}},
+		},
+		commitErr: fmt.Errorf("commit failed"),
+	}
+
+	conn := &mockConn{txs: []*mockTx{writeTx}}
+	db := NewDatabase(conn, "test_db")
+	mgr := NewManager[testPerson](db)
+
+	p1 := &testPerson{Name: "Alice", Email: "alice@example.com"}
+	p2 := &testPerson{Name: "Bob", Email: "bob@example.com"}
+
+	err := mgr.InsertMany(context.Background(), []*testPerson{p1, p2})
+	if err == nil {
+		t.Fatal("expected InsertMany to fail on commit error")
+	}
+	if !strings.Contains(err.Error(), "commit failed") {
+		t.Fatalf("expected commit failure error, got: %v", err)
+	}
+	if p1.GetIID() != "" {
+		t.Fatalf("expected first IID to remain unset after failed commit, got %q", p1.GetIID())
+	}
+	if p2.GetIID() != "" {
+		t.Fatalf("expected second IID to remain unset after failed commit, got %q", p2.GetIID())
 	}
 }
 

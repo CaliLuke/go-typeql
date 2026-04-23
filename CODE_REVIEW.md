@@ -51,16 +51,6 @@ every other `Get`/`Put` for a network-bound check. Move validation
 outside the lock (pop the conn under lock, validate unlocked, re-try
 if dead).
 
-### 2.6 `InsertMany` / `PutMany` never set IID under partial failure
-
-`crud.go:533–570`, `crud.go:473–517`: if item N fails, items [0,N-1] were
-already successfully queried but the commit hasn't run yet. Current code
-bails — OK. But IIDs for successful items were already parsed from the
-fetch result and set on the instance (`crud.go:558–562`). The caller
-gets mutated instances with IIDs for a transaction that will never
-commit. Either clear the IIDs on error or delay `setIIDOn` until after
-commit.
-
 ## 3. Debuggability
 
 ### 3.1 Seven-way `logFFIDuration` call sites in `QueryWithOptions`
@@ -165,6 +155,5 @@ For contrast — these are well-done and worth preserving when refactoring:
 
 ## 8. Suggested ordering for fixes
 
-1. **2.6** (partial-success mutation) — small and correctness-sensitive.
-2. **2.5** (pool concurrency) — bug potential grows with adoption.
-3. **3.1, 4.1, 4.3** (refactors) — do after the above to avoid merge pain.
+1. **2.5** (pool concurrency) — bug potential grows with adoption.
+2. **3.1, 4.1, 4.3** (refactors) — do after the above to avoid merge pain.
