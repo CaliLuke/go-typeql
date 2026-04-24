@@ -1,6 +1,6 @@
 services:
   typedb:
-    image: typedb/typedb:3.10.1
+    image: typedb/typedb:3.10.2
     container_name: typedb_test
     ports:
       - "${TYPEDB_PORT:-1730}:1729"
