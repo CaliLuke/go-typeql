@@ -1,6 +1,6 @@
 # Async Transaction Close Benchmark Results
 
-These results support the `v1.10.0` async transaction close change. They were run on
+These results support the `v1.10.1` async transaction close change. They were run on
 darwin/arm64 with an Apple M4 Pro against TypeDB on `localhost:1730`.
 
 Benchmark command:
