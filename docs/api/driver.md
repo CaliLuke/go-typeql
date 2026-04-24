@@ -61,6 +61,38 @@ err = txn.Commit()
 
 Transaction types: `Read` (0), `Write` (1), `Schema` (2).
 
+`Close()` is caller-fast for uncommitted transactions: it detaches the Go handle immediately and completes the checked TypeDB close on a bounded background worker. Close failures are logged because the `gotype.Tx` interface cannot return a close error.
+
+Use `CloseChecked()` when you deliberately want to wait for the TypeDB close result:
+
+```go
+if err := txn.CloseChecked(); err != nil {
+    log.Printf("close failed: %v", err)
+}
+```
+
+Use `CloseAsync` when you need a completion callback without blocking the caller:
+
+```go
+txn.CloseAsync(func(err error) {
+    if err != nil {
+        log.Printf("close failed: %v", err)
+    }
+})
+```
+
+`Commit()` and `Rollback()` remain synchronous. A deferred `Close()` after `Commit()` is a no-op because `Commit()` consumes the transaction handle.
+
+Long-running applications and integration tests can drain accepted background close work before shutdown:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+if err := driver.WaitForPendingCloses(ctx); err != nil {
+    log.Printf("transaction close drain timed out: %v", err)
+}
+```
+
 ## Database Management
 
 ```go

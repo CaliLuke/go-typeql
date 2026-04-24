@@ -56,6 +56,15 @@ func strategyFor(kind ModelKind) ModelStrategy {
 	return &entityStrategy{}
 }
 
+func appendIIDFetch(query, varName string) (string, error) {
+	fetch := ast.Fetch(ast.FetchFunc("_iid", "iid", "$"+varName))
+	fetchStr, err := compileNode(fetch)
+	if err != nil {
+		return "", err
+	}
+	return query + "\n" + fetchStr, nil
+}
+
 // --- Entity Strategy ---
 
 type entityStrategy struct{}
@@ -65,15 +74,7 @@ func (s *entityStrategy) BuildInsertQuery(info *ModelInfo, instance any, varName
 	if err != nil {
 		return "", err
 	}
-
-	// Append fetch clause to retrieve IID in the same query
-	fetch := ast.Fetch(ast.FetchFunc("_iid", "iid", "$"+varName))
-	fetchStr, err := compileNode(fetch)
-	if err != nil {
-		return "", err
-	}
-
-	return query + "\n" + fetchStr, nil
+	return appendIIDFetch(query, varName)
 }
 
 func (s *entityStrategy) BuildPutQuery(info *ModelInfo, instance any, varName string) (string, error) {
@@ -188,15 +189,7 @@ func (s *relationStrategy) BuildInsertQuery(info *ModelInfo, instance any, varNa
 	if err != nil {
 		return "", err
 	}
-
-	// Append fetch clause to retrieve IID in the same query
-	fetch := ast.Fetch(ast.FetchFunc("_iid", "iid", "$"+varName))
-	fetchStr, err := compileNode(fetch)
-	if err != nil {
-		return "", err
-	}
-
-	return query + "\n" + fetchStr, nil
+	return appendIIDFetch(query, varName)
 }
 
 func (s *relationStrategy) BuildPutQuery(info *ModelInfo, instance any, varName string) (string, error) {

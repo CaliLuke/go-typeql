@@ -814,3 +814,25 @@ pub extern "C" fn typedb_transaction_close(txn: *mut Transaction, err_out: *mut 
         vec![("result", "ok".to_string())],
     );
 }
+
+/// Drop the transaction locally without waiting for the checked close result.
+#[no_mangle]
+pub extern "C" fn typedb_transaction_drop(txn: *mut Transaction) {
+    let start = Instant::now();
+    rust_debug_log("ffi.typedb_transaction_drop.enter", vec![]);
+    if txn.is_null() {
+        rust_debug_log_timed(
+            "ffi.typedb_transaction_drop.exit",
+            start,
+            vec![("result", "nil_txn".to_string())],
+        );
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(txn) });
+    rust_debug_log_timed(
+        "ffi.typedb_transaction_drop.exit",
+        start,
+        vec![("result", "ok".to_string())],
+    );
+}

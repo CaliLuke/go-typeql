@@ -33,10 +33,145 @@ type Transaction struct {
 	dbName string
 	txType TransactionType
 	opened bool
+	closer *transactionCloseWorker
 }
 
-func newTransaction(ptr unsafe.Pointer, id uint64, dbName string, txType TransactionType) *Transaction {
-	t := &Transaction{ptr: ptr, id: id, dbName: dbName, txType: txType, opened: true}
+type transactionCloseJob struct {
+	ptr    unsafe.Pointer
+	id     uint64
+	dbName string
+	txType TransactionType
+	start  time.Time
+	onDone func(error)
+}
+
+type transactionCloseWorker struct {
+	mu     sync.Mutex
+	jobs   chan transactionCloseJob
+	done   chan struct{}
+	closed bool
+}
+
+const transactionCloseQueueSize = 1024
+
+type transactionCloseTracker struct {
+	mu      sync.Mutex
+	pending int
+	zero    chan struct{}
+}
+
+var pendingTransactionCloses = newTransactionCloseTracker()
+
+func newTransactionCloseTracker() *transactionCloseTracker {
+	ch := make(chan struct{})
+	close(ch)
+	return &transactionCloseTracker{zero: ch}
+}
+
+func (t *transactionCloseTracker) add() {
+	t.mu.Lock()
+	if t.pending == 0 {
+		t.zero = make(chan struct{})
+	}
+	t.pending++
+	t.mu.Unlock()
+}
+
+func (t *transactionCloseTracker) done() {
+	t.mu.Lock()
+	t.pending--
+	if t.pending == 0 {
+		close(t.zero)
+	}
+	t.mu.Unlock()
+}
+
+func (t *transactionCloseTracker) wait(ctx context.Context) error {
+	t.mu.Lock()
+	zero := t.zero
+	t.mu.Unlock()
+
+	select {
+	case <-zero:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func newTransactionCloseWorker() *transactionCloseWorker {
+	w := &transactionCloseWorker{
+		jobs: make(chan transactionCloseJob, transactionCloseQueueSize),
+		done: make(chan struct{}),
+	}
+	go w.run()
+	return w
+}
+
+func (w *transactionCloseWorker) enqueue(job transactionCloseJob) bool {
+	if w == nil {
+		return false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return false
+	}
+	pendingTransactionCloses.add()
+	select {
+	case w.jobs <- job:
+		return true
+	default:
+		pendingTransactionCloses.done()
+		return false
+	}
+}
+
+func (w *transactionCloseWorker) run() {
+	defer close(w.done)
+	for job := range w.jobs {
+		runTransactionCloseJob(job)
+		pendingTransactionCloses.done()
+	}
+}
+
+func (w *transactionCloseWorker) close() {
+	w.mu.Lock()
+	if !w.closed {
+		w.closed = true
+		close(w.jobs)
+	}
+	w.mu.Unlock()
+	<-w.done
+}
+
+func runTransactionCloseJob(job transactionCloseJob) {
+	var closeErr *C.char
+	C.typedb_transaction_close(job.ptr, &closeErr)
+	err := getError(closeErr)
+	logTransactionClose(job, err)
+	if job.onDone != nil {
+		job.onDone(err)
+	}
+}
+
+func logTransactionClose(job transactionCloseJob, err error) {
+	if err != nil {
+		logFFIDuration("tx.close", job.start, "tx_id", job.id, "db", job.dbName, "tx_type", int(job.txType), "result", "error", "error", err.Error())
+		return
+	}
+	logFFIDuration("tx.close", job.start, "tx_id", job.id, "db", job.dbName, "tx_type", int(job.txType), "result", "ok")
+}
+
+// WaitForPendingCloses waits for already accepted asynchronous transaction close
+// jobs to finish. It is a drain point for tests and graceful shutdown; it does
+// not stop close workers.
+func WaitForPendingCloses(ctx context.Context) error {
+	return pendingTransactionCloses.wait(ctx)
+}
+
+func newTransaction(ptr unsafe.Pointer, id uint64, dbName string, txType TransactionType, closer *transactionCloseWorker) *Transaction {
+	t := &Transaction{ptr: ptr, id: id, dbName: dbName, txType: txType, opened: true, closer: closer}
 	incActiveTxOpen("tx_id", id, "db", dbName, "tx_type", int(txType), "reason", "open")
 	if debugEnabled() {
 		runtime.SetFinalizer(t, (*Transaction).debugLeakFinalizer)
@@ -291,19 +426,62 @@ func (t *Transaction) Rollback() error {
 // Close terminates the transaction without committing any changes.
 // It should be used in a 'defer' block to ensure resources are released.
 func (t *Transaction) Close() {
+	t.CloseAsync(nil)
+}
+
+// CloseAsync terminates the transaction without committing and returns without
+// waiting for the checked TypeDB close to complete. If onDone is non-nil and
+// the checked close is queued, it is called exactly once when that close
+// finishes. If the close queue is full, the transaction is dropped locally and
+// onDone receives nil because no checked close result is available.
+func (t *Transaction) CloseAsync(onDone func(error)) {
 	start := time.Now()
+	job := t.detachCloseJob(start, onDone)
+	if job.ptr == nil {
+		return
+	}
+	if t.closer != nil && t.closer.enqueue(job) {
+		return
+	}
+
+	C.typedb_transaction_drop(job.ptr)
+	if job.onDone != nil {
+		job.onDone(nil)
+	}
+}
+
+// CloseChecked terminates the transaction synchronously and returns the checked
+// TypeDB close error, if any.
+func (t *Transaction) CloseChecked() error {
+	start := time.Now()
+	job := t.detachCloseJob(start, nil)
+	if job.ptr == nil {
+		return nil
+	}
+
+	var closeErr *C.char
+	C.typedb_transaction_close(job.ptr, &closeErr)
+	err := getError(closeErr)
+	logTransactionClose(job, err)
+	return err
+}
+
+func (t *Transaction) detachCloseJob(start time.Time, onDone func(error)) transactionCloseJob {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.ptr != nil {
-		var closeErr *C.char
-		C.typedb_transaction_close(t.ptr, &closeErr)
-		t.ptr = nil
-		t.markClosedLocked("close")
-		if err := getError(closeErr); err != nil {
-			logFFIDuration("tx.close", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", err.Error())
-			return
-		}
-		logFFIDuration("tx.close", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "ok")
+	if t.ptr == nil {
+		return transactionCloseJob{}
 	}
+	job := transactionCloseJob{
+		ptr:    t.ptr,
+		id:     t.id,
+		dbName: t.dbName,
+		txType: t.txType,
+		start:  start,
+		onDone: onDone,
+	}
+	t.ptr = nil
+	t.markClosedLocked("close")
+	return job
 }

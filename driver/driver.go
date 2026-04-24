@@ -38,8 +38,9 @@ func ensureLoggingInitialized() {
 // Driver represents an active connection to a TypeDB server.
 // It is used to open transactions and manage databases.
 type Driver struct {
-	ptr unsafe.Pointer
-	mu  sync.Mutex
+	ptr         unsafe.Pointer
+	mu          sync.Mutex
+	closeWorker *transactionCloseWorker
 }
 
 // Open creates a new connection to a TypeDB server at the specified address.
@@ -102,7 +103,7 @@ func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA 
 	}
 
 	logFFIDuration("driver.open", start, "address", address, "result", "ok")
-	return &Driver{ptr: ptr}, nil
+	return &Driver{ptr: ptr, closeWorker: newTransactionCloseWorker()}, nil
 }
 
 // IsOpen checks if the driver connection is still open.
@@ -117,6 +118,15 @@ func (d *Driver) IsOpen() bool {
 
 // Close closes the driver connection and frees resources.
 func (d *Driver) Close() {
+	d.mu.Lock()
+	worker := d.closeWorker
+	d.closeWorker = nil
+	d.mu.Unlock()
+
+	if worker != nil {
+		worker.close()
+	}
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.ptr != nil {
@@ -164,7 +174,7 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 	}
 
 	logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "ok")
-	return newTransaction(ptr, txID, databaseName, txnType), nil
+	return newTransaction(ptr, txID, databaseName, txnType, d.closeWorker), nil
 }
 
 // Databases returns a DatabaseManager for this connection.

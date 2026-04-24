@@ -29,6 +29,71 @@ type blockingIsOpenConn struct {
 	release chan struct{}
 }
 
+type asyncCloseMockTx struct {
+	closed   atomic.Bool
+	complete chan error
+}
+
+func newAsyncCloseMockTx() *asyncCloseMockTx {
+	return &asyncCloseMockTx{complete: make(chan error, 1)}
+}
+
+func (m *asyncCloseMockTx) Query(string) ([]map[string]any, error) {
+	return nil, nil
+}
+
+func (m *asyncCloseMockTx) QueryWithContext(ctx context.Context, query string) ([]map[string]any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return m.Query(query)
+}
+
+func (m *asyncCloseMockTx) Commit() error {
+	m.closed.Store(true)
+	return nil
+}
+
+func (m *asyncCloseMockTx) Rollback() error {
+	m.closed.Store(true)
+	return nil
+}
+
+func (m *asyncCloseMockTx) Close() {
+	m.CloseAsync(nil)
+}
+
+func (m *asyncCloseMockTx) CloseAsync(onDone func(error)) {
+	m.closed.Store(true)
+	go func() {
+		err := <-m.complete
+		if onDone != nil {
+			onDone(err)
+		}
+	}()
+}
+
+func (m *asyncCloseMockTx) CloseChecked() error {
+	m.closed.Store(true)
+	return <-m.complete
+}
+
+func (m *asyncCloseMockTx) IsOpen() bool {
+	return !m.closed.Load()
+}
+
+type fixedTxConn struct {
+	*poolMockConn
+	tx Tx
+}
+
+func (c *fixedTxConn) Transaction(string, int) (Tx, error) {
+	if !c.open.Load() {
+		return nil, errors.New("connection closed")
+	}
+	return c.tx, nil
+}
+
 func newPoolMockConn(id int) *poolMockConn {
 	mc := &poolMockConn{id: id}
 	mc.open.Store(true)
@@ -669,6 +734,69 @@ func TestPooledTx_ReturnsConnectionOnClose(t *testing.T) {
 	}
 	if stats.Available != 1 {
 		t.Errorf("Expected connection available after tx.Close(), got Available=%d", stats.Available)
+	}
+}
+
+func TestPooledTx_CloseAsyncReturnsConnectionImmediately(t *testing.T) {
+	asyncTx := newAsyncCloseMockTx()
+	factory := func() (Conn, error) {
+		return &fixedTxConn{poolMockConn: newPoolMockConn(1), tx: asyncTx}, nil
+	}
+
+	pool, err := NewConnPool(PoolConfig{MinSize: 1, MaxSize: 1}, factory)
+	if err != nil {
+		t.Fatalf("NewConnPool failed: %v", err)
+	}
+	defer pool.Close()
+
+	adapter := &poolConnAdapter{pool: pool, dbName: "testdb"}
+	tx, err := adapter.Transaction("testdb", 0)
+	if err != nil {
+		t.Fatalf("Transaction failed: %v", err)
+	}
+
+	done := make(chan error, 1)
+	tx.(interface{ CloseAsync(func(error)) }).CloseAsync(func(err error) {
+		done <- err
+	})
+
+	if stats := pool.Stats(); stats.InUse != 0 || stats.Available != 1 {
+		t.Fatalf("connection not returned immediately after async close: stats=%+v", stats)
+	}
+
+	asyncTx.complete <- errors.New("close failed")
+
+	if err := <-done; err == nil || err.Error() != "close failed" {
+		t.Fatalf("CloseAsync callback error = %v, want close failed", err)
+	}
+}
+
+func TestPooledTx_CloseCheckedReturnsConnection(t *testing.T) {
+	asyncTx := newAsyncCloseMockTx()
+	factory := func() (Conn, error) {
+		return &fixedTxConn{poolMockConn: newPoolMockConn(1), tx: asyncTx}, nil
+	}
+
+	pool, err := NewConnPool(PoolConfig{MinSize: 1, MaxSize: 1}, factory)
+	if err != nil {
+		t.Fatalf("NewConnPool failed: %v", err)
+	}
+	defer pool.Close()
+
+	adapter := &poolConnAdapter{pool: pool, dbName: "testdb"}
+	tx, err := adapter.Transaction("testdb", 0)
+	if err != nil {
+		t.Fatalf("Transaction failed: %v", err)
+	}
+
+	closeErr := errors.New("checked close failed")
+	go func() { asyncTx.complete <- closeErr }()
+	err = tx.(interface{ CloseChecked() error }).CloseChecked()
+	if !errors.Is(err, closeErr) {
+		t.Fatalf("CloseChecked error = %v, want %v", err, closeErr)
+	}
+	if stats := pool.Stats(); stats.InUse != 0 || stats.Available != 1 {
+		t.Fatalf("connection not returned after CloseChecked: stats=%+v", stats)
 	}
 }
 

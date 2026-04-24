@@ -518,8 +518,36 @@ func (pt *pooledTx) Rollback() error {
 }
 
 func (pt *pooledTx) Close() {
+	pt.CloseAsync(nil)
+}
+
+func (pt *pooledTx) CloseAsync(onDone func(error)) {
+	if tx, ok := pt.tx.(interface{ CloseAsync(func(error)) }); ok {
+		tx.CloseAsync(func(err error) {
+			if onDone != nil {
+				onDone(err)
+			}
+		})
+		pt.once.Do(func() { pt.pool.Put(pt.conn) })
+		return
+	}
+
 	pt.tx.Close()
 	pt.once.Do(func() { pt.pool.Put(pt.conn) })
+	if onDone != nil {
+		onDone(nil)
+	}
+}
+
+func (pt *pooledTx) CloseChecked() error {
+	var err error
+	if tx, ok := pt.tx.(interface{ CloseChecked() error }); ok {
+		err = tx.CloseChecked()
+	} else {
+		pt.tx.Close()
+	}
+	pt.once.Do(func() { pt.pool.Put(pt.conn) })
+	return err
 }
 
 func (pt *pooledTx) IsOpen() bool {

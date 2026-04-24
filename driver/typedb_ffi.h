@@ -52,5 +52,6 @@ extern unsigned char* typedb_transaction_query(void* txn, const char* query, con
 extern void typedb_transaction_commit(void* txn, char** err_out);
 extern void typedb_transaction_rollback(const void* txn, char** err_out);
 extern void typedb_transaction_close(void* txn, char** err_out);
+extern void typedb_transaction_drop(void* txn);
 
 #endif
