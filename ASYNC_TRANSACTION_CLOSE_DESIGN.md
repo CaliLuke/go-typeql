@@ -53,7 +53,7 @@ Benchmark harness:
 - Temporary live TypeDB benchmark added as `gotype/live_bench_test.go`, using `TEST_DB_ADDRESS=localhost:1730`.
 - Commit-by-commit run covered `v1.8.1` plus every commit in `v1.8.1..v1.9.0`.
 - Command shape: `go test -tags "cgo,typedb,integration" ./gotype -run '^$' -bench '^(BenchmarkLiveRead_GetByIID|BenchmarkLiveRead_CloseOnly|BenchmarkLiveRead_GetByIIDBreakdown)$' -benchtime=10x -count=1 -benchmem`.
-- Raw logs are in `.tmp/livebench/results/`.
+- Durable benchmark results are in `docs/benchmarks/async-transaction-close.md`. The original scratch logs were produced under `.tmp/livebench/results/` during the investigation and were not release artifacts.
 
 First regressing commit:
 
