@@ -19,11 +19,15 @@ extern void typedb_credentials_drop(void* creds);
 
 // DriverOptions
 extern void* typedb_driver_options_new(bool is_tls_enabled, const char* tls_root_ca, char** err_out);
+extern void typedb_driver_options_set_request_timeout(void* opts, long long timeout_millis);
+extern void typedb_driver_options_set_primary_failover_retries(void* opts, size_t retries);
 extern void typedb_driver_options_drop(void* opts);
 
 // Driver
 extern void* typedb_driver_open(const char* address, const void* credentials, const void* options, char** err_out);
+extern void* typedb_driver_open_addresses(const char** public_addresses, const char** private_addresses, size_t address_count, const void* credentials, const void* options, char** err_out);
 extern bool typedb_driver_is_open(const void* driver);
+extern char* typedb_driver_server_version(void* driver, char** err_out);
 extern void typedb_driver_close(void* driver);
 
 // Database management

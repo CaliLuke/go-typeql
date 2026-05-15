@@ -583,7 +583,7 @@ func FormatGoValue(value any) string {
 	v := reflect.ValueOf(value)
 
 	// Dereference pointers
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return "null"
 		}

@@ -86,7 +86,7 @@ func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool) {
 // ExtractModelInfo analyzes a Go struct type and extracts its TypeDB model metadata.
 // The struct must embed BaseEntity or BaseRelation to be a valid model.
 func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -155,12 +155,12 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 
 			// Determine player type name
 			ft := field.Type
-			if ft.Kind() == reflect.Ptr {
+			if ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Slice {
 				ft = ft.Elem()
-				if ft.Kind() == reflect.Ptr {
+				if ft.Kind() == reflect.Pointer {
 					ft = ft.Elem()
 				}
 			}
@@ -210,7 +210,7 @@ func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) FieldInf
 	}
 
 	ft := field.Type
-	if ft.Kind() == reflect.Ptr {
+	if ft.Kind() == reflect.Pointer {
 		fi.IsPointer = true
 		fi.ElemType = ft.Elem()
 		ft = ft.Elem()
@@ -219,7 +219,7 @@ func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) FieldInf
 		fi.IsSlice = true
 		fi.ElemType = ft.Elem()
 		ft = ft.Elem()
-		if ft.Kind() == reflect.Ptr {
+		if ft.Kind() == reflect.Pointer {
 			ft = ft.Elem()
 		}
 	}
@@ -233,7 +233,7 @@ func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) FieldInf
 func ToDict[T any](instance *T) (map[string]any, error) {
 	var zero T
 	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -243,7 +243,7 @@ func ToDict[T any](instance *T) (map[string]any, error) {
 	}
 
 	v := reflect.ValueOf(instance)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -299,7 +299,7 @@ func ToMatchQuery[T any](instance *T) (string, error) {
 func lookupStrategy[T any]() (*ModelInfo, ModelStrategy, error) {
 	var zero T
 	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	info, ok := LookupType(t)

@@ -170,7 +170,7 @@ func newLiveBenchFixture() (*liveBenchFixture, error) {
 func mustLiveBenchManager[T any](db *Database) *Manager[T] {
 	var zero T
 	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	info, ok := LookupType(t)

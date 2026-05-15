@@ -204,11 +204,11 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 
 	for _, role := range info.Roles {
 		field := v.Field(role.FieldIndex)
-		if field.Kind() == reflect.Ptr && field.IsNil() {
+		if field.Kind() == reflect.Pointer && field.IsNil() {
 			continue
 		}
 		playerVal := field
-		if playerVal.Kind() == reflect.Ptr {
+		if playerVal.Kind() == reflect.Pointer {
 			playerVal = playerVal.Elem()
 		}
 
@@ -375,7 +375,7 @@ func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) 
 
 func reflectValue(instance any) reflect.Value {
 	v := reflect.ValueOf(instance)
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	return v
@@ -414,7 +414,7 @@ func extractSingleFieldValue(v reflect.Value, fi FieldInfo) any {
 }
 
 func getIIDFromValueInfo(v reflect.Value, info *ModelInfo) string {
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	if !v.IsValid() || v.Kind() != reflect.Struct {

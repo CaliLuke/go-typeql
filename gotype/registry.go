@@ -29,7 +29,7 @@ type Registry struct {
 func Register[T any]() error {
 	var zero T
 	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -130,7 +130,7 @@ func Lookup(typeName string) (*ModelInfo, bool) {
 
 // LookupType retrieves ModelInfo for a given Go reflect.Type.
 func LookupType(t reflect.Type) (*ModelInfo, bool) {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	globalRegistry.mu.RLock()

@@ -28,7 +28,7 @@ func Hydrate(target any, data map[string]any) error {
 
 func hydrateTargetInfo(target any) (reflect.Value, *ModelInfo, error) {
 	v := reflect.ValueOf(target)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
+	if v.Kind() != reflect.Pointer || v.IsNil() {
 		return reflect.Value{}, nil, fmt.Errorf("target must be a non-nil pointer to struct")
 	}
 	v = v.Elem()
@@ -106,7 +106,7 @@ func hydrateValueWithDepth(v reflect.Value, info *ModelInfo, data map[string]any
 
 		// Set the field (which is a pointer to the player type)
 		field := v.Field(role.FieldIndex)
-		if field.Kind() == reflect.Ptr && field.Type().Elem() == playerInfo.GoType {
+		if field.Kind() == reflect.Pointer && field.Type().Elem() == playerInfo.GoType {
 			field.Set(playerPtr)
 		}
 	}
@@ -119,7 +119,7 @@ func hydrateValueWithDepth(v reflect.Value, info *ModelInfo, data map[string]any
 func HydrateNew[T any](data map[string]any) (*T, error) {
 	var zero T
 	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	info, ok := LookupType(t)
@@ -526,7 +526,7 @@ func coerceValue(val any, fi *FieldInfo) (any, error) {
 	if targetType == nil {
 		targetType = fi.FieldType
 	}
-	if targetType.Kind() == reflect.Ptr {
+	if targetType.Kind() == reflect.Pointer {
 		targetType = targetType.Elem()
 	}
 

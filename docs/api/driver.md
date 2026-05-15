@@ -4,7 +4,7 @@
 
 The `driver` package provides Go bindings to the official TypeDB `typedb-driver` 3.x Rust crate via CGo. All files are gated with `//go:build cgo && typedb` so they don't affect builds that don't need the driver.
 
-The bundled Rust FFI crate currently depends on `typedb-driver` `3.10.0`.
+The bundled Rust FFI crate currently depends on `typedb-driver` `3.11.0-rc1`, paired with `typeql` `3.11.0-rc0` and the `typedb/typedb:3.11.0-rc1` integration-test image.
 
 `go get` only downloads the module source. It does not build the Rust static library automatically. If you import `driver/`, you must either run `make build-rust` in the module tree that Go is compiling, or provide a prebuilt `libtypedb_go_ffi.a` and build with the `typedb_prebuilt` tag. Release archives are published for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`.
 
@@ -40,7 +40,65 @@ defer drv.Close()
 
 // With TLS
 drv, err := driver.OpenWithTLS("localhost:1729", "admin", "password", true, "/path/to/ca.crt")
+
+// With TypeDB 3.11 driver-level options
+drv, err := driver.OpenWithOptions("localhost:1729", "admin", "password", driver.DriverOptions{
+    RequestTimeoutMillis:   5000,
+    PrimaryFailoverRetries: 1,
+})
+
+// Inspect the connected server version
+version, err := drv.ServerVersion()
+if err == nil {
+    log.Printf("connected to %s %s", version.Distribution, version.Version)
+}
+
+// Multiple public addresses
+drv, err = driver.OpenWithAddresses([]string{
+    "typedb-1.example.com:1729",
+    "typedb-2.example.com:1729",
+}, "admin", "password", driver.DriverOptions{})
+
+// Public-to-private address translation for clusters or mapped containers
+drv, err = driver.OpenWithAddressTranslation(map[string]string{
+    "localhost:1730": "127.0.0.1:1729",
+}, "admin", "password", driver.DriverOptions{})
 ```
+
+`Open` and single-address `OpenWithAddresses` preserve the repo compose mapping
+(`localhost:1730` on the host to `127.0.0.1:1729` as advertised by TypeDB CE).
+Use `OpenWithAddressTranslation` for explicit public-to-private mappings.
+
+### TypeDB 3.11 Connection Features
+
+The 3.11 Rust driver adds a small set of connection-level controls that are
+exposed through `DriverOptions`:
+
+| Option                   | Applies to                                              |
+| ------------------------ | ------------------------------------------------------- |
+| `RequestTimeoutMillis`   | Unary RPCs such as database create/list, schema fetch, and transaction open |
+| `PrimaryFailoverRetries` | Finding or re-routing to a primary server in clustered deployments |
+| `TLSEnabled`/`TLSRootCA` | TLS setup, equivalent to `OpenWithTLS`                  |
+
+These options do not replace `QueryOptions`; query result prefetch and
+instance-type inclusion are still configured per query.
+
+`ServerVersion` is useful at process startup to make protocol mismatches
+obvious before application code begins opening transactions:
+
+```go
+version, err := drv.ServerVersion()
+if err != nil {
+    log.Fatal(err)
+}
+log.Printf("connected to %s %s", version.Distribution, version.Version)
+```
+
+For clusters and containerized deployments, use:
+
+- `OpenWithAddresses` when several public server addresses are directly reachable.
+- `OpenWithAddressTranslation` when TypeDB advertises private addresses that differ
+  from the addresses clients must dial.
 
 ## Transactions
 

@@ -225,7 +225,7 @@ func (op ModifyOwnership) ToTypeQL() string {
 	if op.NewAnnots != "" {
 		annots = " " + op.NewAnnots
 	}
-	return fmt.Sprintf("redefine %s owns %s%s;", op.Owner, op.Attribute, annots)
+	return fmt.Sprintf("redefine %s, owns %s%s;", op.Owner, op.Attribute, annots)
 }
 func (op ModifyOwnership) IsReversible() bool  { return op.OldAnnots != "" }
 func (op ModifyOwnership) IsDestructive() bool { return false }
@@ -233,7 +233,7 @@ func (op ModifyOwnership) RollbackTypeQL() string {
 	if op.OldAnnots == "" {
 		return ""
 	}
-	return fmt.Sprintf("redefine %s owns %s %s;", op.Owner, op.Attribute, op.OldAnnots)
+	return fmt.Sprintf("redefine %s, owns %s %s;", op.Owner, op.Attribute, op.OldAnnots)
 }
 
 // --- Rename attribute ---

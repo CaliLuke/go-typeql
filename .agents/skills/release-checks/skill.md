@@ -62,15 +62,33 @@ git diff go.mod go.sum
 
 Should produce no diff. If it does, commit the tidied result as part of step 9 and continue.
 
-## 6. Regenerate reference docs
+## 6. Update and regenerate documentation
 
-If any exported symbols changed:
+Documentation is part of the release surface. Before tagging, review every
+exported API, behavior, dependency, or workflow change and update both generated
+reference docs and hand-written guides.
+
+If any exported symbols changed, make sure the source has useful godoc comments
+first, then regenerate the checked-in reference docs:
 
 ```bash
 ~/go/bin/gomarkdoc ./ast/ > docs/api/reference/ast.md
 ~/go/bin/gomarkdoc ./gotype/ > docs/api/reference/gotype.md
 ~/go/bin/gomarkdoc ./tqlgen/ > docs/api/reference/tqlgen.md
+~/go/bin/gomarkdoc --tags "cgo,typedb" ./driver/ > docs/api/reference/driver.md
 ```
+
+Then verify the relevant hand-written docs were updated:
+
+- `README.md` for installation, version, capability, and quick-start changes.
+- `docs/api/README.md` when guide or reference entries are added, removed, or renamed.
+- `docs/api/*.md` for user-facing API workflows and examples.
+- `docs/DEVELOPMENT.md`, `docs/TESTING.md`, and `docs/GETTING_STARTED.md` when build, test, integration, or onboarding steps change.
+- `docs/SKILL.md` and `.agents/skills/*/SKILL.md` when agent-facing workflows or canonical commands change.
+- `typeql-reference/README.md` and `typeql-reference/typeql.pest` when the TypeQL grammar or upstream TypeQL version changes.
+
+For driver changes, remember that reference generation requires build tags:
+`gomarkdoc --tags "cgo,typedb" ./driver/`.
 
 ## 7. Update AGENTS.md test count
 

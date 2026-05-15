@@ -10,6 +10,8 @@ package driver
 // #include "typedb_ffi.h"
 import "C"
 import (
+	"encoding/json"
+	"sort"
 	"sync"
 	"time"
 	"unsafe"
@@ -43,6 +45,32 @@ type Driver struct {
 	closeWorker *transactionCloseWorker
 }
 
+// DriverOptions configures connection-level TypeDB driver behavior.
+//
+// Zero-valued fields keep the underlying TypeDB driver's defaults. These
+// options apply to driver-level operations such as connection setup, database
+// management, and transaction opening; query execution still uses QueryOptions.
+type DriverOptions struct {
+	// TLSEnabled controls whether the driver connects with TLS.
+	TLSEnabled bool
+	// TLSRootCA optionally points to a custom root CA certificate when TLS is enabled.
+	TLSRootCA string
+	// RequestTimeoutMillis bounds unary RPCs such as database management and transaction open.
+	// Zero keeps the TypeDB driver's default.
+	RequestTimeoutMillis int64
+	// PrimaryFailoverRetries controls retries when finding or re-routing to a primary server.
+	// Zero keeps the TypeDB driver's default.
+	PrimaryFailoverRetries int
+}
+
+// ServerVersion is the TypeDB server version reported by the connected server.
+type ServerVersion struct {
+	// Distribution is the server distribution name, such as "TypeDB CE".
+	Distribution string `json:"distribution"`
+	// Version is the server version string, such as "3.11.0-rc1".
+	Version string `json:"version"`
+}
+
 // Open creates a new connection to a TypeDB server at the specified address.
 // It uses the provided username and password for authentication.
 func Open(address, username, password string) (*Driver, error) {
@@ -53,46 +81,34 @@ func Open(address, username, password string) (*Driver, error) {
 // If tlsEnabled is true, it establishes an encrypted connection.
 // tlsRootCA can optionally specify a path to a custom root certificate authority.
 func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA string) (*Driver, error) {
+	return OpenWithOptions(address, username, password, DriverOptions{
+		TLSEnabled: tlsEnabled,
+		TLSRootCA:  tlsRootCA,
+	})
+}
+
+// OpenWithOptions creates a new connection to a TypeDB server with connection-level options.
+//
+// For local non-default ports, such as the repo compose setup on localhost:1730,
+// the driver preserves the public address when TypeDB advertises its internal
+// 127.0.0.1:1729 address.
+func OpenWithOptions(address, username, password string, opts DriverOptions) (*Driver, error) {
 	ensureLoggingInitialized()
 	start := time.Now()
-	logFFIDebug("driver.open.start", "address", address, "tls_enabled", tlsEnabled, "has_tls_ca", tlsRootCA != "")
+	logFFIDebug("driver.open.start", "address", address, "tls_enabled", opts.TLSEnabled, "has_tls_ca", opts.TLSRootCA != "")
+
+	creds, driverOpts, cleanup, err := openInputs(username, password, opts)
+	if err != nil {
+		logFFIDuration("driver.open", start, "address", address, "result", "error", "error", err.Error())
+		return nil, err
+	}
+	defer cleanup()
 
 	cAddr := C.CString(address)
 	defer C.free(unsafe.Pointer(cAddr))
 
-	cUser := C.CString(username)
-	defer C.free(unsafe.Pointer(cUser))
-
-	cPass := C.CString(password)
-	defer C.free(unsafe.Pointer(cPass))
-
-	creds := C.typedb_credentials_new(cUser, cPass)
-	if creds == nil {
-		logFFIDuration("driver.open", start, "address", address, "result", "error", "error_type", "nil_credentials")
-		return nil, ErrNilPointer
-	}
-	defer C.typedb_credentials_drop(creds)
-
-	var cCA *C.char
-	if tlsRootCA != "" {
-		cCA = C.CString(tlsRootCA)
-		defer C.free(unsafe.Pointer(cCA))
-	}
-
-	var optsErr *C.char
-	opts := C.typedb_driver_options_new(C.bool(tlsEnabled), cCA, &optsErr)
-	if opts == nil {
-		if err := getError(optsErr); err != nil {
-			logFFIDuration("driver.open", start, "address", address, "result", "error", "error", err.Error())
-			return nil, err
-		}
-		logFFIDuration("driver.open", start, "address", address, "result", "error", "error_type", "nil_driver_options")
-		return nil, ErrNilPointer
-	}
-	defer C.typedb_driver_options_drop(opts)
-
 	var openErr *C.char
-	ptr := C.typedb_driver_open(cAddr, creds, opts, &openErr)
+	ptr := C.typedb_driver_open(cAddr, creds, driverOpts, &openErr)
 	if ptr == nil {
 		if err := getError(openErr); err != nil {
 			logFFIDuration("driver.open", start, "address", address, "result", "error", "error", err.Error())
@@ -106,6 +122,160 @@ func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA 
 	return &Driver{ptr: ptr, closeWorker: newTransactionCloseWorker()}, nil
 }
 
+// OpenWithAddresses creates a new connection using one or more public TypeDB addresses.
+//
+// Use this for clustered or routed TypeDB deployments where several public
+// server addresses are available. For a single address, this behaves like
+// OpenWithOptions and preserves the repo compose localhost:1730 mapping.
+func OpenWithAddresses(addresses []string, username, password string, opts DriverOptions) (*Driver, error) {
+	return openWithAddressSet(addresses, nil, username, password, opts)
+}
+
+// OpenWithAddressTranslation creates a connection with public-to-private address translation.
+//
+// Keys are user-facing public addresses; values are private addresses advertised by TypeDB.
+// This is useful for clusters, container port mappings, and network layouts
+// where the address clients dial differs from the address the server reports.
+func OpenWithAddressTranslation(addressTranslation map[string]string, username, password string, opts DriverOptions) (*Driver, error) {
+	public := make([]string, 0, len(addressTranslation))
+	for address := range addressTranslation {
+		public = append(public, address)
+	}
+	sort.Strings(public)
+
+	private := make([]string, len(public))
+	for i, address := range public {
+		private[i] = addressTranslation[address]
+	}
+	return openWithAddressSet(public, private, username, password, opts)
+}
+
+func openWithAddressSet(publicAddresses, privateAddresses []string, username, password string, opts DriverOptions) (*Driver, error) {
+	ensureLoggingInitialized()
+	start := time.Now()
+	logFFIDebug("driver.open_addresses.start", "address_count", len(publicAddresses), "translated", privateAddresses != nil)
+
+	if len(publicAddresses) == 0 {
+		return nil, &DriverError{Message: "driver: at least one address is required"}
+	}
+	if privateAddresses != nil && len(privateAddresses) != len(publicAddresses) {
+		return nil, &DriverError{Message: "driver: address translation must have the same number of public and private addresses"}
+	}
+	if privateAddresses == nil && len(publicAddresses) == 1 {
+		return OpenWithOptions(publicAddresses[0], username, password, opts)
+	}
+
+	creds, driverOpts, cleanup, err := openInputs(username, password, opts)
+	if err != nil {
+		logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "error", "error", err.Error())
+		return nil, err
+	}
+	defer cleanup()
+
+	cPublic, cleanupPublic := cStringArray(publicAddresses)
+	defer cleanupPublic()
+	var publicPtr **C.char
+	if len(cPublic) > 0 {
+		publicPtr = &cPublic[0]
+	}
+
+	var privatePtr **C.char
+	var cleanupPrivate func()
+	if privateAddresses != nil {
+		cPrivate, cleanup := cStringArray(privateAddresses)
+		cleanupPrivate = cleanup
+		if len(cPrivate) > 0 {
+			privatePtr = &cPrivate[0]
+		}
+	} else {
+		cleanupPrivate = func() {}
+	}
+	defer cleanupPrivate()
+
+	var openErr *C.char
+	ptr := C.typedb_driver_open_addresses(
+		(**C.char)(unsafe.Pointer(publicPtr)),
+		(**C.char)(unsafe.Pointer(privatePtr)),
+		C.size_t(len(publicAddresses)),
+		creds,
+		driverOpts,
+		&openErr,
+	)
+	if ptr == nil {
+		if err := getError(openErr); err != nil {
+			logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "error", "error", err.Error())
+			return nil, err
+		}
+		logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "error", "error_type", "nil_driver_ptr")
+		return nil, ErrNilPointer
+	}
+
+	logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "ok")
+	return &Driver{ptr: ptr, closeWorker: newTransactionCloseWorker()}, nil
+}
+
+func openInputs(username, password string, opts DriverOptions) (unsafe.Pointer, unsafe.Pointer, func(), error) {
+	cUser := C.CString(username)
+	cPass := C.CString(password)
+
+	creds := C.typedb_credentials_new(cUser, cPass)
+	if creds == nil {
+		C.free(unsafe.Pointer(cUser))
+		C.free(unsafe.Pointer(cPass))
+		return nil, nil, nil, ErrNilPointer
+	}
+
+	var cCA *C.char
+	if opts.TLSRootCA != "" {
+		cCA = C.CString(opts.TLSRootCA)
+	}
+
+	var optsErr *C.char
+	driverOpts := C.typedb_driver_options_new(C.bool(opts.TLSEnabled), cCA, &optsErr)
+	if driverOpts == nil {
+		C.typedb_credentials_drop(creds)
+		C.free(unsafe.Pointer(cUser))
+		C.free(unsafe.Pointer(cPass))
+		if cCA != nil {
+			C.free(unsafe.Pointer(cCA))
+		}
+		if err := getError(optsErr); err != nil {
+			return nil, nil, nil, err
+		}
+		return nil, nil, nil, ErrNilPointer
+	}
+
+	if opts.RequestTimeoutMillis > 0 {
+		C.typedb_driver_options_set_request_timeout(driverOpts, C.longlong(opts.RequestTimeoutMillis))
+	}
+	if opts.PrimaryFailoverRetries > 0 {
+		C.typedb_driver_options_set_primary_failover_retries(driverOpts, C.size_t(opts.PrimaryFailoverRetries))
+	}
+
+	cleanup := func() {
+		C.typedb_driver_options_drop(driverOpts)
+		C.typedb_credentials_drop(creds)
+		C.free(unsafe.Pointer(cUser))
+		C.free(unsafe.Pointer(cPass))
+		if cCA != nil {
+			C.free(unsafe.Pointer(cCA))
+		}
+	}
+	return unsafe.Pointer(creds), unsafe.Pointer(driverOpts), cleanup, nil
+}
+
+func cStringArray(values []string) ([]*C.char, func()) {
+	cValues := make([]*C.char, len(values))
+	for i, value := range values {
+		cValues[i] = C.CString(value)
+	}
+	return cValues, func() {
+		for _, value := range cValues {
+			C.free(unsafe.Pointer(value))
+		}
+	}
+}
+
 // IsOpen checks if the driver connection is still open.
 func (d *Driver) IsOpen() bool {
 	d.mu.Lock()
@@ -114,6 +284,34 @@ func (d *Driver) IsOpen() bool {
 		return false
 	}
 	return bool(C.typedb_driver_is_open(d.ptr))
+}
+
+// ServerVersion returns the version reported by the connected TypeDB server.
+//
+// It is useful for startup diagnostics and for checking that the server is
+// compatible with the linked TypeDB driver protocol.
+func (d *Driver) ServerVersion() (ServerVersion, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.ptr == nil {
+		return ServerVersion{}, ErrNotConnected
+	}
+
+	var versionErr *C.char
+	cJSON := C.typedb_driver_server_version(d.ptr, &versionErr)
+	if cJSON == nil {
+		if err := getError(versionErr); err != nil {
+			return ServerVersion{}, err
+		}
+		return ServerVersion{}, nil
+	}
+	defer C.typedb_free_string(cJSON)
+
+	var version ServerVersion
+	if err := json.Unmarshal([]byte(C.GoString(cJSON)), &version); err != nil {
+		return ServerVersion{}, &DriverError{Message: "failed to parse server version: " + err.Error()}
+	}
+	return version, nil
 }
 
 // Close closes the driver connection and frees resources.

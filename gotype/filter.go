@@ -57,7 +57,7 @@ func isScalarFilterValue(value any) bool {
 	}
 
 	v := reflect.ValueOf(value)
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return true
 		}

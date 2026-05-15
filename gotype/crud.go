@@ -72,7 +72,7 @@ func MustNewManagerWithTx[T any](tc *TransactionContext) *Manager[T] {
 func lookupManagerInfo[T any]() (*ModelInfo, error) {
 	var zero T
 	t := reflect.TypeOf(zero)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -763,7 +763,7 @@ func (m *Manager[T]) hydrateResults(results []map[string]any) ([]*T, error) {
 // the already-resolved model info when available.
 func getIIDOfInfo[T any](instance *T, info *ModelInfo) string {
 	v := reflect.ValueOf(instance)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	return getIIDFromValueInfo(v, info)
@@ -773,7 +773,7 @@ func getIIDOfInfo[T any](instance *T, info *ModelInfo) string {
 // already-resolved model info when available.
 func setIIDOnInfo[T any](instance *T, info *ModelInfo, iid string) {
 	v := reflect.ValueOf(instance)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	setIIDWithInfo(v, info, iid)

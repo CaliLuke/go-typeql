@@ -77,10 +77,12 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.10.1
+go get github.com/CaliLuke/go-typeql@v1.11.0-rc.1
 ```
 
-The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package requires the Rust FFI static library. `go get` only downloads the source tree; it does not build or provision `libtypedb_go_ffi.a` for you. Before building or testing code that imports `driver/`, you must either build the Rust library from source in the module tree or install a prebuilt archive.
+The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package in `v1.11.0-rc.1` targets TypeDB `3.11.0-rc1` and is not compatible with TypeDB `3.10.x` servers. Stay on the `v1.10.x` line for TypeDB `3.10.x`.
+
+The `driver/` package requires the Rust FFI static library. `go get` only downloads the source tree; it does not build or provision `libtypedb_go_ffi.a` for you. Before building or testing code that imports `driver/`, you must either build the Rust library from source in the module tree or install a prebuilt archive.
 
 ### Prebuilt FFI library
 
@@ -95,7 +97,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 platform="$(go env GOOS)-$(go env GOARCH)"
 
 # Download for your platform
-gh release download v1.10.1 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
+gh release download v1.11.0-rc.1 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 libdir=/usr/local/lib
@@ -118,7 +120,7 @@ For a complete runnable example covering connect, schema, and CRUD, see the [Get
 ## Running tests
 
 ```bash
-# Unit tests (401 tests, no database needed)
+# Unit tests (416 tests, no database needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (with the repo compose file, TypeDB is exposed on host port 1730)
@@ -136,6 +138,7 @@ See the dedicated guide: [Debugging Hangs](docs/DEBUGGING_HANGS.md).
 - [Testing Guide](docs/TESTING.md) — test strategy, mocks, integration test infrastructure
 - [Debugging Hangs](docs/DEBUGGING_HANGS.md) — debug flags, log keys, startup-hang diagnostics
 - [API Reference](docs/api/README.md) — models, CRUD, queries, filters, schema, migration, code generator
+- [TypeQL agent skill](.agents/skills/typeql/SKILL.md) — vendored from [`CaliLuke/skills/skills/typedb`](https://github.com/CaliLuke/skills/tree/main/skills/typedb)
 
 ## Requirements
 

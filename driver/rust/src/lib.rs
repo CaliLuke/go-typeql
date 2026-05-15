@@ -5,6 +5,7 @@
 // Query results are returned as a single MessagePack-encoded byte buffer
 // via typedb_transaction_query().
 
+use std::collections::HashMap;
 use std::ffi::{c_char, CStr, CString};
 use std::ptr::null_mut;
 use std::sync::{Once, OnceLock};
@@ -15,8 +16,8 @@ use serde_json::json;
 use typedb_driver::{
     answer::QueryAnswer,
     concept::{value::ValueType, Concept},
-    Credentials, DriverOptions, Promise, QueryOptions, Transaction, TransactionOptions,
-    TransactionType, TypeDBDriver,
+    Addresses, Credentials, DriverOptions, DriverTlsConfig, Promise, QueryOptions, Transaction,
+    TransactionOptions, TransactionType, TypeDBDriver,
 };
 
 /// Convert a TypeDB Concept to a clean JSON value instead of Rust Debug strings.
@@ -89,6 +90,48 @@ fn c_str(ptr: *const c_char) -> &'static str {
 
 fn to_c_string(s: String) -> *mut c_char {
     CString::new(s).unwrap_or_default().into_raw()
+}
+
+fn addresses_for_open(address: &str) -> typedb_driver::Result<Addresses> {
+    if let Some((host, port)) = address.rsplit_once(':') {
+        if matches!(host, "localhost" | "127.0.0.1") && port != "1729" {
+            // TypeDB CE advertises its in-container address. Preserve mapped
+            // localhost ports such as the repo's localhost:1730 compose setup.
+            return Addresses::try_from_translation_str(HashMap::from([(
+                address,
+                "127.0.0.1:1729",
+            )]));
+        }
+    }
+    Addresses::try_from_address_str(address)
+}
+
+fn c_string_slice<'a>(ptr: *const *const c_char, count: usize) -> Vec<&'a str> {
+    if ptr.is_null() || count == 0 {
+        return vec![];
+    }
+    unsafe { std::slice::from_raw_parts(ptr, count) }
+        .iter()
+        .map(|s| c_str(*s))
+        .collect()
+}
+
+fn addresses_from_ffi(
+    public_addresses: *const *const c_char,
+    private_addresses: *const *const c_char,
+    count: usize,
+) -> typedb_driver::Result<Addresses> {
+    let public = c_string_slice(public_addresses, count);
+    if private_addresses.is_null() {
+        return Addresses::try_from_addresses_str(public);
+    }
+
+    let private = c_string_slice(private_addresses, count);
+    let mut translation = HashMap::with_capacity(count);
+    for (public, private) in public.into_iter().zip(private.into_iter()) {
+        translation.insert(public, private);
+    }
+    Addresses::try_from_translation_str(translation)
 }
 
 /// Free a string returned by this library.
@@ -212,18 +255,41 @@ pub extern "C" fn typedb_driver_options_new(
     tls_root_ca: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut DriverOptions {
-    let ca_path = if tls_root_ca.is_null() {
-        None
+    let tls_config = if !is_tls_enabled {
+        DriverTlsConfig::disabled()
+    } else if tls_root_ca.is_null() {
+        DriverTlsConfig::enabled_with_native_root_ca()
     } else {
-        Some(std::path::Path::new(c_str(tls_root_ca)))
-    };
-    match DriverOptions::new(is_tls_enabled, ca_path) {
-        Ok(opts) => Box::into_raw(Box::new(opts)),
-        Err(e) => {
-            set_error(err_out, e);
-            null_mut()
+        match DriverTlsConfig::enabled_with_root_ca(std::path::Path::new(c_str(tls_root_ca))) {
+            Ok(config) => config,
+            Err(e) => {
+                set_error(err_out, e);
+                return null_mut();
+            }
         }
-    }
+    };
+
+    Box::into_raw(Box::new(DriverOptions::new(tls_config)))
+}
+
+/// Set driver request timeout in milliseconds.
+#[no_mangle]
+pub extern "C" fn typedb_driver_options_set_request_timeout(
+    opts: *mut DriverOptions,
+    timeout_millis: i64,
+) {
+    let o = unsafe { &mut *opts };
+    o.request_timeout = Duration::from_millis(timeout_millis as u64);
+}
+
+/// Set primary failover retry count.
+#[no_mangle]
+pub extern "C" fn typedb_driver_options_set_primary_failover_retries(
+    opts: *mut DriverOptions,
+    retries: usize,
+) {
+    let o = unsafe { &mut *opts };
+    o.primary_failover_retries = retries;
 }
 
 /// Free driver options.
@@ -256,7 +322,24 @@ pub extern "C" fn typedb_driver_open(
 
     let creds = unsafe { &*credentials };
     let opts = unsafe { &*options };
-    match TypeDBDriver::new_with_description(c_str(address), creds.clone(), opts.clone(), "go") {
+    let addresses = match addresses_for_open(c_str(address)) {
+        Ok(addresses) => addresses,
+        Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_driver_open.exit",
+                start,
+                vec![
+                    ("address", address_value),
+                    ("result", "error".to_string()),
+                    ("error", e.to_string()),
+                ],
+            );
+            set_error(err_out, e);
+            return null_mut();
+        }
+    };
+
+    match TypeDBDriver::new_with_description(addresses, creds.clone(), opts.clone(), "go") {
         Ok(driver) => {
             rust_debug_log_timed(
                 "ffi.typedb_driver_open.exit",
@@ -281,6 +364,71 @@ pub extern "C" fn typedb_driver_open(
     }
 }
 
+/// Open a connection to TypeDB with one or more addresses.
+/// If private_addresses is non-null, it must have the same length as public_addresses
+/// and is used as the driver's address translation map.
+#[no_mangle]
+pub extern "C" fn typedb_driver_open_addresses(
+    public_addresses: *const *const c_char,
+    private_addresses: *const *const c_char,
+    address_count: usize,
+    credentials: *const Credentials,
+    options: *const DriverOptions,
+    err_out: *mut *mut c_char,
+) -> *mut TypeDBDriver {
+    let start = Instant::now();
+    rust_debug_log(
+        "ffi.typedb_driver_open_addresses.enter",
+        vec![("address_count", address_count.to_string())],
+    );
+
+    let addresses = match addresses_from_ffi(public_addresses, private_addresses, address_count) {
+        Ok(addresses) => addresses,
+        Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_driver_open_addresses.exit",
+                start,
+                vec![
+                    ("address_count", address_count.to_string()),
+                    ("result", "error".to_string()),
+                    ("error", e.to_string()),
+                ],
+            );
+            set_error(err_out, e);
+            return null_mut();
+        }
+    };
+
+    let creds = unsafe { &*credentials };
+    let opts = unsafe { &*options };
+    match TypeDBDriver::new_with_description(addresses, creds.clone(), opts.clone(), "go") {
+        Ok(driver) => {
+            rust_debug_log_timed(
+                "ffi.typedb_driver_open_addresses.exit",
+                start,
+                vec![
+                    ("address_count", address_count.to_string()),
+                    ("result", "ok".to_string()),
+                ],
+            );
+            Box::into_raw(Box::new(driver))
+        }
+        Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_driver_open_addresses.exit",
+                start,
+                vec![
+                    ("address_count", address_count.to_string()),
+                    ("result", "error".to_string()),
+                    ("error", e.to_string()),
+                ],
+            );
+            set_error(err_out, e);
+            null_mut()
+        }
+    }
+}
+
 /// Check if driver is open.
 #[no_mangle]
 pub extern "C" fn typedb_driver_is_open(driver: *const TypeDBDriver) -> bool {
@@ -288,6 +436,29 @@ pub extern "C" fn typedb_driver_is_open(driver: *const TypeDBDriver) -> bool {
         return false;
     }
     unsafe { &*driver }.is_open()
+}
+
+/// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.11.0-rc1"}.
+/// Caller must free with typedb_free_string.
+#[no_mangle]
+pub extern "C" fn typedb_driver_server_version(
+    driver: *mut TypeDBDriver,
+    err_out: *mut *mut c_char,
+) -> *mut c_char {
+    let d = unsafe { &*driver };
+    match d.server_version() {
+        Ok(version) => to_c_string(
+            serde_json::to_string(&json!({
+                "distribution": version.distribution(),
+                "version": version.version(),
+            }))
+            .unwrap_or_else(|_| "{}".to_string()),
+        ),
+        Err(e) => {
+            set_error(err_out, e);
+            null_mut()
+        }
+    }
 }
 
 /// Close and free the driver.

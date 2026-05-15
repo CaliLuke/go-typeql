@@ -212,15 +212,15 @@ func TestRemoveRolePlayer_ToTypeQL(t *testing.T) {
 func TestModifyOwnership_ToTypeQL(t *testing.T) {
 	op := ModifyOwnership{Owner: "person", Attribute: "email", OldAnnots: "@card(0..1)", NewAnnots: "@card(1..1)"}
 	got := op.ToTypeQL()
-	if got != "redefine person owns email @card(1..1);" {
+	if got != "redefine person, owns email @card(1..1);" {
 		t.Errorf("got %q", got)
 	}
 	if !op.IsReversible() {
 		t.Error("should be reversible when OldAnnots provided")
 	}
 	rollback := op.RollbackTypeQL()
-	if !strings.Contains(rollback, "@card(0..1)") {
-		t.Errorf("expected old annots in rollback, got %q", rollback)
+	if rollback != "redefine person, owns email @card(0..1);" {
+		t.Errorf("got rollback %q", rollback)
 	}
 }
 

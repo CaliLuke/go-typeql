@@ -51,7 +51,7 @@ gotype/
 
 ## Building the Rust FFI Library
 
-The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface. The repo currently tracks `typedb-driver` `3.10.0`.
+The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface. The repo currently tracks `typedb-driver` `3.11.0-rc1`, paired with the `typedb/typedb:3.11.0-rc1` integration-test image.
 
 ```bash
 # Build the static library (driver/rust/target/release/libtypedb_go_ffi.a)
@@ -111,7 +111,7 @@ The project uses build tags to isolate CGo-dependent code:
 The `ast/`, `gotype/`, and `tqlgen/` packages compile and test without any build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
-# Unit tests (default, no tags needed) — 401 tests
+# Unit tests (default, no tags needed) — 416 tests
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests
@@ -193,6 +193,15 @@ Or in the terminal:
 ```bash
 go doc github.com/CaliLuke/go-typeql/gotype.Manager
 go doc -all github.com/CaliLuke/go-typeql/ast
+```
+
+Regenerate the checked-in markdown reference after exported API changes:
+
+```bash
+~/go/bin/gomarkdoc ./ast/ > docs/api/reference/ast.md
+~/go/bin/gomarkdoc ./gotype/ > docs/api/reference/gotype.md
+~/go/bin/gomarkdoc ./tqlgen/ > docs/api/reference/tqlgen.md
+~/go/bin/gomarkdoc --tags "cgo,typedb" ./driver/ > docs/api/reference/driver.md
 ```
 
 ### Manual docs

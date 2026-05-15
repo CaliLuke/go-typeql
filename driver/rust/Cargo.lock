@@ -338,6 +338,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "errno"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -678,15 +688,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.10.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -981,7 +982,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn",
@@ -1289,6 +1290,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "siphasher"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1368,6 +1379,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2 0.6.3",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -1577,16 +1589,16 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "typedb-driver"
-version = "3.10.0"
+version = "3.11.0-rc1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2fcc1a3bb940ccc2aa4c38e666c567de2594366495c352e3e4e711bc32a4b87"
+checksum = "2701ec01ea00abb0be631fdd064f7aa61e8d3d1a39446be8a1a9b2a8ee7a490f"
 dependencies = [
  "chrono",
  "chrono-tz",
  "crossbeam",
  "futures",
  "http",
- "itertools 0.10.5",
+ "itertools",
  "maybe-async",
  "prost",
  "serde",
@@ -1612,9 +1624,9 @@ dependencies = [
 
 [[package]]
 name = "typedb-protocol"
-version = "3.10.0"
+version = "3.11.0-rc0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47864569ccc94f367dc4fc41c4edf4be715b1fedfff217dc35fef1959c4e9b9b"
+checksum = "c6011106ee941602322491fa3171fd3b9c15766e538ceb5c0986bfe64fb012ca"
 dependencies = [
  "prost",
  "tonic",
@@ -1628,12 +1640,12 @@ checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "typeql"
-version = "3.10.1"
+version = "3.11.0-rc0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "625b910e47bc40d8acb304e123629f06e8de75fdd6962306b29735c74910b7af"
+checksum = "3da17b6b90df1495445d906abcba65e9784e48b36d0440b76a0e1fd39299515c"
 dependencies = [
  "chrono",
- "itertools 0.10.5",
+ "itertools",
  "pest",
  "pest_derive",
  "regex",
