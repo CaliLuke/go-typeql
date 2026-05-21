@@ -12,7 +12,7 @@ is copied from the `typedb/typeql` crate at:
 
 - `src/parser/typeql.pest`
 
-The current vendored copy matches the upstream `typeql` crate version `3.11.0-rc0`.
+The current vendored copy matches the upstream `typeql` crate version `3.11.0`.
 
 ## Why This Exists
 
