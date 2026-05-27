@@ -159,11 +159,15 @@ func TestReduceCount(t *testing.T) {
 			count = v
 		case int:
 			count = float64(v)
+		case int64:
+			count = float64(v)
 		case map[string]any:
 			// Nested structure like {"value": 3}
 			if val, ok := v["value"].(float64); ok {
 				count = val
 			} else if val, ok := v["value"].(int); ok {
+				count = float64(val)
+			} else if val, ok := v["value"].(int64); ok {
 				count = float64(val)
 			}
 		}
@@ -224,10 +228,14 @@ func TestReduceWithStringExpression(t *testing.T) {
 			count = v
 		case int:
 			count = float64(v)
+		case int64:
+			count = float64(v)
 		case map[string]any:
 			if val, ok := v["value"].(float64); ok {
 				count = val
 			} else if val, ok := v["value"].(int); ok {
+				count = float64(val)
+			} else if val, ok := v["value"].(int64); ok {
 				count = float64(val)
 			}
 		}
