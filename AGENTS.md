@@ -18,7 +18,7 @@ go test -run TestManager_Insert ./gotype/...
 # Integration tests (with repo compose, TypeDB is exposed on host port 1730 + built Rust lib)
 # ALWAYS run these after changes — not just unit tests.
 # When the user says "test" or "run tests", run ALL tests (unit + integration).
-podman compose up -d
+docker compose up -d
 TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 # Build Rust FFI library
@@ -137,4 +137,11 @@ Use `/release-checks <version>` to run the full 14-step release checklist (tests
 
 ## Container Runtime
 
-Uses **podman** (not docker). The repo compose file maps host port `1730` to the TypeDB server's internal port `1729`. Integration test address is configurable via `TEST_DB_ADDRESS` and defaults to `localhost:1729` when unset.
+Uses **Colima with Docker Compose**. Start Colima before integration tests if it is not already running:
+
+```bash
+colima start
+docker compose up -d
+```
+
+The repo compose file maps host port `1730` to the TypeDB server's internal port `1729`. Integration test address is configurable via `TEST_DB_ADDRESS` and defaults to `localhost:1729` when unset.

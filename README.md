@@ -80,7 +80,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 go get github.com/CaliLuke/go-typeql@v1.11.1
 ```
 
-The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package in `v1.11.1` targets TypeDB `3.11.x` and is not compatible with TypeDB `3.10.x` servers. Stay on the `v1.10.x` line for TypeDB `3.10.x`.
+The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package currently targets TypeDB `3.12.0-rc2` and is not compatible with TypeDB `3.10.x` servers. Stay on the `v1.10.x` line for TypeDB `3.10.x`.
 
 The `driver/` package requires the Rust FFI static library. `go get` only downloads the source tree; it does not build or provision `libtypedb_go_ffi.a` for you. Before building or testing code that imports `driver/`, you must either build the Rust library from source in the module tree or install a prebuilt archive.
 

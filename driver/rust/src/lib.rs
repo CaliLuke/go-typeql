@@ -8,17 +8,30 @@
 use std::collections::HashMap;
 use std::ffi::{c_char, CStr, CString};
 use std::ptr::null_mut;
-use std::sync::{Once, OnceLock};
+use std::str::FromStr;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex, Once, OnceLock,
+};
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
+use serde::Deserialize;
 use serde_json::json;
 
 use typedb_driver::{
     answer::QueryAnswer,
-    concept::{value::ValueType, Concept},
+    concept::{
+        value::{Decimal, Duration as TypeDBDuration, TimeZone, ValueType},
+        Concept, Value,
+    },
+    given::{GivenRowEntry, GivenRows},
     Addresses, Credentials, DriverOptions, DriverTlsConfig, Promise, QueryOptions, Transaction,
     TransactionOptions, TransactionType, TypeDBDriver,
 };
+
+static NEXT_CONCEPT_HANDLE: AtomicU64 = AtomicU64::new(1);
+static CONCEPT_REGISTRY: OnceLock<Mutex<HashMap<String, Concept>>> = OnceLock::new();
 
 /// Convert a TypeDB Concept to a clean JSON value instead of Rust Debug strings.
 fn concept_to_json(concept: &Concept) -> serde_json::Value {
@@ -46,6 +59,7 @@ fn concept_to_json(concept: &Concept) -> serde_json::Value {
         );
         obj.insert("_type".into(), json!(concept.get_label()));
         obj.insert("_iid".into(), json!(format!("{}", iid)));
+        obj.insert("_concept_handle".into(), json!(register_concept(concept)));
         return serde_json::Value::Object(obj);
     }
     // Types (EntityType, RelationType, etc.)
@@ -60,6 +74,29 @@ fn concept_to_json(concept: &Concept) -> serde_json::Value {
     }
     // Fallback
     json!(format!("{:?}", concept))
+}
+
+fn concept_registry() -> &'static Mutex<HashMap<String, Concept>> {
+    CONCEPT_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn register_concept(concept: &Concept) -> String {
+    let id = NEXT_CONCEPT_HANDLE.fetch_add(1, Ordering::Relaxed);
+    let handle = format!("concept-{}", id);
+    concept_registry()
+        .lock()
+        .expect("concept registry poisoned")
+        .insert(handle.clone(), concept.clone());
+    handle
+}
+
+fn get_registered_concept(handle: &str) -> Result<Concept, String> {
+    concept_registry()
+        .lock()
+        .expect("concept registry poisoned")
+        .get(handle)
+        .cloned()
+        .ok_or_else(|| format!("unknown concept handle: {}", handle))
 }
 
 // ---------------------------------------------------------------------------
@@ -205,9 +242,8 @@ fn query_op(query: &str) -> String {
         .trim_matches(';')
         .to_lowercase();
     match first.as_str() {
-        "match" | "insert" | "delete" | "update" | "define" | "undefine" | "fetch" | "reduce" => {
-            first
-        }
+        "given" | "match" | "insert" | "delete" | "update" | "define" | "undefine" | "fetch"
+        | "reduce" => first,
         _ => "other".to_string(),
     }
 }
@@ -438,7 +474,7 @@ pub extern "C" fn typedb_driver_is_open(driver: *const TypeDBDriver) -> bool {
     unsafe { &*driver }.is_open()
 }
 
-/// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.11.5"}.
+/// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.12.0-rc2"}.
 /// Caller must free with typedb_free_string.
 #[no_mangle]
 pub extern "C" fn typedb_driver_server_version(
@@ -747,15 +783,7 @@ pub extern "C" fn typedb_transaction_query(
         ],
     );
 
-    let t = unsafe { &*txn };
-    let opts = if options.is_null() {
-        QueryOptions::new()
-    } else {
-        unsafe { *(&*options) }
-    };
-
-    let promise = t.query_with_options(c_str(query), opts);
-    let answer: QueryAnswer = match promise.resolve() {
+    let answer = match execute_query(txn, query, options, None) {
         Ok(a) => a,
         Err(e) => {
             rust_debug_log_timed(
@@ -766,7 +794,7 @@ pub extern "C" fn typedb_transaction_query(
                     ("query_fingerprint", fingerprint.clone()),
                     ("query_len", query_text.len().to_string()),
                     ("result", "error".to_string()),
-                    ("error", e.to_string()),
+                    ("error", e.clone()),
                 ],
             );
             set_error(err_out, e);
@@ -806,6 +834,202 @@ pub extern "C" fn typedb_transaction_query(
             null_mut()
         }
     }
+}
+
+/// Execute a query with given rows and return results as a MessagePack-encoded byte buffer.
+#[no_mangle]
+pub extern "C" fn typedb_transaction_query_with_rows(
+    txn: *mut Transaction,
+    query: *const c_char,
+    options: *const QueryOptions,
+    rows_json: *const c_char,
+    out_len: *mut usize,
+    err_out: *mut *mut c_char,
+) -> *mut u8 {
+    let start = Instant::now();
+    let query_text = c_str(query);
+    let op = query_op(query_text);
+    let fingerprint = query_fingerprint(query_text);
+    rust_debug_log(
+        "ffi.typedb_transaction_query_with_rows.enter",
+        vec![
+            ("query_op", op.clone()),
+            ("query_fingerprint", fingerprint.clone()),
+            ("query_len", query_text.len().to_string()),
+        ],
+    );
+
+    let rows = match parse_given_rows(c_str(rows_json)) {
+        Ok(rows) => rows,
+        Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_query_with_rows.exit",
+                start,
+                vec![
+                    ("query_op", op.clone()),
+                    ("query_fingerprint", fingerprint.clone()),
+                    ("query_len", query_text.len().to_string()),
+                    ("result", "error".to_string()),
+                    ("error", e.clone()),
+                ],
+            );
+            set_error(err_out, e);
+            return null_mut();
+        }
+    };
+
+    let answer = match execute_query(txn, query, options, Some(rows)) {
+        Ok(a) => a,
+        Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_query_with_rows.exit",
+                start,
+                vec![
+                    ("query_op", op.clone()),
+                    ("query_fingerprint", fingerprint.clone()),
+                    ("query_len", query_text.len().to_string()),
+                    ("result", "error".to_string()),
+                    ("error", e.clone()),
+                ],
+            );
+            set_error(err_out, e);
+            return null_mut();
+        }
+    };
+
+    match collect_answer_to_msgpack(answer) {
+        Ok(bytes) => {
+            let rows_or_bytes = bytes.len();
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_query_with_rows.exit",
+                start,
+                vec![
+                    ("query_op", op),
+                    ("query_fingerprint", fingerprint),
+                    ("query_len", query_text.len().to_string()),
+                    ("result", "ok".to_string()),
+                    ("bytes", rows_or_bytes.to_string()),
+                ],
+            );
+            vec_to_raw(bytes, out_len)
+        }
+        Err(e) => {
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_query_with_rows.exit",
+                start,
+                vec![
+                    ("query_op", op),
+                    ("query_fingerprint", fingerprint),
+                    ("query_len", query_text.len().to_string()),
+                    ("result", "error".to_string()),
+                    ("error", e.clone()),
+                ],
+            );
+            set_error(err_out, e);
+            null_mut()
+        }
+    }
+}
+
+fn execute_query(
+    txn: *mut Transaction,
+    query: *const c_char,
+    options: *const QueryOptions,
+    rows: Option<GivenRows>,
+) -> Result<QueryAnswer, String> {
+    let t = unsafe { &*txn };
+    let opts = if options.is_null() {
+        QueryOptions::new()
+    } else {
+        unsafe { *(&*options) }
+    };
+    let result = match rows {
+        Some(rows) => t
+            .query_with_options_and_rows(c_str(query), opts, Some(rows))
+            .resolve(),
+        None => t.query_with_options(c_str(query), opts).resolve(),
+    };
+    result.map_err(|e| e.to_string())
+}
+
+#[derive(Deserialize)]
+struct FFIGivenRows {
+    variables: Vec<String>,
+    rows: Vec<Vec<FFIGivenValue>>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "kebab-case")]
+enum FFIGivenValue {
+    Empty,
+    Concept(String),
+    Boolean(bool),
+    Integer(i64),
+    Double(f64),
+    String(String),
+    Decimal(String),
+    Date(String),
+    Datetime(String),
+    DatetimeTz(String),
+    Duration(String),
+}
+
+fn parse_given_rows(json: &str) -> Result<GivenRows, String> {
+    let ffi_rows: FFIGivenRows =
+        serde_json::from_str(json).map_err(|e| format!("invalid given rows JSON: {}", e))?;
+    if ffi_rows.variables.is_empty() {
+        return Err("given rows must declare at least one variable".to_string());
+    }
+    let mut rows = GivenRows::new(ffi_rows.variables, ffi_rows.rows.len());
+    for row in ffi_rows.rows {
+        let entries: Result<Vec<_>, _> = row.into_iter().map(given_value_to_entry).collect();
+        rows.push_row(entries?).map_err(|e| e.to_string())?;
+    }
+    Ok(rows)
+}
+
+fn given_value_to_entry(value: FFIGivenValue) -> Result<GivenRowEntry, String> {
+    match value {
+        FFIGivenValue::Empty => Ok(GivenRowEntry::Empty),
+        FFIGivenValue::Concept(handle) => {
+            GivenRowEntry::try_from(get_registered_concept(&handle)?).map_err(|e| e.to_string())
+        }
+        FFIGivenValue::Boolean(value) => Ok(value.into()),
+        FFIGivenValue::Integer(value) => Ok(value.into()),
+        FFIGivenValue::Double(value) => Ok(value.into()),
+        FFIGivenValue::String(value) => Ok(value.into()),
+        FFIGivenValue::Decimal(value) => Decimal::from_str(&value)
+            .map(Value::from)
+            .map(GivenRowEntry::from)
+            .map_err(|e| e.to_string()),
+        FFIGivenValue::Date(value) => NaiveDate::parse_from_str(&value, "%Y-%m-%d")
+            .map(Value::from)
+            .map(GivenRowEntry::from)
+            .map_err(|e| e.to_string()),
+        FFIGivenValue::Datetime(value) => parse_naive_datetime(&value)
+            .map(Value::from)
+            .map(GivenRowEntry::from)
+            .map_err(|e| e.to_string()),
+        FFIGivenValue::DatetimeTz(value) => DateTime::parse_from_rfc3339(&value)
+            .map(datetime_fixed_to_typedb)
+            .map(Value::from)
+            .map(GivenRowEntry::from)
+            .map_err(|e| e.to_string()),
+        FFIGivenValue::Duration(value) => TypeDBDuration::from_str(&value)
+            .map(Value::from)
+            .map(GivenRowEntry::from)
+            .map_err(|_| format!("invalid duration: {}", value)),
+    }
+}
+
+fn parse_naive_datetime(value: &str) -> Result<NaiveDateTime, chrono::ParseError> {
+    NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
+        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f"))
+}
+
+fn datetime_fixed_to_typedb(value: DateTime<FixedOffset>) -> DateTime<TimeZone> {
+    let timezone = TimeZone::Fixed(*value.offset());
+    value.with_timezone(&timezone)
 }
 
 /// Convert a Vec<u8> into a raw pointer + length for FFI.

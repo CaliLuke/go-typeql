@@ -3,6 +3,7 @@ package gotype
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -94,6 +95,9 @@ func generateTypeDef(info *ModelInfo, playsMap map[string][]string) string {
 	if info.IsAbstract {
 		header += " @abstract"
 	}
+	if info.Doc != "" {
+		header += " " + docAnnotation(info.Doc)
+	}
 	if info.Supertype != "" {
 		header += fmt.Sprintf(", sub %s", info.Supertype)
 	}
@@ -130,6 +134,9 @@ func fieldAnnotations(f FieldInfo) string {
 	if f.Tag.Unique {
 		anns = append(anns, "@unique")
 	}
+	if f.Doc != "" {
+		anns = append(anns, docAnnotation(f.Doc))
+	}
 
 	// Only add @card if not @key (since @key implies @card(1..1))
 	if !f.Tag.Key && (f.Tag.CardMin != nil || f.Tag.CardMax != nil) {
@@ -145,6 +152,10 @@ func fieldAnnotations(f FieldInfo) string {
 	}
 
 	return strings.Join(anns, " ")
+}
+
+func docAnnotation(doc string) string {
+	return "@doc(" + strconv.Quote(doc) + ")"
 }
 
 func formatCardAnnotation(min, max *int) string {

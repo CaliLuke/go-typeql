@@ -21,8 +21,8 @@ func TestServerVersion(t *testing.T) {
 	if version.Distribution == "" {
 		t.Fatalf("expected distribution, got %#v", version)
 	}
-	if !strings.Contains(version.Version, "3.11.5") {
-		t.Fatalf("expected 3.11.5 server, got %#v", version)
+	if !strings.Contains(version.Version, "3.12.0-rc2") {
+		t.Fatalf("expected 3.12.0-rc2 server, got %#v", version)
 	}
 }
 

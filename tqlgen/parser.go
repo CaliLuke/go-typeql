@@ -23,18 +23,19 @@ type AttrDef struct {
 	Semi      string       `parser:"';'"`
 }
 
-// EntityDef parses: entity name [sub parent] [@abstract] [, clause...];
+// EntityDef parses: entity name [sub parent] [annotations] [, clause...];
 type EntityDef struct {
-	Name     string         `parser:"'entity' @Ident"`
-	Parent   *SubClause     `parser:"@@?"`
-	Abstract bool           `parser:"@'@abstract'?"`
-	Comma    string         `parser:"','?"`
-	Clauses  []EntityClause `parser:"( @@ ( ',' @@ )* )? ';'"`
+	Name    string         `parser:"'entity' @Ident"`
+	Parent  *SubClause     `parser:"@@?"`
+	Annots  []Annotation   `parser:"@@*"`
+	Comma   string         `parser:"','?"`
+	Clauses []EntityClause `parser:"( @@ ( ',' @@ )* )? ';'"`
 }
 
 // SubClause parses: sub parent-name
 type SubClause struct {
-	Parent string `parser:"'sub' @Ident"`
+	Parent string       `parser:"'sub' @Ident"`
+	Annots []Annotation `parser:"@@*"`
 }
 
 // EntityClause is one of: owns or plays.
@@ -51,17 +52,18 @@ type OwnsDef struct {
 
 // PlaysDef parses: plays relation:role
 type PlaysDef struct {
-	Relation string `parser:"'plays' @Ident"`
-	Role     string `parser:"':' @Ident"`
+	Relation string       `parser:"'plays' @Ident"`
+	Role     string       `parser:"':' @Ident"`
+	Annots   []Annotation `parser:"@@*"`
 }
 
-// RelationDef parses: relation name [sub parent] [@abstract] [, clause...];
+// RelationDef parses: relation name [sub parent] [annotations] [, clause...];
 type RelationDef struct {
-	Name     string           `parser:"'relation' @Ident"`
-	Parent   *SubClause       `parser:"@@?"`
-	Abstract bool             `parser:"@'@abstract'?"`
-	Comma    string           `parser:"','?"`
-	Clauses  []RelationClause `parser:"( @@ ( ',' @@ )* )? ';'"`
+	Name    string           `parser:"'relation' @Ident"`
+	Parent  *SubClause       `parser:"@@?"`
+	Annots  []Annotation     `parser:"@@*"`
+	Comma   string           `parser:"','?"`
+	Clauses []RelationClause `parser:"( @@ ( ',' @@ )* )? ';'"`
 }
 
 // RelationClause is one of: relates, owns, or plays.
@@ -83,14 +85,23 @@ type AsClause struct {
 	Parent string `parser:"'as' @Ident"`
 }
 
-// Annotation parses: @key, @unique, @abstract, @card(...), @regex(...), @values(...), @range(...)
+// Annotation parses TypeQL schema annotations. Some annotations are carried
+// into generated Go metadata, while doc/meta/capability annotations are
+// accepted for parser compatibility and otherwise ignored.
 type Annotation struct {
-	Key    bool         `parser:"  @'@key'"`
-	Unique bool         `parser:"| @'@unique'"`
-	Card   *CardAnnot   `parser:"| @@"`
-	Regex  *RegexAnnot  `parser:"| @@"`
-	Values *ValuesAnnot `parser:"| @@"`
-	Range  *RangeAnnot  `parser:"| @@"`
+	Key         bool         `parser:"  @'@key'"`
+	Unique      bool         `parser:"| @'@unique'"`
+	Abstract    bool         `parser:"| @'@abstract'"`
+	Cascade     bool         `parser:"| @'@cascade'"`
+	Independent bool         `parser:"| @'@independent'"`
+	Distinct    bool         `parser:"| @'@distinct'"`
+	Card        *CardAnnot   `parser:"| @@"`
+	Regex       *RegexAnnot  `parser:"| @@"`
+	Values      *ValuesAnnot `parser:"| @@"`
+	Range       *RangeAnnot  `parser:"| @@"`
+	Subkey      *SubkeyAnnot `parser:"| @@"`
+	Doc         *DocAnnot    `parser:"| @@"`
+	Meta        *MetaAnnot   `parser:"| @@"`
 }
 
 // CardAnnot parses: @card(expr)
@@ -113,11 +124,28 @@ type RangeAnnot struct {
 	Expr string `parser:"'@range' '(' @CardExpr ')'"`
 }
 
-// StructDefP parses: struct name (: | ,) field [, field]* [,] ;
+// SubkeyAnnot parses: @subkey(identifier)
+type SubkeyAnnot struct {
+	Key string `parser:"'@subkey' '(' @Ident ')'"`
+}
+
+// DocAnnot parses: @doc("docstring")
+type DocAnnot struct {
+	Text string `parser:"'@doc' '(' @String ')'"`
+}
+
+// MetaAnnot parses: @meta("key", "value")
+type MetaAnnot struct {
+	Key   string `parser:"'@meta' '(' @String ','"`
+	Value string `parser:"@String ')'"`
+}
+
+// StructDefP parses: struct name [annotations] (: | ,) field [, field]* [,] ;
 // Supports both official TypeQL syntax (`:` separator, `name value type`) and
 // legacy syntax (`,` separator, `value name type`).
 type StructDefP struct {
-	Name   string         `parser:"'struct' @Ident (':' | ',')"`
+	Name   string         `parser:"'struct' @Ident"`
+	Annots []Annotation   `parser:"@@* (':' | ',')"`
 	Fields []StructFieldP `parser:"@@ (',' @@)* ','? ';'"`
 }
 
@@ -125,9 +153,10 @@ type StructDefP struct {
 //   - Official: field-name value type[?]
 //   - Legacy:   value field-name type[?]
 type StructFieldP struct {
-	FieldName string `parser:"( @Ident 'value' | 'value' @Ident )"`
-	ValueType string `parser:"@Ident"`
-	Optional  bool   `parser:"@'?'?"`
+	FieldName string       `parser:"( @Ident 'value' | 'value' @Ident )"`
+	ValueType string       `parser:"@Ident"`
+	Optional  bool         `parser:"@'?'?"`
+	Annots    []Annotation `parser:"@@*"`
 }
 
 // --- Parser construction and entry point ---
@@ -196,8 +225,8 @@ var simpleLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Comment", Pattern: `#[^\n]*`},
 	{Name: "Whitespace", Pattern: `[\s]+`},
 	{Name: "FunKW", Pattern: `\bfun\b`},
-	{Name: "Keyword", Pattern: `\b(define|attribute|entity|relation|sub|value|owns|plays|relates|as|struct|match|return|isa|has|not|or|in|is|count|sum|max|min|mean|median|std|group)\b`},
-	{Name: "AnnotKW", Pattern: `@(key|unique|abstract|card|regex|values|range)`},
+	{Name: "Keyword", Pattern: `\b(define|given|attribute|entity|relation|sub|value|owns|plays|relates|as|struct|match|return|isa|has|not|or|in|is|count|sum|max|min|mean|median|std|group)\b`},
+	{Name: "AnnotKW", Pattern: `@(key|unique|abstract|cascade|independent|distinct|card|regex|values|range|subkey|doc|meta)`},
 	{Name: "String", Pattern: `"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`},
 	{Name: "Var", Pattern: `\$[a-zA-Z_][a-zA-Z0-9_-]*`},
 	{Name: "Arrow", Pattern: `->`},
@@ -264,15 +293,33 @@ func convertFunDef(f *FunDef) FunctionSpec {
 	if arrowIdx >= 0 {
 		var retParts []string
 		for i := arrowIdx + 1; i < len(toks); i++ {
-			if toks[i] == ":" {
+			if toks[i] == ":" || strings.HasPrefix(toks[i], "@") {
 				break
 			}
 			retParts = append(retParts, toks[i])
 		}
 		spec.ReturnType = strings.Join(retParts, " ")
 	}
+	applyFunctionDocMeta(toks, &spec.Doc, &spec.Meta)
 
 	return spec
+}
+
+func applyFunctionDocMeta(toks []string, doc *string, meta *[]MetaSpec) {
+	for i := 0; i < len(toks); i++ {
+		switch toks[i] {
+		case "@doc":
+			if i+3 < len(toks) && toks[i+1] == "(" && toks[i+3] == ")" {
+				*doc = unquote(toks[i+2])
+				i += 3
+			}
+		case "@meta":
+			if i+5 < len(toks) && toks[i+1] == "(" && toks[i+3] == "," && toks[i+5] == ")" {
+				*meta = append(*meta, MetaSpec{Key: unquote(toks[i+2]), Value: unquote(toks[i+4])})
+				i += 5
+			}
+		}
+	}
 }
 
 // parseParam extracts a ParameterSpec from tokens like [$name, :, type].
@@ -315,11 +362,20 @@ func convertAST(file *TQLFileSimple) *ParsedSchema {
 
 func convertStruct(s *StructDefP) StructSpec {
 	spec := StructSpec{Name: s.Name}
+	applyDocMeta(s.Annots, &spec.Doc, &spec.Meta)
 	for _, f := range s.Fields {
-		spec.Fields = append(spec.Fields, StructFieldSpec{
+		field := StructFieldSpec{
 			Name:      f.FieldName,
 			ValueType: f.ValueType,
 			Optional:  f.Optional,
+		}
+		applyDocMeta(f.Annots, &field.Doc, &field.Meta)
+		spec.Fields = append(spec.Fields, StructFieldSpec{
+			Name:      field.Name,
+			ValueType: field.ValueType,
+			Optional:  field.Optional,
+			Doc:       field.Doc,
+			Meta:      field.Meta,
 		})
 	}
 	return spec
@@ -330,6 +386,7 @@ func convertAttr(a *AttrDef) AttributeSpec {
 		Name:      a.Name,
 		ValueType: a.ValueType,
 	}
+	applyDocMeta(a.Annots, &spec.Doc, &spec.Meta)
 	for _, ann := range a.Annots {
 		if ann.Regex != nil {
 			spec.Regex = unquote(ann.Regex.Pattern)
@@ -349,8 +406,9 @@ func convertAttr(a *AttrDef) AttributeSpec {
 func convertEntity(e *EntityDef) EntitySpec {
 	spec := EntitySpec{
 		Name:     e.Name,
-		Abstract: e.Abstract,
+		Abstract: hasAbstract(e.Annots),
 	}
+	applyDocMeta(e.Annots, &spec.Doc, &spec.Meta)
 	if e.Parent != nil {
 		spec.Parent = e.Parent.Parent
 	}
@@ -359,10 +417,12 @@ func convertEntity(e *EntityDef) EntitySpec {
 			spec.Owns = append(spec.Owns, convertOwns(c.Owns))
 		}
 		if c.Plays != nil {
-			spec.Plays = append(spec.Plays, PlaysSpec{
+			plays := PlaysSpec{
 				Relation: c.Plays.Relation,
 				Role:     c.Plays.Role,
-			})
+			}
+			applyDocMeta(c.Plays.Annots, &plays.Doc, &plays.Meta)
+			spec.Plays = append(spec.Plays, plays)
 		}
 	}
 	return spec
@@ -371,8 +431,9 @@ func convertEntity(e *EntityDef) EntitySpec {
 func convertRelation(r *RelationDef) RelationSpec {
 	spec := RelationSpec{
 		Name:     r.Name,
-		Abstract: r.Abstract,
+		Abstract: hasAbstract(r.Annots),
 	}
+	applyDocMeta(r.Annots, &spec.Doc, &spec.Meta)
 	if r.Parent != nil {
 		spec.Parent = r.Parent.Parent
 	}
@@ -387,23 +448,50 @@ func convertRelation(r *RelationDef) RelationSpec {
 					rs.Card = ann.Card.Expr
 				}
 			}
+			applyDocMeta(c.Relates.Annots, &rs.Doc, &rs.Meta)
 			spec.Relates = append(spec.Relates, rs)
 		}
 		if c.Owns != nil {
 			spec.Owns = append(spec.Owns, convertOwns(c.Owns))
 		}
 		if c.Plays != nil {
-			spec.Plays = append(spec.Plays, PlaysSpec{
+			plays := PlaysSpec{
 				Relation: c.Plays.Relation,
 				Role:     c.Plays.Role,
-			})
+			}
+			applyDocMeta(c.Plays.Annots, &plays.Doc, &plays.Meta)
+			spec.Plays = append(spec.Plays, plays)
 		}
 	}
 	return spec
 }
 
+func applyDocMeta(annots []Annotation, doc *string, meta *[]MetaSpec) {
+	for _, ann := range annots {
+		if ann.Doc != nil {
+			*doc = unquote(ann.Doc.Text)
+		}
+		if ann.Meta != nil {
+			*meta = append(*meta, MetaSpec{
+				Key:   unquote(ann.Meta.Key),
+				Value: unquote(ann.Meta.Value),
+			})
+		}
+	}
+}
+
+func hasAbstract(annots []Annotation) bool {
+	for _, ann := range annots {
+		if ann.Abstract {
+			return true
+		}
+	}
+	return false
+}
+
 func convertOwns(o *OwnsDef) OwnsSpec {
 	spec := OwnsSpec{Attribute: o.Attribute}
+	applyDocMeta(o.Annots, &spec.Doc, &spec.Meta)
 	for _, ann := range o.Annots {
 		if ann.Key {
 			spec.Key = true

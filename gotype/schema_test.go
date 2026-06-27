@@ -38,6 +38,30 @@ func TestGenerateSchemaFor_Entity(t *testing.T) {
 	}
 }
 
+type schemaDocPerson struct {
+	BaseEntity
+	Name string `typedb:"name,key" typedb_doc:"Primary display name."`
+}
+
+func (schemaDocPerson) SchemaDoc() string {
+	return "A documented person type."
+}
+
+func TestGenerateSchemaFor_FieldDocAnnotation(t *testing.T) {
+	ClearRegistry()
+	MustRegister[schemaDocPerson]()
+
+	info, _ := Lookup("schema-doc-person")
+	schema := GenerateSchemaFor(info)
+
+	if !strings.Contains(schema, `owns name @key @doc("Primary display name.")`) {
+		t.Fatalf("missing field @doc annotation\n%s", schema)
+	}
+	if !strings.Contains(schema, `entity schema-doc-person @doc("A documented person type.")`) {
+		t.Fatalf("missing type @doc annotation\n%s", schema)
+	}
+}
+
 func TestGenerateSchemaFor_Relation(t *testing.T) {
 	ClearRegistry()
 	MustRegister[TestEmployment]()

@@ -473,6 +473,132 @@ entity old-task,
 	}
 }
 
+func TestParseSchema_TypeDB312Annotations(t *testing.T) {
+	input := `define
+
+attribute name, value string @doc("full name");
+attribute status, value string @meta("ui", "badge") @values("active", "inactive");
+
+struct metadata @doc("display metadata"):
+    label value string @doc("short label");
+
+entity artifact @abstract @doc("base type"),
+    owns name @key @doc("primary name");
+
+entity person sub artifact @doc("inherits metadata"),
+    owns status @card(0..1) @meta("filter", "true"),
+    plays employment:employee @doc("worker role");
+
+relation employment @meta("group", "hr"),
+    relates employee @card(1) @doc("employee"),
+    relates employer @card(1);
+
+fun active_people($s: status) -> person @doc("find people by status"):
+    match
+      $p isa person, has status $s;
+    return $p;
+`
+	schema, err := ParseSchema(input)
+	if err != nil {
+		t.Fatalf("ParseSchema failed: %v", err)
+	}
+
+	if len(schema.Attributes) != 2 {
+		t.Fatalf("expected 2 attributes, got %d", len(schema.Attributes))
+	}
+	if got := schema.Attributes[1].Values; len(got) != 2 || got[0] != "active" || got[1] != "inactive" {
+		t.Fatalf("unexpected status values: %#v", got)
+	}
+	if len(schema.Structs) != 1 || len(schema.Structs[0].Fields) != 1 {
+		t.Fatalf("expected annotated struct with one field, got %#v", schema.Structs)
+	}
+	if len(schema.Entities) != 2 {
+		t.Fatalf("expected 2 entities, got %d", len(schema.Entities))
+	}
+	if !schema.Entities[0].Abstract {
+		t.Fatal("expected artifact to remain abstract")
+	}
+	if schema.Entities[1].Parent != "artifact" {
+		t.Fatalf("expected person parent artifact, got %q", schema.Entities[1].Parent)
+	}
+	if schema.Entities[1].Owns[0].Card != "0..1" {
+		t.Fatalf("expected status card 0..1, got %q", schema.Entities[1].Owns[0].Card)
+	}
+	if len(schema.Relations) != 1 || schema.Relations[0].Relates[0].Card != "1" {
+		t.Fatalf("expected employment relation with cardinality, got %#v", schema.Relations)
+	}
+	if len(schema.Functions) != 1 {
+		t.Fatalf("expected one function, got %d", len(schema.Functions))
+	}
+	if schema.Functions[0].ReturnType != "person" {
+		t.Fatalf("expected return type person, got %q", schema.Functions[0].ReturnType)
+	}
+}
+
+func TestParseSchema_PreservesDocAndMetaAnnotations(t *testing.T) {
+	input := `define
+
+attribute name, value string @doc("Full legal name") @meta("pii", "true");
+attribute status, value string @meta("ui", "badge");
+
+entity person @doc("A person record") @meta("icon", "user"),
+    owns name @key @doc("Primary display name"),
+    owns status @card(0..1) @meta("filter", "true"),
+    plays employment:employee @doc("Employee role");
+
+relation employment @meta("group", "hr"),
+    relates employee @card(1) @doc("Employee side"),
+    owns status @doc("Employment status");
+
+fun active_people($s: status) -> person @doc("Find active people") @meta("group", "hr"):
+    match
+      $p isa person, has status $s;
+    return first $p;
+`
+
+	schema, err := ParseSchema(input)
+	if err != nil {
+		t.Fatalf("ParseSchema failed: %v", err)
+	}
+
+	if schema.Attributes[0].Doc != "Full legal name" {
+		t.Fatalf("attribute doc = %q", schema.Attributes[0].Doc)
+	}
+	if got := schema.Attributes[0].Meta; len(got) != 1 || got[0].Key != "pii" || got[0].Value != "true" {
+		t.Fatalf("attribute meta = %#v", got)
+	}
+	if schema.Entities[0].Doc != "A person record" {
+		t.Fatalf("entity doc = %q", schema.Entities[0].Doc)
+	}
+	if got := schema.Entities[0].Meta; len(got) != 1 || got[0].Key != "icon" || got[0].Value != "user" {
+		t.Fatalf("entity meta = %#v", got)
+	}
+	if schema.Entities[0].Owns[0].Doc != "Primary display name" {
+		t.Fatalf("owns doc = %q", schema.Entities[0].Owns[0].Doc)
+	}
+	if got := schema.Entities[0].Owns[1].Meta; len(got) != 1 || got[0].Key != "filter" || got[0].Value != "true" {
+		t.Fatalf("owns meta = %#v", got)
+	}
+	if schema.Entities[0].Plays[0].Doc != "Employee role" {
+		t.Fatalf("plays doc = %q", schema.Entities[0].Plays[0].Doc)
+	}
+	if got := schema.Relations[0].Meta; len(got) != 1 || got[0].Key != "group" || got[0].Value != "hr" {
+		t.Fatalf("relation meta = %#v", got)
+	}
+	if schema.Relations[0].Relates[0].Doc != "Employee side" {
+		t.Fatalf("relates doc = %q", schema.Relations[0].Relates[0].Doc)
+	}
+	if schema.Relations[0].Owns[0].Doc != "Employment status" {
+		t.Fatalf("relation owns doc = %q", schema.Relations[0].Owns[0].Doc)
+	}
+	if schema.Functions[0].Doc != "Find active people" {
+		t.Fatalf("function doc = %q", schema.Functions[0].Doc)
+	}
+	if got := schema.Functions[0].Meta; len(got) != 1 || got[0].Key != "group" || got[0].Value != "hr" {
+		t.Fatalf("function meta = %#v", got)
+	}
+}
+
 func TestParseSchema_StructWithSemicolonInComment(t *testing.T) {
 	input := `define
 

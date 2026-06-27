@@ -53,6 +53,7 @@ extern void typedb_query_options_drop(void* opts);
 extern void* typedb_transaction_open(void* driver, const char* database_name, int transaction_type, const void* options, char** err_out);
 extern bool typedb_transaction_is_open(const void* txn);
 extern unsigned char* typedb_transaction_query(void* txn, const char* query, const void* options, size_t* out_len, char** err_out);
+extern unsigned char* typedb_transaction_query_with_rows(void* txn, const char* query, const void* options, const char* rows_json, size_t* out_len, char** err_out);
 extern void typedb_transaction_commit(void* txn, char** err_out);
 extern void typedb_transaction_rollback(const void* txn, char** err_out);
 extern void typedb_transaction_close(void* txn, char** err_out);

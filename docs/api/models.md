@@ -54,6 +54,32 @@ Tags follow the format `typedb:"name[,option1][,option2]..."`:
 
 Cardinality formats: `0..1`, `1..5`, `2..` (unbounded max), `0+` (shorthand for `0..`).
 
+## Schema Documentation
+
+TypeDB 3.12 `@doc` annotations can be emitted from Go models.
+
+Use `typedb_doc` for field ownership documentation:
+
+```go
+type Person struct {
+    gotype.BaseEntity
+    Name string `typedb:"name,key" typedb_doc:"Primary display name."`
+}
+```
+
+Use `SchemaDoc() string` for type-level documentation:
+
+```go
+func (Person) SchemaDoc() string {
+    return "A person record."
+}
+```
+
+Schema generation emits these as TypeQL `@doc("...")` annotations. Metadata
+annotations such as `@meta` are parsed by `tqlgen`, but there is no general
+`typedb_meta` tag because repeatable key/value metadata does not fit Go struct
+tags cleanly.
+
 ## Go Type to TypeDB Value Type Mapping
 
 | Go Type                   | TypeDB Value Type |

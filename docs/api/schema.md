@@ -39,6 +39,33 @@ func GenerateSchemaFor(info *ModelInfo) string
 
 Generates a `define` statement for a single type, including its required attribute declarations.
 
+### Documentation Annotations
+
+Schema generation emits TypeDB 3.12 `@doc` annotations from model metadata:
+
+```go
+type Person struct {
+    gotype.BaseEntity
+    Name string `typedb:"name,key" typedb_doc:"Primary display name."`
+}
+
+func (Person) SchemaDoc() string {
+    return "A person record."
+}
+```
+
+The generated schema includes:
+
+```typeql
+entity person @doc("A person record."),
+    owns name @key @doc("Primary display name.");
+```
+
+Migration diffs do not currently treat doc-only changes as schema drift. This
+means docs are emitted for newly-created types and newly-added ownerships, but
+changing only `SchemaDoc()` or `typedb_doc` will not generate a migration update
+for an existing database object.
+
 ## Schema Migration
 
 Migration compares registered Go structs against an existing database schema, computes the diff, and applies changes.

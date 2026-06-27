@@ -61,6 +61,122 @@ func TestRenderEnumsDisabled(t *testing.T) {
 	}
 }
 
+func TestRenderDocAnnotationsAsCommentsAndTags(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "email", ValueType: "string", Doc: "Primary contact email."},
+		},
+		Entities: []EntitySpec{
+			{
+				Name: "customer",
+				Doc:  "A customer account.",
+				Owns: []OwnsSpec{
+					{Attribute: "email", Key: true, Doc: "Primary contact email."},
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	cfg := DefaultConfig()
+	if err := Render(&buf, schema, cfg); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "// Customer — A customer account.") {
+		t.Fatalf("missing type doc comment\n%s", out)
+	}
+	if !strings.Contains(out, "// Email — Primary contact email.") {
+		t.Fatalf("missing field doc comment\n%s", out)
+	}
+	if !strings.Contains(out, "Email string `typedb:\"email,key\" typedb_doc:\"Primary contact email.\"`") {
+		t.Fatalf("missing typedb_doc tag\n%s", out)
+	}
+}
+
+func TestRenderDocAnnotationTagEscapesQuotes(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "name", ValueType: "string"},
+		},
+		Entities: []EntitySpec{
+			{
+				Name: "person",
+				Owns: []OwnsSpec{
+					{Attribute: "name", Key: true, Doc: `Legal "display" name.`},
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := Render(&buf, schema, DefaultConfig()); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Name string `typedb:\"name,key\" typedb_doc:\"Legal \\\"display\\\" name.\"`") {
+		t.Fatalf("missing escaped typedb_doc tag\n%s", out)
+	}
+}
+
+func TestRenderDocAnnotationTagWithBacktickUsesInterpretedLiteral(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "name", ValueType: "string"},
+		},
+		Entities: []EntitySpec{
+			{
+				Name: "person",
+				Owns: []OwnsSpec{
+					{Attribute: "name", Key: true, Doc: "Name with `code`."},
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := Render(&buf, schema, DefaultConfig()); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Name string \"typedb:\\\"name,key\\\" typedb_doc:\\\"Name with `code`.\\\"\"") {
+		t.Fatalf("missing interpreted struct tag literal\n%s", out)
+	}
+}
+
+func TestRenderDocAnnotationCommentsAreSingleLine(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "name", ValueType: "string"},
+		},
+		Entities: []EntitySpec{
+			{
+				Name: "person",
+				Doc:  "Person\nrecord",
+				Owns: []OwnsSpec{
+					{Attribute: "name", Key: true, Doc: "Display\nname"},
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := Render(&buf, schema, DefaultConfig()); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "// Person — Person record") {
+		t.Fatalf("missing single-line type comment\n%s", out)
+	}
+	if !strings.Contains(out, "// Name — Display name") {
+		t.Fatalf("missing single-line field comment\n%s", out)
+	}
+}
+
 func TestBuildEnumCtxAcronyms(t *testing.T) {
 	attr := AttributeSpec{Name: "display_id", ValueType: "string", Values: []string{"auto", "manual"}}
 	cfg := RenderConfig{UseAcronyms: true}

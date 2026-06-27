@@ -393,6 +393,7 @@ func registryToParseSchema() *tqlgen.ParsedSchema {
 				Name:     info.TypeName,
 				Abstract: info.IsAbstract,
 				Parent:   info.Supertype,
+				Doc:      info.Doc,
 			}
 			for _, f := range info.Fields {
 				e.Owns = append(e.Owns, fieldToOwns(f))
@@ -403,6 +404,7 @@ func registryToParseSchema() *tqlgen.ParsedSchema {
 				Name:     info.TypeName,
 				Abstract: info.IsAbstract,
 				Parent:   info.Supertype,
+				Doc:      info.Doc,
 			}
 			for _, role := range info.Roles {
 				r.Relates = append(r.Relates, tqlgen.RelatesSpec{
@@ -424,6 +426,7 @@ func fieldToOwns(f FieldInfo) tqlgen.OwnsSpec {
 		Attribute: f.Tag.Name,
 		Key:       f.Tag.Key,
 		Unique:    f.Tag.Unique,
+		Doc:       f.Doc,
 	}
 	if f.Tag.CardMin != nil || f.Tag.CardMax != nil {
 		o.Card = formatCardString(f.Tag.CardMin, f.Tag.CardMax)
@@ -456,6 +459,9 @@ func buildOwnsAnnots(o tqlgen.OwnsSpec) string {
 	if o.Card != "" {
 		parts = append(parts, "@card("+o.Card+")")
 	}
+	if o.Doc != "" {
+		parts = append(parts, docAnnotation(o.Doc))
+	}
 	return strings.Join(parts, " ")
 }
 
@@ -464,6 +470,9 @@ func buildEntityDefine(e tqlgen.EntitySpec) string {
 	header := "entity " + e.Name
 	if e.Abstract {
 		header += " @abstract"
+	}
+	if e.Doc != "" {
+		header += " " + docAnnotation(e.Doc)
 	}
 	if e.Parent != "" {
 		header += " sub " + e.Parent
@@ -487,6 +496,9 @@ func buildRelationDefine(r tqlgen.RelationSpec) string {
 	header := "relation " + r.Name
 	if r.Abstract {
 		header += " @abstract"
+	}
+	if r.Doc != "" {
+		header += " " + docAnnotation(r.Doc)
 	}
 	if r.Parent != "" {
 		header += " sub " + r.Parent

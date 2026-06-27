@@ -16,6 +16,14 @@ type ParsedSchema struct {
 	Structs []StructSpec
 }
 
+// MetaSpec describes a TypeDB @meta("key", "value") annotation.
+type MetaSpec struct {
+	// Key is the metadata key.
+	Key string
+	// Value is the metadata value.
+	Value string
+}
+
 // FunctionSpec describes the signature of a TypeQL function definition.
 type FunctionSpec struct {
 	// Name is the name of the function.
@@ -24,6 +32,10 @@ type FunctionSpec struct {
 	Parameters []ParameterSpec
 	// ReturnType is the TypeQL return type of the function.
 	ReturnType string
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 }
 
 // ParameterSpec describes a single parameter of a TypeQL function.
@@ -38,6 +50,10 @@ type ParameterSpec struct {
 type StructSpec struct {
 	// Name is the name of the struct type.
 	Name string
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 	// Fields is a list of fields defined within the struct.
 	Fields []StructFieldSpec
 }
@@ -50,6 +66,10 @@ type StructFieldSpec struct {
 	ValueType string
 	// Optional indicates whether the field is marked as optional in the schema.
 	Optional bool
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 }
 
 // AttributeSpec describes a TypeQL attribute definition.
@@ -58,6 +78,10 @@ type AttributeSpec struct {
 	Name string
 	// ValueType is the base value type of the attribute (string, integer, double, boolean, datetime).
 	ValueType string
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 
 	// Regex is an optional regular expression constraint for the attribute values.
 	Regex string
@@ -75,6 +99,10 @@ type EntitySpec struct {
 	Parent string
 	// Abstract indicates whether the entity type is defined as abstract.
 	Abstract bool
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 
 	// Owns is a list of attributes owned by this entity type.
 	Owns []OwnsSpec
@@ -90,6 +118,10 @@ type RelationSpec struct {
 	Parent string
 	// Abstract indicates whether the relation type is defined as abstract.
 	Abstract bool
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 
 	// Relates is a list of roles involved in this relation.
 	Relates []RelatesSpec
@@ -109,6 +141,10 @@ type OwnsSpec struct {
 	Unique bool
 	// Card specifies the cardinality of the ownership (e.g., "0..1", "1..5").
 	Card string
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 }
 
 // PlaysSpec describes a "plays relation:role" clause.
@@ -117,6 +153,10 @@ type PlaysSpec struct {
 	Relation string
 	// Role is the name of the role played by the owner within that relation.
 	Role string
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 }
 
 // RelatesSpec describes a "relates role" clause in a relation definition.
@@ -127,6 +167,10 @@ type RelatesSpec struct {
 	AsParent string
 	// Card specifies the cardinality of players allowed for this role.
 	Card string
+	// Doc is the optional @doc annotation text.
+	Doc string
+	// Meta is the list of @meta annotations.
+	Meta []MetaSpec
 }
 
 // AccumulateInheritance propagates owns/plays from parent entities/relations

@@ -7,8 +7,8 @@ import (
 
 func TestIsReservedWord(t *testing.T) {
 	reserved := []string{
-		"label", "entity", "relation", "attribute", "match", "fetch",
-		"insert", "delete", "iid", "isa", "has", "sub", "owns",
+		"label", "entity", "relation", "attribute", "given", "match", "fetch",
+		"insert", "delete", "iid", "isa", "has", "sub", "owns", "doc", "meta",
 		"true", "false", "string", "boolean", "integer", "double",
 	}
 	for _, w := range reserved {

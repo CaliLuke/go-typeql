@@ -72,7 +72,7 @@ func queryOperation(query string) string {
 	}
 	first := strings.ToLower(strings.Trim(strings.Fields(trimmed)[0], ";"))
 	switch first {
-	case "match", "insert", "delete", "update", "define", "undefine", "fetch", "reduce":
+	case "given", "match", "insert", "delete", "update", "define", "undefine", "fetch", "reduce":
 		return first
 	default:
 		return "other"

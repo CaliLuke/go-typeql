@@ -23,6 +23,8 @@ const (
 type FieldInfo struct {
 	// Tag is the parsed 'typedb' struct tag.
 	Tag FieldTag
+	// Doc is the optional TypeDB @doc annotation for this ownership.
+	Doc string
 	// FieldName is the name of the field in the Go struct.
 	FieldName string
 	// FieldIndex is the 0-based index of the field in the Go struct.
@@ -50,6 +52,8 @@ type ModelInfo struct {
 	Kind ModelKind
 	// TypeName is the name of the type in the TypeDB schema.
 	TypeName string
+	// Doc is the optional TypeDB @doc annotation for this type.
+	Doc string
 	// IsAbstract is true if the TypeDB type is defined as abstract.
 	IsAbstract bool
 	// Supertype is the name of the parent type in the TypeDB schema.
@@ -108,6 +112,7 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 
 	// Default type name: kebab-case struct name (e.g. UserAccount → user-account)
 	info.TypeName = toKebabCase(t.Name())
+	info.Doc = schemaDocForType(t)
 
 	fieldCount := t.NumField()
 	info.Fields = make([]FieldInfo, 0, max(1, fieldCount/2+1))
@@ -201,9 +206,31 @@ func detectModelKind(t reflect.Type) (ModelKind, int, error) {
 	return 0, -1, fmt.Errorf("type %s must embed BaseEntity or BaseRelation", t.Name())
 }
 
+// SchemaDocumented can be implemented by a model to emit a type-level TypeDB
+// @doc annotation during schema generation.
+type SchemaDocumented interface {
+	SchemaDoc() string
+}
+
+func schemaDocForType(t reflect.Type) string {
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return ""
+	}
+	v := reflect.New(t).Interface()
+	documented, ok := v.(SchemaDocumented)
+	if !ok {
+		return ""
+	}
+	return documented.SchemaDoc()
+}
+
 func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) FieldInfo {
 	fi := FieldInfo{
 		Tag:        tag,
+		Doc:        field.Tag.Get("typedb_doc"),
 		FieldName:  field.Name,
 		FieldIndex: index,
 		FieldType:  field.Type,

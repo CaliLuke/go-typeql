@@ -4,7 +4,7 @@
 
 The `driver` package provides Go bindings to the official TypeDB `typedb-driver` 3.x Rust crate via CGo. All files are gated with `//go:build cgo && typedb` so they don't affect builds that don't need the driver.
 
-The bundled Rust FFI crate currently depends on `typedb-driver` `3.11.5`, paired with `typeql` `3.11.0` and the `typedb/typedb:3.11.5` integration-test image.
+The bundled Rust FFI crate currently depends on `typedb-driver` `3.12.0-rc0`, paired with `typeql` `3.12.0-rc0` and the `typedb/typedb:3.12.0-rc2` integration-test image.
 
 `go get` only downloads the module source. It does not build the Rust static library automatically. If you import `driver/`, you must either run `make build-rust` in the module tree that Go is compiling, or provide a prebuilt `libtypedb_go_ffi.a` and build with the `typedb_prebuilt` tag. Release archives are published for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`.
 
@@ -41,7 +41,7 @@ defer drv.Close()
 // With TLS
 drv, err := driver.OpenWithTLS("localhost:1729", "admin", "password", true, "/path/to/ca.crt")
 
-// With TypeDB 3.11 driver-level options
+// With TypeDB driver-level options
 drv, err := driver.OpenWithOptions("localhost:1729", "admin", "password", driver.DriverOptions{
     RequestTimeoutMillis:   5000,
     PrimaryFailoverRetries: 1,
@@ -69,10 +69,10 @@ drv, err = driver.OpenWithAddressTranslation(map[string]string{
 (`localhost:1730` on the host to `127.0.0.1:1729` as advertised by TypeDB CE).
 Use `OpenWithAddressTranslation` for explicit public-to-private mappings.
 
-### TypeDB 3.11 Connection Features
+### Connection Features
 
-The 3.11 Rust driver adds a small set of connection-level controls that are
-exposed through `DriverOptions`:
+The Rust driver exposes a small set of connection-level controls through
+`DriverOptions`:
 
 | Option                   | Applies to                                              |
 | ------------------------ | ------------------------------------------------------- |
@@ -118,6 +118,74 @@ err = txn.Commit()
 ```
 
 Transaction types: `Read` (0), `Write` (1), `Schema` (2).
+
+### Given Rows
+
+TypeDB 3.12 adds the `given` stage for passing input rows separately from the
+query string. Use `QueryWithRows` or `QueryWithOptionsAndRows` to send typed
+values without interpolating them into TypeQL:
+
+```go
+rows := driver.NewGivenRows("name", "age").
+    MustAdd(driver.StringGiven("Alice"), driver.IntGiven(30)).
+    MustAdd(driver.StringGiven("Bob"), driver.IntGiven(41))
+
+_, err := txn.QueryWithRows(`
+given $name: string, $age: integer;
+insert $p isa person, has name == $name, has age == $age;
+`, rows)
+```
+
+The Go API supports scalar given values: string, integer, double, boolean,
+decimal, date, datetime, datetime-tz, duration, and empty entries. It also
+supports opaque entity and relation concepts returned by row queries:
+
+```go
+conceptRows, err := txn.Query(`
+match
+  $p isa person, has name "Alice";
+select $p;
+`)
+person, ok := driver.AsConcept(conceptRows[0]["p"])
+if !ok {
+    log.Fatal("query did not return an opaque concept")
+}
+
+rows := driver.NewGivenRows("person", "age").
+    MustAdd(driver.ConceptGiven(person), driver.IntGiven(30))
+
+_, err = txn.QueryWithRows(`
+given $person: person, $age: integer;
+insert $person has age == $age;
+`, rows)
+```
+
+Opaque concept handles are process-local values produced by this driver. They
+are intended to be passed back to `ConceptGiven`, not persisted or constructed
+manually.
+
+### Transaction Lifecycle Helpers
+
+The driver tracks transactions opened through each `Driver` instance. This is
+useful when deleting or recreating databases in tests and long-running tools:
+
+```go
+open, err := drv.HasOpenTransactions("my_db")
+if err != nil {
+    log.Fatal(err)
+}
+if open {
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    if err := drv.CloseDatabaseTransactions(ctx, "my_db"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+These helpers are scoped to the current Go driver process. They report and close
+transactions opened by this `Driver`; they do not enumerate unrelated server-side
+transactions opened by other clients.
 
 `Close()` is caller-fast for uncommitted transactions: it detaches the Go handle immediately and completes the checked TypeDB close on a bounded background worker. Close failures are logged because the `gotype.Tx` interface cannot return a close error.
 
@@ -183,9 +251,9 @@ The `Conn` interface includes database lifecycle methods (`DatabaseCreate`, `Dat
 
 ## Architecture Notes
 
-**JSON at the boundary**: Query results cross the FFI boundary as JSON strings. The Rust layer serializes each result row to JSON; the Go layer deserializes them to `[]map[string]any`. This avoids complex C struct marshalling while keeping the API clean.
+**MessagePack at the boundary**: Query results cross the FFI boundary as MessagePack byte buffers. The Rust layer serializes result rows and documents; the Go layer deserializes them to `[]map[string]any`.
 
-**Thread-local error pattern**: The Rust FFI uses `typedb_check_error()` / `typedb_get_last_error()` for error reporting. The Go side checks after each FFI call.
+**Out-parameter error pattern**: The Rust FFI returns errors through `char**` out-parameters. The Go side converts those into `DriverError` values.
 
 **Build tags**: All driver source files use `//go:build cgo && typedb`. Integration tests additionally use the `integration` tag. This means:
 

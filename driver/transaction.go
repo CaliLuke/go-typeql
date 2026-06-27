@@ -33,6 +33,7 @@ type Transaction struct {
 	dbName string
 	txType TransactionType
 	opened bool
+	owner  *Driver
 	closer *transactionCloseWorker
 }
 
@@ -170,8 +171,8 @@ func WaitForPendingCloses(ctx context.Context) error {
 	return pendingTransactionCloses.wait(ctx)
 }
 
-func newTransaction(ptr unsafe.Pointer, id uint64, dbName string, txType TransactionType, closer *transactionCloseWorker) *Transaction {
-	t := &Transaction{ptr: ptr, id: id, dbName: dbName, txType: txType, opened: true, closer: closer}
+func newTransaction(ptr unsafe.Pointer, id uint64, dbName string, txType TransactionType, owner *Driver, closer *transactionCloseWorker) *Transaction {
+	t := &Transaction{ptr: ptr, id: id, dbName: dbName, txType: txType, opened: true, owner: owner, closer: closer}
 	incActiveTxOpen("tx_id", id, "db", dbName, "tx_type", int(txType), "reason", "open")
 	if debugEnabled() {
 		runtime.SetFinalizer(t, (*Transaction).debugLeakFinalizer)
@@ -184,6 +185,9 @@ func (t *Transaction) markClosedLocked(reason string) {
 		return
 	}
 	t.opened = false
+	if t.owner != nil {
+		t.owner.unregisterTransaction(t.id)
+	}
 	decActiveTxOpen("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "reason", reason)
 }
 
@@ -232,14 +236,40 @@ func (t *Transaction) Query(query string) ([]map[string]any, error) {
 
 // QueryWithOptions executes a TypeQL query with specific QueryOptions.
 func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[string]any, error) {
+	return t.query(query, opts, nil)
+}
+
+// QueryWithRows executes a TypeQL query with typed input rows for a given stage.
+func (t *Transaction) QueryWithRows(query string, rows *GivenRows) ([]map[string]any, error) {
+	return t.query(query, nil, rows)
+}
+
+// QueryWithOptionsAndRows executes a TypeQL query with query options and typed
+// input rows for a given stage.
+func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, rows *GivenRows) ([]map[string]any, error) {
+	return t.query(query, opts, rows)
+}
+
+func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows) ([]map[string]any, error) {
 	start := time.Now()
 	queryOp := queryOperation(query)
 	queryFP := queryFingerprint(query)
+	var rowsJSON []byte
+	var err error
+	if rows != nil {
+		rowsJSON, err = rows.json()
+		if err != nil {
+			err = withQuery(err, query)
+			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, "with_options", opts != nil, "with_rows", true)
+			return nil, err
+		}
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.ptr == nil {
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrNotConnected, "with_options", opts != nil)
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrNotConnected, "with_options", opts != nil, "with_rows", rows != nil)
 		return nil, ErrNotConnected
 	}
 
@@ -256,23 +286,30 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 
 	var outLen C.size_t
 	var queryErr *C.char
-	buf := C.typedb_transaction_query(t.ptr, cQuery, cOpts, &outLen, &queryErr)
+	var buf *C.uchar
+	if rows != nil {
+		cRows := C.CString(string(rowsJSON))
+		defer C.free(unsafe.Pointer(cRows))
+		buf = C.typedb_transaction_query_with_rows(t.ptr, cQuery, cOpts, cRows, &outLen, &queryErr)
+	} else {
+		buf = C.typedb_transaction_query(t.ptr, cQuery, cOpts, &outLen, &queryErr)
+	}
 	if buf == nil {
 		if err := withQuery(getError(queryErr), query); err != nil {
-			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, "with_options", opts != nil)
+			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, "with_options", opts != nil, "with_rows", rows != nil)
 			return nil, err
 		}
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, nil, "with_options", opts != nil)
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, nil, "with_options", opts != nil, "with_rows", rows != nil)
 		return nil, nil
 	}
 	defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
 	results, err := decodeMsgpack(buf, outLen)
 	err = withQuery(err, query)
 	if err != nil {
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, int(outLen), err, "with_options", opts != nil)
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, int(outLen), err, "with_options", opts != nil, "with_rows", rows != nil)
 		return nil, err
 	}
-	t.logQueryDuration(start, query, queryOp, queryFP, len(results), int(outLen), nil, "with_options", opts != nil)
+	t.logQueryDuration(start, query, queryOp, queryFP, len(results), int(outLen), nil, "with_options", opts != nil, "with_rows", rows != nil)
 	return results, nil
 }
 
@@ -419,6 +456,9 @@ func (t *Transaction) Rollback() error {
 		logFFIDuration("tx.rollback", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", err.Error())
 		return err
 	}
+	C.typedb_transaction_drop(t.ptr)
+	t.ptr = nil
+	t.markClosedLocked("rollback")
 	logFFIDuration("tx.rollback", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "ok")
 	return nil
 }

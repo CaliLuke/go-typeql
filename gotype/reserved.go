@@ -12,7 +12,7 @@ var TypeQLReservedWords = map[string]bool{
 	// Schema queries
 	"define": true, "undefine": true, "redefine": true,
 	// Data manipulation stages
-	"match": true, "fetch": true, "insert": true, "delete": true, "update": true, "put": true,
+	"given": true, "match": true, "fetch": true, "insert": true, "delete": true, "update": true, "put": true,
 	// Stream manipulation stages
 	"select": true, "require": true, "sort": true, "limit": true, "offset": true, "reduce": true,
 	// Special stages
@@ -30,7 +30,7 @@ var TypeQLReservedWords = map[string]bool{
 	// Annotations (without @)
 	"card": true, "cascade": true, "independent": true, "abstract": true,
 	"key": true, "subkey": true, "unique": true, "values": true,
-	"range": true, "regex": true, "distinct": true,
+	"range": true, "regex": true, "distinct": true, "doc": true, "meta": true,
 	// Reductions
 	"check": true, "first": true, "count": true, "max": true, "min": true,
 	"mean": true, "median": true, "std": true, "sum": true, "list": true,

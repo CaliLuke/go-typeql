@@ -10,6 +10,7 @@ package driver
 // #include "typedb_ffi.h"
 import "C"
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"sync"
@@ -43,6 +44,8 @@ type Driver struct {
 	ptr         unsafe.Pointer
 	mu          sync.Mutex
 	closeWorker *transactionCloseWorker
+	txMu        sync.Mutex
+	txs         map[uint64]*Transaction
 }
 
 // DriverOptions configures connection-level TypeDB driver behavior.
@@ -119,7 +122,7 @@ func OpenWithOptions(address, username, password string, opts DriverOptions) (*D
 	}
 
 	logFFIDuration("driver.open", start, "address", address, "result", "ok")
-	return &Driver{ptr: ptr, closeWorker: newTransactionCloseWorker()}, nil
+	return newDriver(ptr), nil
 }
 
 // OpenWithAddresses creates a new connection using one or more public TypeDB addresses.
@@ -211,7 +214,15 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 	}
 
 	logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "ok")
-	return &Driver{ptr: ptr, closeWorker: newTransactionCloseWorker()}, nil
+	return newDriver(ptr), nil
+}
+
+func newDriver(ptr unsafe.Pointer) *Driver {
+	return &Driver{
+		ptr:         ptr,
+		closeWorker: newTransactionCloseWorker(),
+		txs:         make(map[uint64]*Transaction),
+	}
 }
 
 func openInputs(username, password string, opts DriverOptions) (unsafe.Pointer, unsafe.Pointer, func(), error) {
@@ -335,6 +346,80 @@ func (d *Driver) Close() {
 	}
 }
 
+// HasOpenTransactions reports whether this driver has locally opened
+// transactions for the named database that have not been committed, rolled
+// back, or closed.
+func (d *Driver) HasOpenTransactions(databaseName string) (bool, error) {
+	d.mu.Lock()
+	connected := d.ptr != nil
+	d.mu.Unlock()
+	if !connected {
+		return false, ErrNotConnected
+	}
+
+	d.txMu.Lock()
+	defer d.txMu.Unlock()
+	for _, tx := range d.txs {
+		if tx.dbName == databaseName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// CloseDatabaseTransactions synchronously closes all transactions opened by
+// this driver for the named database.
+func (d *Driver) CloseDatabaseTransactions(ctx context.Context, databaseName string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	d.mu.Lock()
+	connected := d.ptr != nil
+	d.mu.Unlock()
+	if !connected {
+		return ErrNotConnected
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	transactions := d.transactionsForDatabase(databaseName)
+	for _, tx := range transactions {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := tx.CloseChecked(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Driver) registerTransaction(tx *Transaction) {
+	d.txMu.Lock()
+	d.txs[tx.id] = tx
+	d.txMu.Unlock()
+}
+
+func (d *Driver) unregisterTransaction(id uint64) {
+	d.txMu.Lock()
+	delete(d.txs, id)
+	d.txMu.Unlock()
+}
+
+func (d *Driver) transactionsForDatabase(databaseName string) []*Transaction {
+	d.txMu.Lock()
+	defer d.txMu.Unlock()
+
+	transactions := make([]*Transaction, 0)
+	for _, tx := range d.txs {
+		if tx.dbName == databaseName {
+			transactions = append(transactions, tx)
+		}
+	}
+	return transactions
+}
+
 // Transaction opens a new transaction with default options.
 func (d *Driver) Transaction(databaseName string, txnType TransactionType) (*Transaction, error) {
 	return d.TransactionWithOptions(databaseName, txnType, nil)
@@ -371,8 +456,10 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 		return nil, ErrNilPointer
 	}
 
+	tx := newTransaction(ptr, txID, databaseName, txnType, d, d.closeWorker)
+	d.registerTransaction(tx)
 	logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "ok")
-	return newTransaction(ptr, txID, databaseName, txnType, d.closeWorker), nil
+	return tx, nil
 }
 
 // Databases returns a DatabaseManager for this connection.
