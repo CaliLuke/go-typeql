@@ -221,6 +221,7 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
   - [func \(m \*Manager\[T\]\) Update\(ctx context.Context, instance \*T\) error](<#Manager[T].Update>)
   - [func \(m \*Manager\[T\]\) UpdateMany\(ctx context.Context, instances \[\]\*T\) error](<#Manager[T].UpdateMany>)
 - [type MatchBuilder](<#MatchBuilder>)
+- [type Meta](<#Meta>)
 - [type MigrateOption](<#MigrateOption>)
   - [func WithDestructive\(\) MigrateOption](<#WithDestructive>)
 - [type MigrationError](<#MigrationError>)
@@ -341,6 +342,7 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
   - [func \(op RunTypeQL\) IsReversible\(\) bool](<#RunTypeQL.IsReversible>)
   - [func \(op RunTypeQL\) RollbackTypeQL\(\) string](<#RunTypeQL.RollbackTypeQL>)
   - [func \(op RunTypeQL\) ToTypeQL\(\) string](<#RunTypeQL.ToTypeQL>)
+- [type SchemaAnnotated](<#SchemaAnnotated>)
 - [type SchemaConflictError](<#SchemaConflictError>)
   - [func \(e \*SchemaConflictError\) Error\(\) string](<#SchemaConflictError.Error>)
 - [type SchemaDiff](<#SchemaDiff>)
@@ -512,7 +514,7 @@ FormatValue converts a Go value into its TypeQL literal string representation. I
 This function delegates to ast.FormatGoValue for the actual formatting logic.
 
 <a name="FromDict"></a>
-## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L304>)
+## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L349>)
 
 ```go
 func FromDict[T any](data map[string]any) (*T, error)
@@ -669,7 +671,7 @@ This is useful when a database's schema was applied in bulk \(e.g., via ExecuteS
 Supports WithSeqDryRun \(report without stamping\), WithSeqTarget \(stamp up to a named migration\), and WithSeqLogger \(progress callback\).
 
 <a name="ToDict"></a>
-## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L260>)
+## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L305>)
 
 ```go
 func ToDict[T any](instance *T) (map[string]any, error)
@@ -678,7 +680,7 @@ func ToDict[T any](instance *T) (map[string]any, error)
 ToDict converts a registered model instance to a map\[string\]any using TypeDB attribute names as keys. Includes "\_iid" if set.
 
 <a name="ToInsertQuery"></a>
-## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L309>)
+## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L354>)
 
 ```go
 func ToInsertQuery[T any](instance *T) (string, error)
@@ -687,7 +689,7 @@ func ToInsertQuery[T any](instance *T) (string, error)
 ToInsertQuery generates a TypeQL insert query string for the given instance.
 
 <a name="ToMatchQuery"></a>
-## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L318>)
+## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L363>)
 
 ```go
 func ToMatchQuery[T any](instance *T) (string, error)
@@ -1527,7 +1529,7 @@ type FetchBuilder interface {
 ```
 
 <a name="FieldInfo"></a>
-## type [FieldInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L23-L44>)
+## type [FieldInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L24-L45>)
 
 FieldInfo contains metadata about a single field in a model struct, mapping it to a TypeDB attribute.
 
@@ -2239,6 +2241,20 @@ type MatchBuilder interface {
 }
 ```
 
+<a name="Meta"></a>
+## type [Meta](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L220-L225>)
+
+Meta describes a TypeDB @meta\("key", "value"\) annotation.
+
+```go
+type Meta struct {
+    // Key is the metadata key.
+    Key string
+    // Value is the metadata value.
+    Value string
+}
+```
+
 <a name="MigrateOption"></a>
 ## type [MigrateOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L359>)
 
@@ -2360,7 +2376,7 @@ func (ms *MigrationState) Record(ctx context.Context, hash, summary string) erro
 Record saves a new migration record to the database after it has been applied.
 
 <a name="ModelInfo"></a>
-## type [ModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L48-L68>)
+## type [ModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L49-L71>)
 
 ModelInfo contains comprehensive metadata about a registered TypeDB model, including its mapping to a Go struct and its TypeDB schema properties.
 
@@ -2374,6 +2390,8 @@ type ModelInfo struct {
     TypeName string
     // Doc is the optional TypeDB @doc annotation for this type.
     Doc string
+    // Meta is the ordered list of optional TypeDB @meta annotations for this type.
+    Meta []Meta
     // IsAbstract is true if the TypeDB type is defined as abstract.
     IsAbstract bool
     // Supertype is the name of the parent type in the TypeDB schema.
@@ -2389,7 +2407,7 @@ type ModelInfo struct {
 ```
 
 <a name="ExtractModelInfo"></a>
-### func [ExtractModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L92>)
+### func [ExtractModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L95>)
 
 ```go
 func ExtractModelInfo(t reflect.Type) (*ModelInfo, error)
@@ -2452,7 +2470,7 @@ func SubtypesOf(typeName string) []*ModelInfo
 SubtypesOf returns a slice of registered types that are direct subtypes of the specified parent type.
 
 <a name="ModelInfo.FieldByAttrName"></a>
-### func \(\*ModelInfo\) [FieldByAttrName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L81>)
+### func \(\*ModelInfo\) [FieldByAttrName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L84>)
 
 ```go
 func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool)
@@ -2461,7 +2479,7 @@ func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool)
 FieldByAttrName retrieves FieldInfo by the TypeDB attribute name.
 
 <a name="ModelInfo.FieldByName"></a>
-### func \(\*ModelInfo\) [FieldByName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L71>)
+### func \(\*ModelInfo\) [FieldByName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L74>)
 
 ```go
 func (m *ModelInfo) FieldByName(name string) (FieldInfo, bool)
@@ -2470,7 +2488,7 @@ func (m *ModelInfo) FieldByName(name string) (FieldInfo, bool)
 FieldByName retrieves FieldInfo by the Go struct field name.
 
 <a name="ModelKind"></a>
-## type [ModelKind](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L12>)
+## type [ModelKind](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L13>)
 
 ModelKind specifies whether a registered TypeDB model is an entity or a relation.
 
@@ -3479,6 +3497,17 @@ func (op RunTypeQL) ToTypeQL() string
 
 
 
+<a name="SchemaAnnotated"></a>
+## type [SchemaAnnotated](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L229-L231>)
+
+SchemaAnnotated can be implemented by a model to emit type\-level TypeDB @meta annotations during schema generation.
+
+```go
+type SchemaAnnotated interface {
+    SchemaMeta() map[string]string
+}
+```
+
 <a name="SchemaConflictError"></a>
 ## type [SchemaConflictError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/errors.go#L76-L79>)
 
@@ -3660,7 +3689,7 @@ func (d *SchemaDiff) Summary() string
 Summary returns a human\-readable description of the changes in the diff.
 
 <a name="SchemaDocumented"></a>
-## type [SchemaDocumented](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L211-L213>)
+## type [SchemaDocumented](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L215-L217>)
 
 SchemaDocumented can be implemented by a model to emit a type\-level TypeDB @doc annotation during schema generation.
 

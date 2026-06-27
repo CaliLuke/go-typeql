@@ -4,6 +4,7 @@ package gotype
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 )
@@ -54,6 +55,8 @@ type ModelInfo struct {
 	TypeName string
 	// Doc is the optional TypeDB @doc annotation for this type.
 	Doc string
+	// Meta is the ordered list of optional TypeDB @meta annotations for this type.
+	Meta []Meta
 	// IsAbstract is true if the TypeDB type is defined as abstract.
 	IsAbstract bool
 	// Supertype is the name of the parent type in the TypeDB schema.
@@ -113,6 +116,7 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 	// Default type name: kebab-case struct name (e.g. UserAccount → user-account)
 	info.TypeName = toKebabCase(t.Name())
 	info.Doc = schemaDocForType(t)
+	info.Meta = schemaMetaForType(t)
 
 	fieldCount := t.NumField()
 	info.Fields = make([]FieldInfo, 0, max(1, fieldCount/2+1))
@@ -212,6 +216,20 @@ type SchemaDocumented interface {
 	SchemaDoc() string
 }
 
+// Meta describes a TypeDB @meta("key", "value") annotation.
+type Meta struct {
+	// Key is the metadata key.
+	Key string
+	// Value is the metadata value.
+	Value string
+}
+
+// SchemaAnnotated can be implemented by a model to emit type-level TypeDB
+// @meta annotations during schema generation.
+type SchemaAnnotated interface {
+	SchemaMeta() map[string]string
+}
+
 func schemaDocForType(t reflect.Type) string {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -225,6 +243,33 @@ func schemaDocForType(t reflect.Type) string {
 		return ""
 	}
 	return documented.SchemaDoc()
+}
+
+func schemaMetaForType(t reflect.Type) []Meta {
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	v := reflect.New(t).Interface()
+	annotated, ok := v.(SchemaAnnotated)
+	if !ok {
+		return nil
+	}
+
+	values := annotated.SchemaMeta()
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	meta := make([]Meta, 0, len(keys))
+	for _, key := range keys {
+		meta = append(meta, Meta{Key: key, Value: values[key]})
+	}
+	return meta
 }
 
 func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) FieldInfo {

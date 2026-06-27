@@ -52,19 +52,26 @@ type Person struct {
 func (Person) SchemaDoc() string {
     return "A person record."
 }
+
+func (Person) SchemaMeta() map[string]string {
+    return map[string]string{
+        "owner": "identity",
+        "ui":    "person",
+    }
+}
 ```
 
 The generated schema includes:
 
 ```typeql
-entity person @doc("A person record."),
+entity person @doc("A person record.") @meta("owner", "identity") @meta("ui", "person"),
     owns name @key @doc("Primary display name.");
 ```
 
 Migration diffs do not currently treat doc-only changes as schema drift. This
 means docs are emitted for newly-created types and newly-added ownerships, but
-changing only `SchemaDoc()` or `typedb_doc` will not generate a migration update
-for an existing database object.
+changing only `SchemaDoc()`, `SchemaMeta()`, or `typedb_doc` will not generate a
+migration update for an existing database object.
 
 ## Schema Migration
 

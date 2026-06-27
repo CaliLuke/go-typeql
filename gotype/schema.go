@@ -98,6 +98,9 @@ func generateTypeDef(info *ModelInfo, playsMap map[string][]string) string {
 	if info.Doc != "" {
 		header += " " + docAnnotation(info.Doc)
 	}
+	for _, meta := range info.Meta {
+		header += " " + metaAnnotation(meta.Key, meta.Value)
+	}
 	if info.Supertype != "" {
 		header += fmt.Sprintf(", sub %s", info.Supertype)
 	}
@@ -156,6 +159,10 @@ func fieldAnnotations(f FieldInfo) string {
 
 func docAnnotation(doc string) string {
 	return "@doc(" + strconv.Quote(doc) + ")"
+}
+
+func metaAnnotation(key, value string) string {
+	return "@meta(" + strconv.Quote(key) + ", " + strconv.Quote(value) + ")"
 }
 
 func formatCardAnnotation(min, max *int) string {

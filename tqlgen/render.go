@@ -95,9 +95,11 @@ type renderData struct {
 }
 
 type enumCtx struct {
-	AttrName string // TypeDB attribute name
-	GoPrefix string // PascalCase prefix
-	Values   []enumValueCtx
+	AttrName     string // TypeDB attribute name
+	GoPrefix     string // PascalCase prefix
+	Comment      string
+	MetaComments []string
+	Values       []enumValueCtx
 }
 
 type enumValueCtx struct {
@@ -105,37 +107,51 @@ type enumValueCtx struct {
 	Value  string // e.g. "proposed"
 }
 
+type metaCtx struct {
+	Key   string
+	Value string
+}
+
 type entityCtx struct {
-	GoName    string
-	TypeName  string // TypeDB name
-	Abstract  bool
-	Comment   string
-	SchemaDoc string
-	Fields    []fieldCtx
+	GoName             string
+	TypeName           string // TypeDB name
+	Abstract           bool
+	Comment            string
+	MetaComments       []string
+	SchemaMeta         []metaCtx
+	InheritanceComment string
+	SchemaDoc          string
+	Fields             []fieldCtx
 }
 
 type relationCtx struct {
-	GoName    string
-	TypeName  string
-	Abstract  bool
-	Comment   string
-	SchemaDoc string
-	Roles     []roleCtx
-	Fields    []fieldCtx
+	GoName             string
+	TypeName           string
+	Abstract           bool
+	Comment            string
+	MetaComments       []string
+	SchemaMeta         []metaCtx
+	InheritanceComment string
+	SchemaDoc          string
+	Roles              []roleCtx
+	Fields             []fieldCtx
 }
 
 type fieldCtx struct {
-	GoName  string
-	GoType  string
-	Tag     string
-	Comment string
+	GoName       string
+	GoType       string
+	Tag          string
+	Comment      string
+	MetaComments []string
 }
 
 type roleCtx struct {
-	GoName     string
-	GoType     string
-	Tag        string
-	PlayerType string // Go type of the role player
+	GoName       string
+	GoType       string
+	Tag          string
+	PlayerType   string // Go type of the role player
+	Comment      string
+	MetaComments []string
 }
 
 // --- Context builders ---
@@ -143,8 +159,10 @@ type roleCtx struct {
 func buildEnumCtx(a AttributeSpec, cfg RenderConfig) enumCtx {
 	prefix := goTypeName(a.Name, cfg)
 	ctx := enumCtx{
-		AttrName: a.Name,
-		GoPrefix: prefix,
+		AttrName:     a.Name,
+		GoPrefix:     prefix,
+		Comment:      docComment(a.Doc),
+		MetaComments: metaComments(a.Meta),
 	}
 	for _, v := range a.Values {
 		ctx.Values = append(ctx.Values, enumValueCtx{
@@ -157,15 +175,18 @@ func buildEnumCtx(a AttributeSpec, cfg RenderConfig) enumCtx {
 
 func buildEntityCtx(e EntitySpec, attrTypes map[string]string, cfg RenderConfig) entityCtx {
 	ctx := entityCtx{
-		GoName:    goTypeName(e.Name, cfg),
-		TypeName:  e.Name,
-		Abstract:  e.Abstract,
-		SchemaDoc: e.Doc,
+		GoName:       goTypeName(e.Name, cfg),
+		TypeName:     e.Name,
+		Abstract:     e.Abstract,
+		MetaComments: metaComments(e.Meta),
+		SchemaMeta:   schemaMeta(e.Meta),
+		SchemaDoc:    e.Doc,
 	}
 	if e.Doc != "" {
 		ctx.Comment = docComment(e.Doc)
-	} else if e.Parent != "" {
-		ctx.Comment = fmt.Sprintf("inherits from %s", e.Parent)
+	}
+	if e.Parent != "" {
+		ctx.InheritanceComment = fmt.Sprintf("%s inherits from %s.", ctx.GoName, e.Parent)
 	}
 
 	for _, o := range e.Owns {
@@ -177,22 +198,27 @@ func buildEntityCtx(e EntitySpec, attrTypes map[string]string, cfg RenderConfig)
 
 func buildRelationCtx(r RelationSpec, schema *ParsedSchema, attrTypes map[string]string, cfg RenderConfig) relationCtx {
 	ctx := relationCtx{
-		GoName:    goTypeName(r.Name, cfg),
-		TypeName:  r.Name,
-		Abstract:  r.Abstract,
-		SchemaDoc: r.Doc,
+		GoName:       goTypeName(r.Name, cfg),
+		TypeName:     r.Name,
+		Abstract:     r.Abstract,
+		MetaComments: metaComments(r.Meta),
+		SchemaMeta:   schemaMeta(r.Meta),
+		SchemaDoc:    r.Doc,
 	}
 	if r.Doc != "" {
 		ctx.Comment = docComment(r.Doc)
-	} else if r.Parent != "" {
-		ctx.Comment = fmt.Sprintf("inherits from %s", r.Parent)
+	}
+	if r.Parent != "" {
+		ctx.InheritanceComment = fmt.Sprintf("%s inherits from %s.", ctx.GoName, r.Parent)
 	}
 
 	// Build role player type lookup from relation's relates + entity plays
 	for _, rel := range r.Relates {
 		role := roleCtx{
-			GoName: goFieldName(rel.Role, cfg),
-			Tag:    fmt.Sprintf("`typedb:\"role:%s\"`", rel.Role),
+			GoName:       goFieldName(rel.Role, cfg),
+			Tag:          fmt.Sprintf("`typedb:\"role:%s\"`", rel.Role),
+			Comment:      docComment(rel.Doc),
+			MetaComments: metaComments(rel.Meta),
 		}
 
 		// Find which entity plays this role
@@ -218,8 +244,9 @@ func buildRelationCtx(r RelationSpec, schema *ParsedSchema, attrTypes map[string
 
 func buildFieldCtx(o OwnsSpec, attrTypes map[string]string, cfg RenderConfig) fieldCtx {
 	f := fieldCtx{
-		GoName:  goFieldName(o.Attribute, cfg),
-		Comment: docComment(o.Doc),
+		GoName:       goFieldName(o.Attribute, cfg),
+		Comment:      docComment(o.Doc),
+		MetaComments: metaComments(o.Meta),
 	}
 
 	// Determine Go type from TypeDB value type
@@ -257,6 +284,28 @@ func buildFieldCtx(o OwnsSpec, attrTypes map[string]string, cfg RenderConfig) fi
 
 func docComment(doc string) string {
 	return strings.Join(strings.Fields(doc), " ")
+}
+
+func metaComments(meta []MetaSpec) []string {
+	if len(meta) == 0 {
+		return nil
+	}
+	comments := make([]string, 0, len(meta))
+	for _, item := range meta {
+		comments = append(comments, "@meta "+docComment(item.Key)+"="+docComment(item.Value))
+	}
+	return comments
+}
+
+func schemaMeta(meta []MetaSpec) []metaCtx {
+	if len(meta) == 0 {
+		return nil
+	}
+	entries := make([]metaCtx, 0, len(meta))
+	for _, item := range meta {
+		entries = append(entries, metaCtx(item))
+	}
+	return entries
 }
 
 func structTagLiteral(tag string) string {
@@ -363,6 +412,12 @@ import (
 
 // --- Enum constants (from @values constraints) ---
 {{range .Enums}}
+{{- if .Comment}}
+// {{.GoPrefix}} — {{.Comment}}
+{{- end}}
+{{- range .MetaComments}}
+// {{.}}
+{{- end}}
 // {{.GoPrefix}} values for the "{{.AttrName}}" attribute.
 const (
 {{- range .Values}}
@@ -375,32 +430,66 @@ const (
 {{- if .Comment}}
 // {{.GoName}} — {{.Comment}}
 {{- end}}
+{{- range .MetaComments}}
+// {{.}}
+{{- end}}
+{{- if .InheritanceComment}}
+// {{.InheritanceComment}}
+{{- end}}
 type {{.GoName}} struct {
 	gotype.BaseEntity
 {{- range .Fields}}
 {{- if .Comment}}
 	// {{.GoName}} — {{.Comment}}
 {{- end}}
+{{- range .MetaComments}}
+	// {{.}}
+{{- end}}
 	{{.GoName}} {{.GoType}} {{.Tag}}
 {{- end}}
 }
 {{- if .SchemaDoc}}
 
 func ({{.GoName}}) SchemaDoc() string { return {{quote .SchemaDoc}} }
+{{- end}}
+{{- if .SchemaMeta}}
+
+func ({{.GoName}}) SchemaMeta() map[string]string {
+	return map[string]string{
+{{- range .SchemaMeta}}
+		{{quote .Key}}: {{quote .Value}},
+{{- end}}
+	}
+}
 {{- end}}
 {{end}}
 {{- range .Relations}}
 {{- if .Comment}}
 // {{.GoName}} — {{.Comment}}
 {{- end}}
+{{- range .MetaComments}}
+// {{.}}
+{{- end}}
+{{- if .InheritanceComment}}
+// {{.InheritanceComment}}
+{{- end}}
 type {{.GoName}} struct {
 	gotype.BaseRelation
 {{- range .Roles}}
+{{- if .Comment}}
+	// {{.GoName}} — {{.Comment}}
+{{- end}}
+{{- range .MetaComments}}
+	// {{.}}
+{{- end}}
 	{{.GoName}} {{.GoType}} {{.Tag}}
 {{- end}}
 {{- range .Fields}}
 {{- if .Comment}}
 	// {{.GoName}} — {{.Comment}}
+{{- end}}
+{{- range .MetaComments}}
+	// {{.}}
 {{- end}}
 	{{.GoName}} {{.GoType}} {{.Tag}}
 {{- end}}
@@ -408,5 +497,15 @@ type {{.GoName}} struct {
 {{- if .SchemaDoc}}
 
 func ({{.GoName}}) SchemaDoc() string { return {{quote .SchemaDoc}} }
+{{- end}}
+{{- if .SchemaMeta}}
+
+func ({{.GoName}}) SchemaMeta() map[string]string {
+	return map[string]string{
+{{- range .SchemaMeta}}
+		{{quote .Key}}: {{quote .Value}},
+{{- end}}
+	}
+}
 {{- end}}
 {{end}}`))

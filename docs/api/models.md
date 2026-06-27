@@ -75,10 +75,21 @@ func (Person) SchemaDoc() string {
 }
 ```
 
-Schema generation emits these as TypeQL `@doc("...")` annotations. Metadata
-annotations such as `@meta` are parsed by `tqlgen`, but there is no general
-`typedb_meta` tag because repeatable key/value metadata does not fit Go struct
-tags cleanly.
+Use `SchemaMeta() map[string]string` for type-level metadata:
+
+```go
+func (Person) SchemaMeta() map[string]string {
+    return map[string]string{
+        "owner": "identity",
+        "ui":    "person",
+    }
+}
+```
+
+Schema generation emits these as TypeQL `@doc("...")` and `@meta("key",
+"value")` annotations. Metadata keys are sorted for deterministic schema output.
+There is no general `typedb_meta` field tag because repeatable key/value
+metadata does not fit Go struct tags cleanly.
 
 ## Go Type to TypeDB Value Type Mapping
 

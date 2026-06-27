@@ -126,6 +126,33 @@ func TestExtractModelInfo_SliceField(t *testing.T) {
 	}
 }
 
+func TestExtractModelInfo_SchemaDocAndMeta(t *testing.T) {
+	info, err := ExtractModelInfo(reflect.TypeOf(schemaDocPerson{}))
+	if err != nil {
+		t.Fatalf("ExtractModelInfo: %v", err)
+	}
+
+	if info.Doc != "A documented person type." {
+		t.Fatalf("Doc = %q", info.Doc)
+	}
+	if len(info.Meta) != 2 {
+		t.Fatalf("Meta = %#v", info.Meta)
+	}
+	if info.Meta[0].Key != "owner" || info.Meta[0].Value != "identity" {
+		t.Fatalf("Meta[0] = %#v", info.Meta[0])
+	}
+	if info.Meta[1].Key != "ui" || info.Meta[1].Value != "person" {
+		t.Fatalf("Meta[1] = %#v", info.Meta[1])
+	}
+	nameField, ok := info.FieldByName("Name")
+	if !ok {
+		t.Fatal("missing Name field")
+	}
+	if nameField.Doc != "Primary display name." {
+		t.Fatalf("field Doc = %q", nameField.Doc)
+	}
+}
+
 func TestExtractModelInfo_NotStruct(t *testing.T) {
 	_, err := ExtractModelInfo(reflect.TypeOf(42))
 	if err == nil {

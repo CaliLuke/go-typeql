@@ -47,6 +47,13 @@ func (schemaDocPerson) SchemaDoc() string {
 	return "A documented person type."
 }
 
+func (schemaDocPerson) SchemaMeta() map[string]string {
+	return map[string]string{
+		"ui":    "person",
+		"owner": "identity",
+	}
+}
+
 func TestGenerateSchemaFor_FieldDocAnnotation(t *testing.T) {
 	ClearRegistry()
 	MustRegister[schemaDocPerson]()
@@ -59,6 +66,75 @@ func TestGenerateSchemaFor_FieldDocAnnotation(t *testing.T) {
 	}
 	if !strings.Contains(schema, `entity schema-doc-person @doc("A documented person type.")`) {
 		t.Fatalf("missing type @doc annotation\n%s", schema)
+	}
+}
+
+func TestGenerateSchemaFor_TypeMetaAnnotationsSorted(t *testing.T) {
+	ClearRegistry()
+	MustRegister[schemaDocPerson]()
+
+	info, _ := Lookup("schema-doc-person")
+	schema := GenerateSchemaFor(info)
+
+	want := `entity schema-doc-person @doc("A documented person type.") @meta("owner", "identity") @meta("ui", "person")`
+	if !strings.Contains(schema, want) {
+		t.Fatalf("missing sorted type @meta annotations\nwant: %s\nschema:\n%s", want, schema)
+	}
+}
+
+type schemaDocEscapedPerson struct {
+	BaseEntity
+	Name string `typedb:"name,key" typedb_doc:"Display, \"legal\" name."`
+}
+
+func TestGenerateSchemaFor_FieldDocAnnotationEscapesWithoutBreakingTypedbTag(t *testing.T) {
+	ClearRegistry()
+	MustRegister[schemaDocEscapedPerson]()
+
+	info, _ := Lookup("schema-doc-escaped-person")
+	schema := GenerateSchemaFor(info)
+
+	if !strings.Contains(schema, `owns name @key @doc("Display, \"legal\" name.")`) {
+		t.Fatalf("missing escaped field @doc annotation\n%s", schema)
+	}
+}
+
+type schemaDocControlPerson struct {
+	BaseEntity
+	Name string `typedb:"name,key" typedb_doc:"Line one\nLine two"`
+}
+
+func (schemaDocControlPerson) SchemaDoc() string {
+	return "Type line one\nType line two"
+}
+
+func (schemaDocControlPerson) SchemaMeta() map[string]string {
+	return map[string]string{"note": "Meta line one\nMeta line two"}
+}
+
+func TestGenerateSchemaFor_DocAndMetaControlCharactersRoundTripThroughParser(t *testing.T) {
+	ClearRegistry()
+	MustRegister[schemaDocControlPerson]()
+
+	info, _ := Lookup("schema-doc-control-person")
+	schema := GenerateSchemaFor(info)
+
+	parsed, err := IntrospectSchemaFromString(schema)
+	if err != nil {
+		t.Fatalf("IntrospectSchemaFromString: %v\nschema:\n%s", err, schema)
+	}
+	if len(parsed.Entities) != 1 {
+		t.Fatalf("expected one entity, got %#v", parsed.Entities)
+	}
+	entity := parsed.Entities[0]
+	if entity.Doc != "Type line one\nType line two" {
+		t.Fatalf("entity Doc = %q", entity.Doc)
+	}
+	if got := entity.Meta; len(got) != 1 || got[0].Key != "note" || got[0].Value != "Meta line one\nMeta line two" {
+		t.Fatalf("entity Meta = %#v", got)
+	}
+	if len(entity.Owns) != 1 || entity.Owns[0].Doc != "Line one\nLine two" {
+		t.Fatalf("owns Doc = %#v", entity.Owns)
 	}
 }
 

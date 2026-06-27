@@ -394,6 +394,7 @@ func registryToParseSchema() *tqlgen.ParsedSchema {
 				Abstract: info.IsAbstract,
 				Parent:   info.Supertype,
 				Doc:      info.Doc,
+				Meta:     modelMetaToTQL(info.Meta),
 			}
 			for _, f := range info.Fields {
 				e.Owns = append(e.Owns, fieldToOwns(f))
@@ -405,6 +406,7 @@ func registryToParseSchema() *tqlgen.ParsedSchema {
 				Abstract: info.IsAbstract,
 				Parent:   info.Supertype,
 				Doc:      info.Doc,
+				Meta:     modelMetaToTQL(info.Meta),
 			}
 			for _, role := range info.Roles {
 				r.Relates = append(r.Relates, tqlgen.RelatesSpec{
@@ -419,6 +421,17 @@ func registryToParseSchema() *tqlgen.ParsedSchema {
 	}
 
 	return schema
+}
+
+func modelMetaToTQL(meta []Meta) []tqlgen.MetaSpec {
+	if len(meta) == 0 {
+		return nil
+	}
+	out := make([]tqlgen.MetaSpec, 0, len(meta))
+	for _, item := range meta {
+		out = append(out, tqlgen.MetaSpec{Key: item.Key, Value: item.Value})
+	}
+	return out
 }
 
 func fieldToOwns(f FieldInfo) tqlgen.OwnsSpec {
@@ -474,6 +487,9 @@ func buildEntityDefine(e tqlgen.EntitySpec) string {
 	if e.Doc != "" {
 		header += " " + docAnnotation(e.Doc)
 	}
+	for _, meta := range e.Meta {
+		header += " " + metaAnnotation(meta.Key, meta.Value)
+	}
 	if e.Parent != "" {
 		header += " sub " + e.Parent
 	}
@@ -499,6 +515,9 @@ func buildRelationDefine(r tqlgen.RelationSpec) string {
 	}
 	if r.Doc != "" {
 		header += " " + docAnnotation(r.Doc)
+	}
+	for _, meta := range r.Meta {
+		header += " " + metaAnnotation(meta.Key, meta.Value)
 	}
 	if r.Parent != "" {
 		header += " sub " + r.Parent

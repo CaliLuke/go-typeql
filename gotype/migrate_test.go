@@ -63,6 +63,33 @@ func TestDiffSchema_NewEntity(t *testing.T) {
 	assertContains(t, diff.AddEntities[0].TypeQL, "owns name @key")
 }
 
+func TestDiffSchema_NewEntityIncludesDocAndMetaAnnotations(t *testing.T) {
+	desired := &tqlgen.ParsedSchema{
+		Entities: []tqlgen.EntitySpec{
+			{
+				Name: "person",
+				Doc:  "A person record.",
+				Meta: []tqlgen.MetaSpec{
+					{Key: "owner", Value: "identity"},
+					{Key: "ui", Value: "person"},
+				},
+				Owns: []tqlgen.OwnsSpec{
+					{Attribute: "name", Key: true, Doc: "Primary display name."},
+				},
+			},
+		},
+	}
+	current := &tqlgen.ParsedSchema{}
+
+	diff := DiffSchema(desired, current)
+
+	if len(diff.AddEntities) != 1 {
+		t.Fatalf("expected 1 new entity, got %d", len(diff.AddEntities))
+	}
+	assertContains(t, diff.AddEntities[0].TypeQL, `entity person @doc("A person record.") @meta("owner", "identity") @meta("ui", "person")`)
+	assertContains(t, diff.AddEntities[0].TypeQL, `owns name @key @doc("Primary display name.")`)
+}
+
 func TestDiffSchema_NewOwns(t *testing.T) {
 	desired := &tqlgen.ParsedSchema{
 		Entities: []tqlgen.EntitySpec{
@@ -98,6 +125,72 @@ func TestDiffSchema_NewOwns(t *testing.T) {
 	}
 	if diff.AddOwns[0].TypeName != "person" {
 		t.Errorf("expected person, got %s", diff.AddOwns[0].TypeName)
+	}
+}
+
+func TestDiffSchema_NewOwnsIncludesDocAnnotation(t *testing.T) {
+	desired := &tqlgen.ParsedSchema{
+		Entities: []tqlgen.EntitySpec{
+			{
+				Name: "person",
+				Owns: []tqlgen.OwnsSpec{
+					{Attribute: "name", Key: true},
+					{Attribute: "email", Unique: true, Doc: "Primary contact email."},
+				},
+			},
+		},
+	}
+	current := &tqlgen.ParsedSchema{
+		Entities: []tqlgen.EntitySpec{
+			{
+				Name: "person",
+				Owns: []tqlgen.OwnsSpec{
+					{Attribute: "name", Key: true},
+				},
+			},
+		},
+	}
+
+	diff := DiffSchema(desired, current)
+
+	if len(diff.AddOwns) != 1 {
+		t.Fatalf("expected 1 new owns, got %d", len(diff.AddOwns))
+	}
+	if diff.AddOwns[0].Annots != `@unique @doc("Primary contact email.")` {
+		t.Fatalf("Annots = %q", diff.AddOwns[0].Annots)
+	}
+}
+
+func TestDiffSchema_DocAndMetaOnlyChangesDoNotChurn(t *testing.T) {
+	desired := &tqlgen.ParsedSchema{
+		Entities: []tqlgen.EntitySpec{
+			{
+				Name: "person",
+				Doc:  "New person doc.",
+				Meta: []tqlgen.MetaSpec{{Key: "owner", Value: "new-team"}},
+				Owns: []tqlgen.OwnsSpec{
+					{Attribute: "name", Key: true, Doc: "New name doc."},
+				},
+			},
+		},
+	}
+	current := &tqlgen.ParsedSchema{
+		Entities: []tqlgen.EntitySpec{
+			{
+				Name: "person",
+				Doc:  "Old person doc.",
+				Meta: []tqlgen.MetaSpec{{Key: "owner", Value: "old-team"}},
+				Owns: []tqlgen.OwnsSpec{
+					{Attribute: "name", Key: true, Doc: "Old name doc."},
+				},
+			},
+		},
+	}
+
+	diff := DiffSchema(desired, current)
+
+	if !diff.IsEmpty() {
+		t.Fatalf("expected doc/meta-only changes to produce no diff, got: %s", diff.Summary())
 	}
 }
 
