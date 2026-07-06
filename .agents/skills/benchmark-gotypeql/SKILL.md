@@ -181,10 +181,10 @@ Do not jump straight to "roll back" unless the regression is reproduced and mate
 
 ```bash
 make build-rust
-podman compose up -d
+docker compose up -d
 TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
 
-- `podman`, not `docker`.
+- Use Colima with Docker Compose on this machine.
 - The compose file exposes TypeDB on host port `1730`.
 - If you add a benchmark during investigation, keep it focused and remove throwaway instrumentation before finishing unless the user wants the benchmark kept.

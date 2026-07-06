@@ -25,7 +25,7 @@ If `$ARGUMENTS` is empty, ask the user what version to release.
 ```bash
 go test ./ast/... ./gotype/... ./tqlgen/...
 make build-rust
-podman compose up -d
+docker compose up -d
 TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
 
@@ -34,7 +34,7 @@ This step must prove both release surfaces still work:
 - The pure-Go packages (`ast/`, `gotype/`, `tqlgen/`) still pass from a clean checkout.
 - The CGo driver still links after producing `driver/rust/target/release/libtypedb_go_ffi.a`.
 
-The TypeDB container can be left running for subsequent steps; no teardown needed unless the user wants a clean environment (`podman compose down`).
+The TypeDB container can be left running for subsequent steps; no teardown needed unless the user wants a clean environment (`docker compose down`).
 
 ## 3. Check test coverage
 

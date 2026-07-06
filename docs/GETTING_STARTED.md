@@ -1,6 +1,6 @@
 # Getting Started
 
-This walkthrough connects to TypeDB, creates a database, defines a schema, and does basic CRUD. It assumes you have TypeDB running on port 1729. If you use the repo `docker-compose.yml` via `podman compose up -d`, connect to host port `1730` instead.
+This walkthrough connects to TypeDB, creates a database, defines a schema, and does basic CRUD. It assumes you have TypeDB running on port 1729. If you use the repo `docker-compose.yml` via `docker compose up -d`, connect to host port `1730` instead.
 
 ```go
 package main

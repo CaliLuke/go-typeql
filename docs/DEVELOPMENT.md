@@ -4,8 +4,8 @@
 
 - **Go 1.26.2+**
 - **Rust toolchain** (for the FFI driver) — install via [rustup](https://rustup.rs/)
-- **TypeDB 3.x server** (for integration tests) — run via Podman/Docker or install directly
-- **Podman or Docker** (optional, for running TypeDB in tests)
+- **TypeDB 3.x server** (for integration tests) — run via Docker Compose or install directly
+- **Colima with Docker Compose** (optional, for running TypeDB in tests on this machine)
 
 ## Project Structure
 
@@ -51,7 +51,7 @@ gotype/
 
 ## Building the Rust FFI Library
 
-The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface. The repo currently tracks `typedb-driver` `3.12.0-rc0`, paired with the `typedb/typedb:3.12.0-rc2` integration-test image.
+The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface. The repo currently tracks the final `typedb-driver` and `typeql` `3.12.0` Rust crates, paired with the `typedb/typedb:3.12.0-rc2` integration-test image until a final server image is published.
 
 ```bash
 # Build the static library (driver/rust/target/release/libtypedb_go_ffi.a)
@@ -84,18 +84,20 @@ go build -tags "cgo,typedb" ./...
 
 ## Container Setup
 
-A `docker-compose.yml` is provided for running TypeDB during integration tests. Works with both Podman and Docker:
+A `docker-compose.yml` is provided for running TypeDB during integration tests. On this machine, use Colima with Docker Compose:
 
 ```bash
+# Start Colima if it is not already running
+colima start
+
 # Start TypeDB (repo compose exposes host port 1730 -> container port 1729)
-podman compose up -d
-# or: docker compose up -d
+docker compose up -d
 
 # Run integration tests
 TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 # Stop TypeDB
-podman compose down
+docker compose down
 ```
 
 ## Build Tags
@@ -111,7 +113,7 @@ The project uses build tags to isolate CGo-dependent code:
 The `ast/`, `gotype/`, and `tqlgen/` packages compile and test without any build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
-# Unit tests (default, no tags needed) — 416 tests
+# Unit tests (default, no tags needed) — 437 tests
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests

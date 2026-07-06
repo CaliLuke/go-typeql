@@ -12,7 +12,7 @@ Usage guides for the go-typeql packages. For an introduction to the library, see
 | [Schema](schema.md)       | Schema generation, migration workflows, sequential migrations   |
 | [Generator](generator.md) | tqlgen: generate Go structs from TypeQL schemas                 |
 | [AST](ast.md)             | Low-level TypeQL AST for programmatic query building            |
-| [Driver](driver.md)       | Rust FFI driver setup, TypeDB 3.11 options, server version, address translation |
+| [Driver](driver.md)       | Rust FFI driver setup, TypeDB 3.12 options, server version, address translation |
 
 ## API Reference
 

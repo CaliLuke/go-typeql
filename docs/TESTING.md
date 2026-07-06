@@ -10,13 +10,13 @@ go-typeql uses a two-tier testing approach:
 ## Running Tests
 
 ```bash
-# Unit tests (416 tests, no DB required)
+# Unit tests (437 tests, no DB required)
 make test-unit
 # Or directly:
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (requires TypeDB + Rust library)
-podman compose up -d
+docker compose up -d
 TEST_DB_ADDRESS=localhost:1730 make test-integration
 # Or directly:
 TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
