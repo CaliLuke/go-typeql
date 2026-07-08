@@ -2,6 +2,7 @@ package ast
 
 import (
 	"testing"
+	"time"
 
 	"github.com/CaliLuke/go-typeql/internal/typeqlcheck"
 )
@@ -104,6 +105,73 @@ func TestTypeQLSyntax_Compiler(t *testing.T) {
 				ReduceClause{Assignments: []ReduceAssignment{
 					{Variable: "$c", Expression: FuncCall("count", "$p")},
 				}},
+			},
+		},
+		{
+			// Issue #25: bare Go values in Has/Cmp are emitted as literals.
+			name: "match with bare Go values",
+			nodes: []QueryNode{Match(
+				Entity("$p", "person",
+					Has("name", "Alice"),
+					Has("age", 42),
+					Has("active", true),
+				),
+			)},
+		},
+		{
+			// Issue #25: injection-shaped values compile to escaped literals.
+			name: "match with injection-shaped string value",
+			nodes: []QueryNode{Match(
+				Entity("$p", "person", Has("name", `x"; delete $p; match $q isa person, has name "y`)),
+			)},
+		},
+		{
+			// Issue #25: bare Go value comparison.
+			name: "match value comparison with bare Go value",
+			nodes: []QueryNode{
+				Match(
+					Entity("$p", "person", Has("age", "$a")),
+					Cmp("$a", ">", 18),
+				),
+			},
+		},
+		{
+			// Issue #63: AggregateExpr compiles in reduce assignments.
+			name: "match reduce aggregate expr",
+			nodes: []QueryNode{
+				Match(Entity("$p", "person")),
+				ReduceClause{Assignments: []ReduceAssignment{
+					{Variable: "$c", Expression: AggregateExpr{FuncName: "count", Var: "$p"}},
+				}},
+			},
+		},
+		{
+			// Issue #64: narrow integer widths and time values via ValueFromGo.
+			name: "insert narrow int widths",
+			nodes: []QueryNode{Insert(
+				IsaStmt("$e", "event"),
+				HasStmt("$e", "age", ValueFromGo(int32(5))),
+				HasStmt("$e", "code", ValueFromGo(uint16(7))),
+				HasStmt("$e", "created", ValueFromGo(time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC))),
+			)},
+		},
+		{
+			// Issue #81: FetchAttrPath with a bare variable fetches the variable.
+			name: "fetch attr path variants",
+			nodes: []QueryNode{
+				Match(Entity("$p", "person")),
+				Fetch(
+					FetchAttrPath("name", "$p.name"),
+					FetchAttrPath("entity", "$p"),
+				),
+			},
+		},
+		{
+			// Issue #82: fetch keys are escaped into valid string literals.
+			name: "fetch with quote in key",
+			nodes: []QueryNode{
+				Match(Entity("$p", "person")),
+				Fetch(FetchAttr(`weird"key`, "$p", "name")),
 			},
 		},
 		{
