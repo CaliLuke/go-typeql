@@ -48,6 +48,18 @@ TypeQL, add it to the `typeql_syntax_test.go` battery in the package. Known-inva
 marked with `knownIssue` skips tied to open issues; when fixing one of those issues, remove the
 marker — the test fails loudly once the output becomes valid.
 
+**ALWAYS verify TypeQL syntax with the CLI, never from memory or docs.** Written TypeQL
+references (including any typeql skill) lag the grammar, which is why the skill is no longer
+vendored in this repo. `typeql-check` reads a query on stdin and exits non-zero on a parse
+error:
+
+```bash
+printf 'insert $e isa product, has price 0dec;' | ~/go/bin/typeql-check
+```
+
+Any TypeQL syntax question (literal forms, annotations, clause order) is settled by running the
+checker, not by consulting documentation.
+
 ## Code Quality Standards
 
 **Linting is mandatory** — all code must pass `go vet`, `golangci-lint`, and `~/go/bin/staticcheck` before committing.

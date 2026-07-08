@@ -138,7 +138,7 @@ See the dedicated guide: [Debugging Hangs](docs/DEBUGGING_HANGS.md).
 - [Testing Guide](docs/TESTING.md) — test strategy, mocks, integration test infrastructure
 - [Debugging Hangs](docs/DEBUGGING_HANGS.md) — debug flags, log keys, startup-hang diagnostics
 - [API Reference](docs/api/README.md) — models, CRUD, queries, filters, schema, migration, code generator
-- [TypeQL agent skill](.agents/skills/typeql/SKILL.md) — vendored from [`CaliLuke/skills/skills/typedb`](https://github.com/CaliLuke/skills/tree/main/skills/typedb)
+- TypeQL agent skill — maintained externally in [`CaliLuke/skills/skills/typedb`](https://github.com/CaliLuke/skills/tree/main/skills/typedb) (not vendored here; verify syntax with `typeql-check` instead)
 
 ## Requirements
 
