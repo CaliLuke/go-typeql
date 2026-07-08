@@ -4,7 +4,9 @@ package gotype
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/CaliLuke/go-typeql/ast"
@@ -85,6 +87,8 @@ func lookupManagerInfo[T any]() (*ModelInfo, error) {
 
 // Insert adds a new instance of T to the database.
 // If T has key fields, the instance's internal IID will be populated upon success.
+// Key attributes must be set to non-zero values; a missing key returns a
+// *KeyAttributeError instead of silently inserting a zero-value key.
 func (m *Manager[T]) Insert(ctx context.Context, instance *T) error {
 	if instance == nil {
 		return fmt.Errorf("insert %s: instance must not be nil", m.info.TypeName)
@@ -92,12 +96,15 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error {
 	if err := checkCtx(ctx, "insert", m.info.TypeName); err != nil {
 		return err
 	}
+	if err := m.validateKeyAttributes("insert", instance); err != nil {
+		return err
+	}
 	insertQuery, err := m.strategy.BuildInsertQuery(m.info, instance, "e")
 	if err != nil {
 		return fmt.Errorf("insert %s: build query: %w", m.info.TypeName, err)
 	}
 
-	tx, autoCommit, err := m.writeTx()
+	tx, autoCommit, err := m.writeTx(ctx)
 	if err != nil {
 		return fmt.Errorf("insert %s: %w", m.info.TypeName, err)
 	}
@@ -145,6 +152,25 @@ func (m *Manager[T]) Get(ctx context.Context, filters map[string]any) ([]*T, err
 	}
 
 	return m.hydrateResults(results)
+}
+
+// GetOne retrieves exactly one instance of T matching the specified attribute
+// filters. It returns a *NotFoundError when no instance matches and a
+// *NotUniqueError when more than one instance matches, so callers can
+// distinguish those cases with errors.As.
+func (m *Manager[T]) GetOne(ctx context.Context, filters map[string]any) (*T, error) {
+	results, err := m.Get(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	switch len(results) {
+	case 0:
+		return nil, &NotFoundError{TypeName: m.info.TypeName}
+	case 1:
+		return results[0], nil
+	default:
+		return nil, &NotUniqueError{TypeName: m.info.TypeName, Count: len(results)}
+	}
 }
 
 // All retrieves all instances of the model type T from the database.
@@ -215,10 +241,7 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error {
 		return fmt.Errorf("update %s: instance has no IID", m.info.TypeName)
 	}
 
-	tx, autoCommit, err := m.writeTx()
-	return m.withWriteTx(ctx, "update", func() (Tx, bool, error) {
-		return tx, autoCommit, err
-	}, func(tx Tx) error {
+	return m.withWriteTx(ctx, "update", m.writeTx, func(tx Tx) error {
 		return m.updateInstanceInTx(ctx, tx, instance)
 	})
 }
@@ -244,16 +267,12 @@ func (m *Manager[T]) updateInstanceInTx(ctx context.Context, tx Tx, instance *T)
 		}
 		delAttrs = append(delAttrs, fi.Tag.Name)
 
-		field := v.Field(fi.FieldIndex)
-		if fi.IsPointer && field.IsNil() {
-			continue // nil optional: delete only, no insert
-		}
-
-		val := field.Interface()
-		if fi.IsPointer {
-			val = field.Elem().Interface()
-		}
-		insHas = append(insHas, fmt.Sprintf("has %s %s", fi.Tag.Name, FormatValue(val)))
+		// visitFieldValues handles pointers (skip nil: delete only) and
+		// slices (one has-clause per element) exactly like the insert path,
+		// so multi-valued attributes round-trip instead of being stringified.
+		visitFieldValues(v, fi, func(val any) {
+			insHas = append(insHas, fmt.Sprintf("has %s %s", fi.Tag.Name, FormatValue(val)))
+		})
 	}
 
 	// Single query: match entity + try-match old attrs, delete old, insert new.
@@ -429,11 +448,16 @@ func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error {
 
 // Put upserts an instance (insert or update).
 // After a successful put, the instance's IID is populated (if it has key fields).
+// Key attributes must be set to non-zero values; a missing key returns a
+// *KeyAttributeError since the upsert match is meaningless without it.
 func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
 	if instance == nil {
 		return fmt.Errorf("put %s: instance must not be nil", m.info.TypeName)
 	}
 	if err := checkCtx(ctx, "put", m.info.TypeName); err != nil {
+		return err
+	}
+	if err := m.validateKeyAttributes("put", instance); err != nil {
 		return err
 	}
 	putQuery, err := m.strategy.BuildPutQuery(m.info, instance, "e")
@@ -470,25 +494,54 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
 }
 
 // PutMany upserts multiple instances in a single transaction.
+// IIDs are fetched inside the same write transaction (one key-match query per
+// instance) instead of opening a read transaction per instance afterwards.
 func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 	if len(instances) == 0 {
 		return nil
 	}
 
+	for i, inst := range instances {
+		if inst == nil {
+			return fmt.Errorf("put_many %s[%d]: instance must not be nil", m.info.TypeName, i)
+		}
+		if err := m.validateKeyAttributes("put", inst); err != nil {
+			return fmt.Errorf("put_many %s[%d]: %w", m.info.TypeName, i, err)
+		}
+	}
+
+	hasKeys := len(m.info.KeyFields) > 0
+	pendingIIDs := make([]string, len(instances))
 	err := m.withWriteTx(ctx, "put_many", m.newWriteTx, func(tx Tx) error {
 		for i, inst := range instances {
-			if inst == nil {
-				return fmt.Errorf("put_many %s[%d]: instance must not be nil", m.info.TypeName, i)
-			}
 			varName := fmt.Sprintf("e%d", i)
 			putQuery, err := m.strategy.BuildPutQuery(m.info, inst, varName)
 			if err != nil {
 				return fmt.Errorf("put_many %s[%d]: build query: %w", m.info.TypeName, i, err)
 			}
 
-			_, err = tx.QueryWithContext(ctx, putQuery)
-			if err != nil {
+			if _, err := tx.QueryWithContext(ctx, putQuery); err != nil {
 				return fmt.Errorf("put_many %s[%d]: %w", m.info.TypeName, i, err)
+			}
+
+			if !hasKeys {
+				continue
+			}
+			// Fetch the IID in the same transaction via key match.
+			matchQuery, err := m.strategy.BuildMatchByKey(m.info, inst, "e")
+			if err != nil {
+				return fmt.Errorf("put_many %s[%d]: build iid query: %w", m.info.TypeName, i, err)
+			}
+			iidQuery := matchQuery + "\n" + `fetch { "_iid": iid($e) };`
+
+			results, err := tx.QueryWithContext(ctx, iidQuery)
+			if err != nil {
+				return fmt.Errorf("put_many %s[%d]: fetch iid: %w", m.info.TypeName, i, err)
+			}
+			if len(results) == 1 {
+				if iid := extractIID(results[0]); iid != "" {
+					pendingIIDs[i] = iid
+				}
 			}
 		}
 		return nil
@@ -497,24 +550,9 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 		return err
 	}
 
-	// Fetch IIDs in a read transaction
-	for _, inst := range instances {
-		if len(m.info.KeyFields) > 0 {
-			matchQuery, err := m.strategy.BuildMatchByKey(m.info, inst, "e")
-			if err != nil {
-				return fmt.Errorf("put_many %s: build iid query: %w", m.info.TypeName, err)
-			}
-			iidQuery := matchQuery + "\n" + `fetch { "_iid": iid($e) };`
-
-			results, err := m.db.ExecuteRead(ctx, iidQuery)
-			if err != nil {
-				return fmt.Errorf("put_many %s: fetch iid: %w", m.info.TypeName, err)
-			}
-			if len(results) == 1 {
-				if iid := extractIID(results[0]); iid != "" {
-					setIIDOnInfo(inst, m.info, iid)
-				}
-			}
+	for i, iid := range pendingIIDs {
+		if iid != "" {
+			setIIDOnInfo(instances[i], m.info, iid)
 		}
 	}
 
@@ -531,7 +569,7 @@ func (m *Manager[T]) countByIID(ctx context.Context, iid string) (int64, error) 
 	if len(results) == 0 {
 		return 0, nil
 	}
-	return extractCount(results[0]), nil
+	return countFromResult(results[0])
 }
 
 // InsertMany inserts multiple instances in a single transaction.
@@ -545,6 +583,9 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 		for i, inst := range instances {
 			if inst == nil {
 				return fmt.Errorf("insert_many %s[%d]: instance must not be nil", m.info.TypeName, i)
+			}
+			if err := m.validateKeyAttributes("insert", inst); err != nil {
+				return fmt.Errorf("insert_many %s[%d]: %w", m.info.TypeName, i, err)
 			}
 			varName := fmt.Sprintf("e%d", i)
 			insertQuery, err := m.strategy.BuildInsertQuery(m.info, inst, varName)
@@ -671,29 +712,27 @@ func checkCtx(ctx context.Context, op, typeName string) error {
 	return nil
 }
 
-// writeTx returns the bound transaction or creates a new write transaction.
+// writeTx returns the bound transaction or creates a new write transaction,
+// honoring context cancellation while acquiring it.
 // If a bound tx is used, autoCommit is false (caller manages lifecycle).
-func (m *Manager[T]) writeTx() (tx Tx, autoCommit bool, err error) {
+func (m *Manager[T]) writeTx(ctx context.Context) (tx Tx, autoCommit bool, err error) {
 	if m.tx != nil {
 		return m.tx, false, nil
 	}
-	tx, err = m.db.Transaction(WriteTransaction)
+	return m.newWriteTx(ctx)
+}
+
+// newWriteTx always opens a fresh write transaction, ignoring any bound tx.
+func (m *Manager[T]) newWriteTx(ctx context.Context) (Tx, bool, error) {
+	tx, err := m.db.TransactionContext(ctx, WriteTransaction)
 	if err != nil {
 		return nil, false, err
 	}
 	return tx, true, nil
 }
 
-func (m *Manager[T]) newWriteTx() (Tx, bool, error) {
-	tx, err := m.db.Transaction(WriteTransaction)
-	if err != nil {
-		return nil, false, err
-	}
-	return tx, true, nil
-}
-
-func (m *Manager[T]) withWriteTx(ctx context.Context, op string, open func() (Tx, bool, error), fn func(Tx) error) error {
-	tx, autoCommit, err := open()
+func (m *Manager[T]) withWriteTx(ctx context.Context, op string, open func(context.Context) (Tx, bool, error), fn func(Tx) error) error {
+	tx, autoCommit, err := open(ctx)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", op, m.info.TypeName, err)
 	}
@@ -733,14 +772,37 @@ func (m *Manager[T]) buildFilteredMatch(varName string, filters map[string]any) 
 	b.WriteString(varName)
 	b.WriteString(" isa ")
 	b.WriteString(m.info.TypeName)
-	for attr, val := range filters {
+	// Sort attribute names so identical logical filters always produce
+	// identical query text (map iteration order is randomized).
+	for _, attr := range slices.Sorted(maps.Keys(filters)) {
 		b.WriteString(",\nhas ")
 		b.WriteString(attr)
 		b.WriteByte(' ')
-		b.WriteString(FormatValue(val))
+		b.WriteString(FormatValue(filters[attr]))
 	}
 	b.WriteString(";")
 	return b.String(), nil
+}
+
+// validateKeyAttributes ensures every key attribute carries a non-zero value
+// before a write that must be able to identify the instance by key.
+// Returns a *KeyAttributeError naming the first missing key attribute.
+func (m *Manager[T]) validateKeyAttributes(op string, instance *T) error {
+	if len(m.info.KeyFields) == 0 {
+		return nil
+	}
+	v := reflectValue(instance)
+	for _, kf := range m.info.KeyFields {
+		val := extractSingleFieldValue(v, kf)
+		if val == nil || reflect.ValueOf(val).IsZero() {
+			return &KeyAttributeError{
+				EntityType: m.info.TypeName,
+				FieldName:  kf.Tag.Name,
+				Operation:  op,
+			}
+		}
+	}
+	return nil
 }
 
 func (m *Manager[T]) hydrateResults(results []map[string]any) ([]*T, error) {

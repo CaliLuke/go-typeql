@@ -202,22 +202,14 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 	var matchPatterns []ast.Pattern
 	var roleParts []string
 
-	for _, role := range info.Roles {
-		field := v.Field(role.FieldIndex)
-		if field.Kind() == reflect.Pointer && field.IsNil() {
-			continue
-		}
-		playerVal := field
-		if playerVal.Kind() == reflect.Pointer {
-			playerVal = playerVal.Elem()
-		}
-
-		roleVar := role.RoleName
-
+	// appendPlayer adds a match pattern and links entry for a single role
+	// player. playerVal must be a (dereferenced) struct value.
+	appendPlayer := func(role RoleInfo, playerVal reflect.Value, roleVar string) error {
 		// Look up player model info for key matching
 		playerInfo, ok := LookupType(playerVal.Type())
 		if !ok {
-			continue
+			return fmt.Errorf("relation %s: role %q player type %s is not registered; call Register first",
+				info.TypeName, role.RoleName, playerVal.Type())
 		}
 
 		// Prefer IID, fall back to key attributes
@@ -237,6 +229,43 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 		}
 
 		roleParts = append(roleParts, fmt.Sprintf("%s: $%s", role.RoleName, roleVar))
+		return nil
+	}
+
+	for _, role := range info.Roles {
+		field := v.Field(role.FieldIndex)
+		switch {
+		case field.Kind() == reflect.Slice:
+			// Multi-player role: one links entry per element.
+			for i := 0; i < field.Len(); i++ {
+				elem := field.Index(i)
+				if elem.Kind() == reflect.Pointer {
+					if elem.IsNil() {
+						return "", fmt.Errorf("relation %s: role %q player [%d] is nil", info.TypeName, role.RoleName, i)
+					}
+					elem = elem.Elem()
+				}
+				if err := appendPlayer(role, elem, fmt.Sprintf("%s%d", role.RoleName, i)); err != nil {
+					return "", err
+				}
+			}
+		case field.Kind() == reflect.Pointer && field.IsNil():
+			continue // absent optional player
+		default:
+			playerVal := field
+			if playerVal.Kind() == reflect.Pointer {
+				playerVal = playerVal.Elem()
+			}
+			if err := appendPlayer(role, playerVal, role.RoleName); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	// A relation without role players is invalid TypeQL (`links ()`); refuse
+	// to build it rather than silently emitting a broken query.
+	if len(roleParts) == 0 {
+		return "", fmt.Errorf("relation %s: no role players set; a relation must be written with at least one player", info.TypeName)
 	}
 
 	// Build insert/put statement parts

@@ -111,6 +111,75 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 			assertTypeQL(t, "count query", q, "")
 		}
 	})
+
+	t.Run("filtered delete with distinct pipeline", func(t *testing.T) {
+		writeTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}, nil}}
+		conn := &mockConn{txs: []*mockTx{writeTx}}
+		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
+
+		if _, err := mgr.Query().Filter(Gt("age", 20)).Delete(context.Background()); err != nil {
+			t.Fatalf("query delete failed: %v", err)
+		}
+		for _, q := range writeTx.queries {
+			assertTypeQL(t, "query delete", q, "")
+		}
+	})
+
+	t.Run("bulk update", func(t *testing.T) {
+		writeTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}, nil}}
+		conn := &mockConn{txs: []*mockTx{writeTx}}
+		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
+
+		if _, err := mgr.Query().Filter(Eq("name", "Alice")).Update(context.Background(), map[string]any{
+			"email": "bulk@example.com",
+			"age":   40,
+		}); err != nil {
+			t.Fatalf("bulk update failed: %v", err)
+		}
+		for _, q := range writeTx.queries {
+			assertTypeQL(t, "bulk update query", q, "")
+		}
+	})
+
+	t.Run("update multi-valued attribute", func(t *testing.T) {
+		ClearRegistry()
+		MustRegister[testTagged]()
+		writeTx := &mockTx{}
+		conn := &mockConn{txs: []*mockTx{writeTx}}
+		mgr := MustNewManager[testTagged](NewDatabase(conn, "test_db"))
+
+		e := &testTagged{Label: "doc1", Tags: []string{"alpha", "beta"}}
+		e.SetIID("0xABC123")
+		if err := mgr.Update(context.Background(), e); err != nil {
+			t.Fatalf("update failed: %v", err)
+		}
+		for _, q := range writeTx.queries {
+			assertTypeQL(t, "multi-valued update query", q, "")
+		}
+	})
+
+	t.Run("relation insert with slice role players", func(t *testing.T) {
+		ClearRegistry()
+		MustRegister[testPerson]()
+		MustRegister[testTeam]()
+		writeTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xREL1"}}}}
+		conn := &mockConn{txs: []*mockTx{writeTx}}
+		mgr := MustNewManager[testTeam](NewDatabase(conn, "test_db"))
+
+		team := &testTeam{
+			Members: []*testPerson{
+				{Name: "Alice", Email: "a@example.com"},
+				{Name: "Bob", Email: "b@example.com"},
+			},
+			Squad: "alpha",
+		}
+		if err := mgr.Insert(context.Background(), team); err != nil {
+			t.Fatalf("relation insert failed: %v", err)
+		}
+		for _, q := range writeTx.queries {
+			assertTypeQL(t, "multi-player relation insert", q, "")
+		}
+	})
 }
 
 // TestTypeQLSyntax_GeneratedSchema validates the full registry-derived schema.
