@@ -55,12 +55,16 @@ type fluentState struct {
 	sortClause       *SortClause
 	offsetClause     *OffsetClause
 	limitClause      *LimitClause
+	// err records a deferred builder error (e.g. a constraint that could not
+	// be attached). It is carried through clones and returned by Build.
+	err error
 }
 
 func (s fluentState) clone() fluentState {
 	cp := fluentState{
 		compiler:         s.compiler,
 		mainVar:          s.mainVar,
+		err:              s.err,
 		matchPatterns:    append([]Pattern(nil), s.matchPatterns...),
 		matchLet:         append([]LetAssignment(nil), s.matchLet...),
 		deleteStatements: append([]Statement(nil), s.deleteStatements...),
@@ -118,6 +122,9 @@ func (s fluentState) nodes() []QueryNode {
 }
 
 func (s fluentState) build() (string, error) {
+	if s.err != nil {
+		return "", s.err
+	}
 	return s.compiler.CompileBatch(s.nodes(), "")
 }
 
@@ -234,6 +241,9 @@ func MatchFunction(funcName string, args ...any) FunctionStage {
 }
 
 // Has adds a has constraint to the primary matched variable.
+// It requires the first match pattern to be an EntityPattern (as produced by
+// FluentMatch or an entity-first FluentPatterns); otherwise a deferred error
+// is recorded and returned by Build.
 func (b MatchBuilder) Has(attrName string, value any) MatchStage {
 	next := b.state.clone()
 	next.addPatternConstraint(Has(attrName, ValueFromGo(value)))
@@ -241,6 +251,8 @@ func (b MatchBuilder) Has(attrName string, value any) MatchStage {
 }
 
 // Iid adds an iid constraint to the primary matched variable.
+// Like Has, it requires an entity-first builder; otherwise a deferred error
+// is recorded and returned by Build.
 func (b MatchBuilder) Iid(iid string) MatchStage {
 	next := b.state.clone()
 	next.addPatternConstraint(Iid(iid))
@@ -248,6 +260,8 @@ func (b MatchBuilder) Iid(iid string) MatchStage {
 }
 
 // MatchByIdentifier matches by IID (as determined by matcher) or falls back to attribute matching.
+// Like Has and Iid, it requires an entity-first builder; otherwise a deferred
+// error is recorded and returned by Build.
 func (b MatchBuilder) MatchByIdentifier(identifier, attrName string, matcher IdentifierMatcher) MatchStage {
 	if matcher == nil {
 		matcher = DefaultIdentifierMatcher
@@ -351,7 +365,9 @@ func (b MatchBuilder) BuildNodes() []QueryNode {
 	return b.Nodes()
 }
 
-// Build compiles the fluent query into TypeQL.
+// Build compiles the fluent query into TypeQL. It returns any deferred
+// builder error (e.g. a constraint that could not be attached) instead of
+// silently dropping the offending clause.
 func (b MatchBuilder) Build() (string, error) {
 	return b.state.build()
 }
@@ -409,7 +425,8 @@ func (b MatchOutputBuilder) BuildNodes() []QueryNode {
 	return b.Nodes()
 }
 
-// Build compiles the fluent query into TypeQL.
+// Build compiles the fluent query into TypeQL. It returns any deferred
+// builder error carried over from earlier stages.
 func (b MatchOutputBuilder) Build() (string, error) {
 	return b.state.build()
 }
@@ -564,15 +581,25 @@ func PaginatedSearch(types []string, opts PaginatedSearchOptions) (string, error
 	return MatchBuilder{state: state}.Build()
 }
 
+// addPatternConstraint attaches a constraint to the first match pattern.
+// The first pattern must be an EntityPattern; otherwise a deferred error is
+// recorded and returned by Build, so misuse never silently drops a filter.
+// The constraint slice is copied before appending so builders forked from a
+// common ancestor never share (and corrupt) a constraint backing array.
 func (s *fluentState) addPatternConstraint(constraint Constraint) {
+	if s.err != nil {
+		return
+	}
 	if len(s.matchPatterns) == 0 {
+		s.err = fmt.Errorf("fluent: cannot attach %T constraint: builder has no match patterns", constraint)
 		return
 	}
 	first, ok := s.matchPatterns[0].(EntityPattern)
 	if !ok {
+		s.err = fmt.Errorf("fluent: cannot attach %T constraint: first match pattern is %T, not EntityPattern (Has/Iid/MatchByIdentifier require an entity-first builder; use Where for other patterns)", constraint, s.matchPatterns[0])
 		return
 	}
-	first.Constraints = append(first.Constraints, constraint)
+	first.Constraints = append(append([]Constraint(nil), first.Constraints...), constraint)
 	s.matchPatterns[0] = first
 }
 

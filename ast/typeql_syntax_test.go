@@ -171,6 +171,24 @@ func TestTypeQLSyntax_Fluent(t *testing.T) {
 		assertTypeQL(t, "fluent fetch+sort+limit", q, "")
 	})
 
+	t.Run("sibling-branched builders", func(t *testing.T) {
+		base := FluentMatch("p", "person").Has("a", 1).Has("b", 2).Has("c", 3)
+		branchA := base.Has("y", 20)
+		branchB := base.Has("z", 30)
+
+		qA, err := branchA.Build()
+		if err != nil {
+			t.Fatalf("branch A build error: %v", err)
+		}
+		assertTypeQL(t, "fluent sibling branch A", qA, "")
+
+		qB, err := branchB.Build()
+		if err != nil {
+			t.Fatalf("branch B build error: %v", err)
+		}
+		assertTypeQL(t, "fluent sibling branch B", qB, "")
+	})
+
 	t.Run("paginated search with sort", func(t *testing.T) {
 		q, err := PaginatedSearch([]string{"person"}, PaginatedSearchOptions{
 			VarName: "n",
