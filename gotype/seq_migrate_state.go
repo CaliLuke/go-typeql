@@ -86,19 +86,32 @@ fetch {
 	return applied, nil
 }
 
-// Record inserts a new migration record with an optional checksum.
-func (s *seqMigrationState) Record(ctx context.Context, name, checksum string) error {
+// seqRecordQuery builds the insert query that records an applied migration.
+// It is shared by Record (standalone transaction) and the atomic apply path,
+// which executes it inside the same transaction as the migration statements.
+func seqRecordQuery(name, checksum string) string {
 	now := FormatValue(time.Now().UTC())
 	checksumClause := ""
 	if checksum != "" {
 		checksumClause = fmt.Sprintf(",\nhas %s \"%s\"", seqMigrationChecksumAttr, escapeTQL(checksum))
 	}
-	query := fmt.Sprintf(`insert
+	return fmt.Sprintf(`insert
 $m isa %s,
 has %s "%s",
 has %s %s%s;`, seqMigrationEntity, seqMigrationNameAttr, escapeTQL(name), seqMigrationTimeAttr, now, checksumClause)
+}
 
-	_, err := s.db.ExecuteWrite(ctx, query)
+// seqDeleteQuery builds the match-delete query that removes a migration record.
+// It is shared by Delete (standalone transaction) and the atomic rollback path.
+func seqDeleteQuery(name string) string {
+	return fmt.Sprintf(`match
+$m isa %s, has %s "%s";
+delete $m;`, seqMigrationEntity, seqMigrationNameAttr, escapeTQL(name))
+}
+
+// Record inserts a new migration record with an optional checksum.
+func (s *seqMigrationState) Record(ctx context.Context, name, checksum string) error {
+	_, err := s.db.ExecuteWrite(ctx, seqRecordQuery(name, checksum))
 	if err != nil {
 		return fmt.Errorf("seq migration state: record %q: %w", name, err)
 	}
@@ -106,7 +119,36 @@ has %s %s%s;`, seqMigrationEntity, seqMigrationNameAttr, escapeTQL(name), seqMig
 }
 
 // MigrationChecksum computes a SHA256 checksum for a migration's statements.
+//
+// Each statement is length-prefixed and the Up/Down groups are framed with
+// their statement counts, so moving text across statement boundaries — or
+// between the Up and Down groups — always produces a different checksum.
+//
+// Compatibility: go-typeql v1.12.x and earlier concatenated statements with
+// no delimiter. Checksums recorded by those versions are still accepted
+// during verification (see legacyMigrationChecksum), but new records are
+// always written in the delimited format returned here.
 func MigrationChecksum(m SequentialMigration) string {
+	if m.Statements == nil {
+		return ""
+	}
+	h := sha256.New()
+	writeGroup := func(stmts []string) {
+		_, _ = fmt.Fprintf(h, "%d\n", len(stmts)) // hash.Hash.Write never fails
+		for _, s := range stmts {
+			_, _ = fmt.Fprintf(h, "%d:%s\n", len(s), s)
+		}
+	}
+	writeGroup(m.Statements.Up)
+	writeGroup(m.Statements.Down)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// legacyMigrationChecksum reproduces the undelimited checksum format used by
+// go-typeql v1.12.x and earlier. It exists only so verification can accept
+// checksums recorded before the delimited format was introduced; new records
+// always use MigrationChecksum.
+func legacyMigrationChecksum(m SequentialMigration) string {
 	if m.Statements == nil {
 		return ""
 	}
@@ -131,16 +173,23 @@ type ChecksumMismatchError struct {
 
 func (e *ChecksumMismatchError) Error() string {
 	return fmt.Sprintf("seq migration %q: checksum mismatch (recorded %s, current %s) — migration file may have been tampered with",
-		e.Name, e.Expected[:12]+"...", e.Actual[:12]+"...")
+		e.Name, truncateChecksum(e.Expected), truncateChecksum(e.Actual))
+}
+
+// truncateChecksum shortens a checksum for display. Recorded checksums come
+// from the database and may be arbitrarily short (hand-stamped or corrupted
+// records), so it must never slice past the end of the string.
+func truncateChecksum(s string) string {
+	const displayLen = 12
+	if len(s) <= displayLen {
+		return s
+	}
+	return s[:displayLen] + "..."
 }
 
 // Delete removes a migration record (for rollback).
 func (s *seqMigrationState) Delete(ctx context.Context, name string) error {
-	query := fmt.Sprintf(`match
-$m isa %s, has %s "%s";
-delete $m;`, seqMigrationEntity, seqMigrationNameAttr, escapeTQL(name))
-
-	_, err := s.db.ExecuteWrite(ctx, query)
+	_, err := s.db.ExecuteWrite(ctx, seqDeleteQuery(name))
 	if err != nil {
 		return fmt.Errorf("seq migration state: delete %q: %w", name, err)
 	}

@@ -23,8 +23,12 @@ type SequentialMigration struct {
 	Up func(ctx context.Context, db *Database) error
 	// Down reverses the migration. May be nil if rollback is not supported.
 	Down func(ctx context.Context, db *Database) error
-	// Statements is optionally set by TQLMigration for dry-run introspection.
-	// nil for migrations with custom Up/Down functions.
+	// Statements is set by TQLMigration; nil for migrations with custom
+	// Up/Down functions. When present, RunSequentialMigrations and
+	// RollbackSequentialMigration execute the statements directly — together
+	// with the migration's tracking record, in a single transaction — instead
+	// of calling Up/Down (which remain usable for direct invocation and run
+	// one transaction per statement).
 	Statements *TQLStatements
 }
 
@@ -74,6 +78,10 @@ func WithSeqDryRun() SeqMigrationOption {
 }
 
 // WithSeqTarget stops migration after applying the named migration.
+// If no migration in the set has that name, RunSequentialMigrations and
+// StampSequentialMigrations return an error instead of silently running
+// everything. If the target is already applied, only pending migrations
+// ordered before it are applied — nothing after the target ever runs.
 func WithSeqTarget(name string) SeqMigrationOption {
 	return func(o *seqMigrationOptions) { o.target = name }
 }
@@ -95,7 +103,12 @@ func inferTxType(stmt string) string {
 }
 
 // TQLMigration creates a SequentialMigration from raw TypeQL statement slices.
-// Each statement is routed to ExecuteSchema or ExecuteWrite based on its prefix.
+//
+// When run through RunSequentialMigrations or RollbackSequentialMigration,
+// all statements execute in a single transaction together with the migration
+// tracking record (see the Statements field). The generated Up/Down functions
+// instead route each statement to ExecuteSchema or ExecuteWrite based on its
+// prefix, one transaction per statement.
 func TQLMigration(name string, up []string, down []string) SequentialMigration {
 	m := SequentialMigration{Name: name}
 
@@ -235,29 +248,97 @@ func verifySeqChecksums(sorted []SequentialMigration, applied map[string]seqMigr
 			continue
 		}
 		current := MigrationChecksum(m)
-		if current != "" && current != rec.Checksum {
-			return &ChecksumMismatchError{Name: m.Name, Expected: rec.Checksum, Actual: current}
+		if current == "" || current == rec.Checksum {
+			continue
 		}
+		// Accept checksums recorded by go-typeql v1.12.x and earlier, which
+		// hashed statements without a delimiter. New records always use the
+		// delimited format (see MigrationChecksum).
+		if legacyMigrationChecksum(m) == rec.Checksum {
+			continue
+		}
+		return &ChecksumMismatchError{Name: m.Name, Expected: rec.Checksum, Actual: current}
 	}
 	return nil
 }
 
-func pendingSeqMigrations(sorted []SequentialMigration, applied map[string]seqMigrationRecord, target string) []SequentialMigration {
+// pendingSeqMigrations returns the not-yet-applied migrations, stopping at
+// target (inclusive) when it is set. The scan stops at the target's position
+// even when the target itself is already applied, and an unknown target is
+// an error — otherwise a typo would silently apply every pending migration.
+func pendingSeqMigrations(sorted []SequentialMigration, applied map[string]seqMigrationRecord, target string) ([]SequentialMigration, error) {
+	if target != "" {
+		found := false
+		for _, m := range sorted {
+			if m.Name == target {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("target migration %q not found in migration set", target)
+		}
+	}
 	var pending []SequentialMigration
 	for _, m := range sorted {
-		if _, ok := applied[m.Name]; ok {
-			continue
+		if _, ok := applied[m.Name]; !ok {
+			pending = append(pending, m)
 		}
-		pending = append(pending, m)
 		if target != "" && m.Name == target {
 			break
 		}
 	}
-	return pending
+	return pending, nil
+}
+
+// applySeqStatements executes stmts followed by stateQuery in a single
+// transaction and commits them atomically: either the migration's statements
+// and its state record all land, or none do. A schema transaction is used
+// when any statement is a schema statement — TypeDB 3.x schema transactions
+// may also execute data writes — otherwise a write transaction is used.
+func applySeqStatements(ctx context.Context, db *Database, stmts []string, stateQuery string) error {
+	txType := WriteTransaction
+	for _, s := range stmts {
+		if inferTxType(s) == "schema" {
+			txType = SchemaTransaction
+			break
+		}
+	}
+	tx, err := db.TransactionContext(ctx, txType)
+	if err != nil {
+		return fmt.Errorf("open transaction: %w", err)
+	}
+	defer tx.Close()
+	for _, s := range stmts {
+		if _, err := tx.QueryWithContext(ctx, s); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.QueryWithContext(ctx, stateQuery); err != nil {
+		return fmt.Errorf("record state: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }
 
 // RunSequentialMigrations validates, sorts, and applies pending migrations.
 // Returns the names of migrations that were applied (or would be applied in dry-run mode).
+//
+// Atomicity: migrations created with TQLMigration (Statements set) execute
+// all of their statements plus the tracking record in one transaction — a
+// schema transaction when any statement is a define/undefine/redefine (TypeDB
+// 3.x schema transactions may also execute data writes), otherwise a write
+// transaction. A failure at any point rolls back the whole migration,
+// including any data it inserted, and leaves it pending.
+//
+// Migrations with a custom Up function manage their own transactions, so the
+// same guarantee is impossible: Up runs first and the tracking record is
+// inserted afterwards in its own write transaction. If the process dies
+// between the two, the migration re-runs on the next invocation. Custom
+// migrations should therefore be idempotent — use put or key-guarded insert
+// statements rather than bare inserts.
 func RunSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error) {
 	cfg := &seqMigrationOptions{}
 	for _, opt := range opts {
@@ -277,7 +358,10 @@ func RunSequentialMigrations(ctx context.Context, db *Database, migrations []Seq
 		return nil, err
 	}
 
-	pending := pendingSeqMigrations(sorted, applied, cfg.target)
+	pending, err := pendingSeqMigrations(sorted, applied, cfg.target)
+	if err != nil {
+		return nil, fmt.Errorf("seq migration: %w", err)
+	}
 
 	if cfg.dryRun {
 		names := make([]string, len(pending))
@@ -297,12 +381,23 @@ func RunSequentialMigrations(ctx context.Context, db *Database, migrations []Seq
 	var appliedNames []string
 	for _, m := range pending {
 		logFn(fmt.Sprintf("applying: %s", m.Name))
-		if err := m.Up(ctx, db); err != nil {
-			return appliedNames, &SeqMigrationError{Name: m.Name, Cause: err}
-		}
 		checksum := MigrationChecksum(m)
-		if err := state.Record(ctx, m.Name, checksum); err != nil {
-			return appliedNames, fmt.Errorf("seq migration: record %q: %w", m.Name, err)
+		if m.Statements != nil && len(m.Statements.Up) > 0 {
+			// Statement-based migration: apply and record atomically in one
+			// transaction so a failure (or crash) can never leave the
+			// migration applied but unrecorded, or half-applied.
+			if err := applySeqStatements(ctx, db, m.Statements.Up, seqRecordQuery(m.Name, checksum)); err != nil {
+				return appliedNames, &SeqMigrationError{Name: m.Name, Cause: err}
+			}
+		} else {
+			// Custom Up function: it owns its transactions, so apply-then-
+			// record is the best available ordering (see godoc above).
+			if err := m.Up(ctx, db); err != nil {
+				return appliedNames, &SeqMigrationError{Name: m.Name, Cause: err}
+			}
+			if err := state.Record(ctx, m.Name, checksum); err != nil {
+				return appliedNames, fmt.Errorf("seq migration: record %q: %w", m.Name, err)
+			}
 		}
 		appliedNames = append(appliedNames, m.Name)
 		logFn(fmt.Sprintf("applied: %s", m.Name))
@@ -353,15 +448,9 @@ func StampSequentialMigrations(ctx context.Context, db *Database, migrations []S
 	}
 
 	// Determine pending
-	var pending []SequentialMigration
-	for _, m := range sorted {
-		if _, ok := applied[m.Name]; ok {
-			continue
-		}
-		pending = append(pending, m)
-		if cfg.target != "" && m.Name == cfg.target {
-			break
-		}
+	pending, err := pendingSeqMigrations(sorted, applied, cfg.target)
+	if err != nil {
+		return nil, fmt.Errorf("seq stamp: %w", err)
 	}
 
 	if cfg.dryRun {
@@ -425,6 +514,14 @@ func SeqMigrationStatus(ctx context.Context, db *Database, migrations []Sequenti
 
 // RollbackSequentialMigration rolls back the last N applied migrations in reverse order.
 // Returns the names of rolled-back migrations.
+//
+// Atomicity mirrors RunSequentialMigrations: migrations created with
+// TQLMigration execute their Down statements and the record deletion in one
+// transaction, so a rollback can never complete without also clearing the
+// migration's applied status. Migrations with a custom Down function run
+// Down first and delete the record afterwards in a separate transaction; if
+// the process dies in between, the record still shows the migration as
+// applied even though Down has run.
 func RollbackSequentialMigration(ctx context.Context, db *Database, migrations []SequentialMigration, steps int) ([]string, error) {
 	if steps <= 0 {
 		return nil, nil
@@ -463,14 +560,22 @@ func RollbackSequentialMigration(ctx context.Context, db *Database, migrations [
 		if !ok {
 			return rolledBack, fmt.Errorf("seq rollback: migration %q not found in provided migrations", name)
 		}
-		if m.Down == nil {
-			return rolledBack, fmt.Errorf("seq rollback: migration %q has no Down function", name)
-		}
-		if err := m.Down(ctx, db); err != nil {
-			return rolledBack, &SeqMigrationError{Name: name, Cause: err}
-		}
-		if err := state.Delete(ctx, name); err != nil {
-			return rolledBack, fmt.Errorf("seq rollback: delete record %q: %w", name, err)
+		if m.Statements != nil && len(m.Statements.Down) > 0 {
+			// Statement-based migration: run Down and delete the record
+			// atomically in one transaction.
+			if err := applySeqStatements(ctx, db, m.Statements.Down, seqDeleteQuery(name)); err != nil {
+				return rolledBack, &SeqMigrationError{Name: name, Cause: err}
+			}
+		} else {
+			if m.Down == nil {
+				return rolledBack, fmt.Errorf("seq rollback: migration %q has no Down function", name)
+			}
+			if err := m.Down(ctx, db); err != nil {
+				return rolledBack, &SeqMigrationError{Name: name, Cause: err}
+			}
+			if err := state.Delete(ctx, name); err != nil {
+				return rolledBack, fmt.Errorf("seq rollback: delete record %q: %w", name, err)
+			}
 		}
 		rolledBack = append(rolledBack, name)
 	}
