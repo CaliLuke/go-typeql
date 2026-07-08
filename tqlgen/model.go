@@ -294,11 +294,18 @@ func mergeOwns(parent, child []OwnsSpec) []OwnsSpec {
 	return merged
 }
 
-// mergeRelates combines parent and child relates, with child overriding parent.
+// mergeRelates combines parent and child relates, with child overriding
+// parent. A child role overrides a parent role either by redeclaring the same
+// role name or by renaming it with `relates X as Y` (AsParent), in which case
+// the parent's role Y no longer exists on the subtype and must not be
+// inherited.
 func mergeRelates(parent, child []RelatesSpec) []RelatesSpec {
 	seen := make(map[string]bool)
 	for _, r := range child {
 		seen[r.Role] = true
+		if r.AsParent != "" {
+			seen[r.AsParent] = true
+		}
 	}
 	var merged []RelatesSpec
 	for _, r := range parent {

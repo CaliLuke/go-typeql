@@ -463,7 +463,7 @@ func needsTimeDTOImport(schema *ParsedSchema, attrTypes map[string]string, exclu
 			continue
 		}
 		for _, o := range e.Owns {
-			if attrTypes[o.Attribute] == "datetime" {
+			if isTimeValueType(attrTypes[o.Attribute]) {
 				return true
 			}
 		}
@@ -473,7 +473,7 @@ func needsTimeDTOImport(schema *ParsedSchema, attrTypes map[string]string, exclu
 			continue
 		}
 		for _, o := range r.Owns {
-			if attrTypes[o.Attribute] == "datetime" {
+			if isTimeValueType(attrTypes[o.Attribute]) {
 				return true
 			}
 		}
