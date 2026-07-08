@@ -294,12 +294,12 @@ q.Filter(gotype.Lte("age", 65))
 q.Filter(gotype.Neq("status", "inactive"))
 
 // String operations
-q.Filter(gotype.Contains("name", "Ali"))
-q.Filter(gotype.Like("name", "^A.*"))
-q.Filter(gotype.Startswith("name", "Al"))
+q.Filter(gotype.Contains("name", "Ali"))       // literal substring
+q.Filter(gotype.Like("name", "^A.*"))          // regex
+q.Filter(gotype.Startswith("name", "Al"))      // literal prefix (regex metacharacters escaped)
 q.Filter(gotype.Regex("email", ".*@example\\.com"))
 
-// Set membership
+// Set membership (empty In matches nothing; empty NotIn matches everything)
 q.Filter(gotype.In("status", []any{"active", "pending"}))
 q.Filter(gotype.NotIn("role", []any{"admin", "superuser"}))
 

@@ -33,11 +33,14 @@ gotype.Lte("priority", 3)     // <=
 ### String Filters
 
 ```go
-gotype.Contains("email", "@example.com") // contains
+gotype.Contains("email", "@example.com") // contains (literal substring)
 gotype.Like("name", "Ali.*")             // like (regex)
 gotype.Regex("email", "^[^@]+@.+")       // like (regex)
-gotype.Startswith("name", "Al")           // like (prefix)
+gotype.Startswith("name", "Al")           // literal prefix (metacharacters are escaped)
 ```
+
+`Startswith` treats the prefix as a literal string — regex metacharacters are
+quoted. Use `Like` or `Regex` when you want pattern semantics.
 
 ### Set Membership
 
@@ -45,6 +48,9 @@ gotype.Startswith("name", "Al")           // like (prefix)
 gotype.In("status", []any{"active", "pending"})    // or block with equality per value
 gotype.NotIn("status", []any{"banned", "deleted"})  // wrapped in not block
 ```
+
+An empty `In` (or `IIDIn` with no IIDs) matches nothing; an empty `NotIn` matches
+everything.
 
 ### Range
 
@@ -70,6 +76,14 @@ gotype.IIDIn("0x123", "0x456", "0x789")
 // For relations: filter by role player attributes
 gotype.RolePlayer("employee", gotype.Eq("name", "Alice"))
 ```
+
+### Input Validation
+
+Filters and identifiers are validated before any query text is built: attribute
+names must match `[a-zA-Z][a-zA-Z0-9_-]*`, IIDs must be `0x`-prefixed hex, and
+filter values must be scalars. Misuse returns a descriptive error from
+`Execute`/`Get`/`Count`/etc. instead of reaching the server (or panicking).
+Every filter type also exposes `Validate() error` for early checking.
 
 ### Computed Expressions
 
