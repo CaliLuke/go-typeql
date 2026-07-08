@@ -1272,9 +1272,11 @@ type Conn interface {
 ```
 
 <a name="ConnPool"></a>
-## type [ConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L34-L46>)
+## type [ConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L41-L54>)
 
 ConnPool manages a pool of database connections for concurrent access.
+
+Locking protocol: p.mu protects conns, numOpen, waitQueue, and closed. Blocking calls on connections \(IsOpen, Close, the factory\) are never made while holding p.mu. numOpen counts every live connection: idle in conns, checked out by callers, and slots reserved for in\-flight factory dials. Whenever numOpen is decremented while waiters are queued, one waiter is woken with a retry signal so freed capacity is never lost.
 
 ```go
 type ConnPool struct {
@@ -1283,7 +1285,7 @@ type ConnPool struct {
 ```
 
 <a name="NewConnPool"></a>
-### func [NewConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L75>)
+### func [NewConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L94>)
 
 ```go
 func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, error)
@@ -1292,7 +1294,7 @@ func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, er
 NewConnPool creates a new connection pool with the given configuration and factory function. The factory function is called to create new connections when needed. If config.MinSize \> 0, the pool will be pre\-warmed with MinSize connections.
 
 <a name="ConnPool.Close"></a>
-### func \(\*ConnPool\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L274>)
+### func \(\*ConnPool\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L389>)
 
 ```go
 func (p *ConnPool) Close()
@@ -1301,7 +1303,7 @@ func (p *ConnPool) Close()
 Close closes all connections in the pool and prevents new connections from being acquired.
 
 <a name="ConnPool.Get"></a>
-### func \(\*ConnPool\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L114>)
+### func \(\*ConnPool\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L139>)
 
 ```go
 func (p *ConnPool) Get(ctx context.Context) (Conn, error)
@@ -1310,7 +1312,7 @@ func (p *ConnPool) Get(ctx context.Context) (Conn, error)
 Get acquires a connection from the pool. If no connections are available and the pool is at max capacity, it waits for one to become available. Returns ErrPoolClosed if the pool is closed, or ErrPoolTimeout if WaitTimeout is exceeded.
 
 <a name="ConnPool.Put"></a>
-### func \(\*ConnPool\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L222>)
+### func \(\*ConnPool\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L348>)
 
 ```go
 func (p *ConnPool) Put(conn Conn)
@@ -1319,7 +1321,7 @@ func (p *ConnPool) Put(conn Conn)
 Put returns a connection to the pool. If the connection is no longer open, it is discarded instead of being returned to the pool.
 
 <a name="ConnPool.Stats"></a>
-### func \(\*ConnPool\) [Stats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L325>)
+### func \(\*ConnPool\) [Stats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L440>)
 
 ```go
 func (p *ConnPool) Stats() PoolStats
@@ -1348,7 +1350,7 @@ func NewDatabase(conn Conn, dbName string) *Database
 NewDatabase creates a new Database handle bound to a specific database name.
 
 <a name="NewDatabaseWithPool"></a>
-### func [NewDatabaseWithPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L383>)
+### func [NewDatabaseWithPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L504>)
 
 ```go
 func NewDatabaseWithPool(config PoolConfig, dbName string, factory func() (Conn, error)) (*Database, error)
@@ -2742,7 +2744,7 @@ func DefaultPoolConfig() PoolConfig
 DefaultPoolConfig returns a reasonable default pool configuration.
 
 <a name="PoolStats"></a>
-## type [PoolStats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L338-L343>)
+## type [PoolStats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L453-L458>)
 
 PoolStats provides statistics about the connection pool.
 
