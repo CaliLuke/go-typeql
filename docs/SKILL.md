@@ -635,7 +635,12 @@ import "github.com/CaliLuke/go-typeql/tqlgen"
 
 // Parse a TypeQL schema file
 schema, err := tqlgen.ParseSchemaFile("schema.tql")
-schema.AccumulateInheritance() // propagate parent owns/plays to children
+
+// Propagate parent owns/plays to children. Returns an error on cyclic
+// `sub` declarations (e.g. "inheritance cycle: a -> b -> a").
+if err := schema.AccumulateInheritance(); err != nil {
+    return err
+}
 
 // --- Option A: Generate Go structs ---
 cfg := tqlgen.RenderConfig{PackageName: "models", UseAcronyms: true, Enums: true}
@@ -698,7 +703,17 @@ The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstrac
 - DTO mode (`-dto`) outputs Out/Create/Patch struct variants for HTTP APIs
 - N-role relation support (not limited to binary relations)
 - Comment annotations: `# @key value`, `# @key(value)`, `# @key` above type definitions
-- Inheritance propagation: parent `owns`/`plays` merged into children
+  (blank lines and plain comments between annotation and definition are allowed)
+- Inheritance propagation: parent `owns`/`plays` merged into children; cyclic `sub`
+  declarations are rejected with a clear error instead of crashing
+- Attribute subtyping: `attribute email sub name;` and abstract attributes parse; subtypes
+  inherit the parent's value type when they omit a `value` clause
+- List syntax: `owns nicknames[]` / `relates members[]` parse and surface as
+  `OwnsSpec.IsList` / `RelatesSpec.IsList` in the parsed model
+- `@range` accepts all operand forms (integer, decimal, string, date/datetime, half-open
+  like `@range(0..)`), captured verbatim in `AttributeSpec.RangeOp`
+- TypeQL functions (`fun ...`) are parsed by the grammar; definitions after a function
+  block are retained (bodies are captured as token lists for signature extraction)
 - Configurable constant prefixes (`TypePrefix`, `RelPrefix`)
 
 ---
