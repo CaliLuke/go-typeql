@@ -2,6 +2,7 @@ package tqlgen
 
 import (
 	"bytes"
+	"go/format"
 	"strings"
 	"testing"
 )
@@ -279,6 +280,10 @@ func TestBuildRegistryData_CustomPrefixes(t *testing.T) {
 	}
 }
 
+// TestBuildRegistryData_EmptyPackageName is a regression test for issue #108:
+// a missing PackageName used to silently produce empty data and an invalid
+// generated file starting with "package ". The builder now populates the data
+// regardless, and RenderRegistry fails loudly.
 func TestBuildRegistryData_EmptyPackageName(t *testing.T) {
 	schema := &ParsedSchema{
 		Entities: []EntitySpec{{Name: "foo"}},
@@ -287,8 +292,21 @@ func TestBuildRegistryData_EmptyPackageName(t *testing.T) {
 	if data.PackageName != "" {
 		t.Errorf("expected empty package name, got %q", data.PackageName)
 	}
-	if len(data.EntityConstants) != 0 {
-		t.Errorf("expected no data with empty package name")
+	if len(data.EntityConstants) != 1 {
+		t.Errorf("expected data to be populated despite the missing package name, got %d entity constants", len(data.EntityConstants))
+	}
+
+	var buf bytes.Buffer
+	err := RenderRegistry(&buf, data)
+	if err == nil {
+		t.Fatal("RenderRegistry succeeded with empty PackageName, want error")
+	}
+	if !strings.Contains(err.Error(), "PackageName") {
+		t.Errorf("error %q should mention PackageName", err)
+	}
+
+	if err := RenderLeafConstants(&bytes.Buffer{}, schema, LeafConstantsConfig{}); err == nil {
+		t.Fatal("RenderLeafConstants succeeded with empty PackageName, want error")
 	}
 }
 
@@ -458,7 +476,7 @@ func TestRenderRegistry(t *testing.T) {
 		"GetRelationAttributes": `func GetRelationAttributes`,
 	}
 	for name, want := range checks {
-		if !strings.Contains(out, want) {
+		if !containsCode(out, want) {
 			t.Errorf("missing %s: expected %q in output", name, want)
 		}
 	}
@@ -471,6 +489,114 @@ func TestRenderRegistry(t *testing.T) {
 	// Relation schema should use []RoleInfo not [2]RoleInfo
 	if strings.Contains(out, `[2]RoleInfo`) {
 		t.Error("relation schema should use []RoleInfo, not [2]RoleInfo")
+	}
+}
+
+// TestRenderRegistry_RegexRangeConstraints is a regression test for issue
+// #77: @regex and @range constraints were parsed and then discarded by every
+// renderer. The registry now round-trips them as AttributeRegex and
+// AttributeRange maps.
+func TestRenderRegistry_RegexRangeConstraints(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "username", ValueType: "string", Regex: `^[a-z]\d+$`},
+			{Name: "age", ValueType: "integer", RangeOp: "0..150"},
+			{Name: "name", ValueType: "string"},
+		},
+		Entities: []EntitySpec{
+			{Name: "person", Owns: []OwnsSpec{{Attribute: "username"}, {Attribute: "age"}, {Attribute: "name"}}},
+		},
+	}
+	data := BuildRegistryData(schema, RegistryConfig{PackageName: "graph"})
+
+	if len(data.AttrRegex) != 1 || data.AttrRegex[0].Key != "username" || data.AttrRegex[0].Value != `^[a-z]\d+$` {
+		t.Errorf("AttrRegex = %+v, want one username entry", data.AttrRegex)
+	}
+	if len(data.AttrRange) != 1 || data.AttrRange[0].Key != "age" || data.AttrRange[0].Value != "0..150" {
+		t.Errorf("AttrRange = %+v, want one age entry", data.AttrRange)
+	}
+
+	var buf bytes.Buffer
+	if err := RenderRegistry(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"var AttributeRegex = map[string]string{",
+		`"username": "^[a-z]\\d+$"`, // backslashes must survive quoting
+		"var AttributeRange = map[string]string{",
+		`"age": "0..150"`,
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in registry output\n%s", want, out)
+		}
+	}
+}
+
+// TestTypeDBToJSONSchemaType_ModernTypes covers the registry half of issue
+// #74: TypeDB 3.x value types used to fall through to "string" silently, so
+// decimal attributes were typed as strings in JSON schema fragments.
+func TestTypeDBToJSONSchemaType_ModernTypes(t *testing.T) {
+	cases := map[string]string{
+		"string":      "string",
+		"integer":     "integer",
+		"long":        "integer",
+		"double":      "number",
+		"decimal":     "number",
+		"boolean":     "boolean",
+		"datetime":    "string",
+		"datetime-tz": "string",
+		"date":        "string",
+		"duration":    "string",
+		"mystery":     "string", // unknown types keep the string fallback
+	}
+	for vtype, want := range cases {
+		if got := typeDBToJSONSchemaType(vtype); got != want {
+			t.Errorf("typeDBToJSONSchemaType(%q) = %q, want %q", vtype, got, want)
+		}
+	}
+}
+
+// TestRenderRegistry_OutputIsGofmtFormatted is the registry half of issue #107.
+func TestRenderRegistry_OutputIsGofmtFormatted(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "name", ValueType: "string"},
+			{Name: "status", ValueType: "string", Values: []string{"open", "closed"}},
+		},
+		Entities: []EntitySpec{
+			{Name: "person", Owns: []OwnsSpec{{Attribute: "name", Key: true}, {Attribute: "status"}}},
+		},
+		Relations: []RelationSpec{
+			{Name: "knows", Relates: []RelatesSpec{{Role: "knower"}, {Role: "known"}}},
+		},
+	}
+	data := BuildRegistryData(schema, RegistryConfig{PackageName: "graph", Enums: true, JSONSchema: true})
+
+	var buf bytes.Buffer
+	if err := RenderRegistry(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		t.Fatalf("generated registry code is not valid Go: %v\n%s", err, out)
+	}
+	if string(formatted) != out {
+		t.Errorf("RenderRegistry output is not gofmt-formatted:\n--- got ---\n%s\n--- want ---\n%s", out, formatted)
+	}
+
+	var leaf bytes.Buffer
+	if err := RenderLeafConstants(&leaf, schema, LeafConstantsConfig{PackageName: "schema"}); err != nil {
+		t.Fatal(err)
+	}
+	leafFormatted, err := format.Source(leaf.Bytes())
+	if err != nil {
+		t.Fatalf("generated leaf constants are not valid Go: %v\n%s", err, leaf.String())
+	}
+	if string(leafFormatted) != leaf.String() {
+		t.Errorf("RenderLeafConstants output is not gofmt-formatted:\n--- got ---\n%s\n--- want ---\n%s", leaf.String(), leafFormatted)
 	}
 }
 

@@ -2,12 +2,15 @@
 package tqlgen
 
 import (
+	"bytes"
 	"fmt"
+	"go/format"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"text/template"
+	"unicode"
 )
 
 // RenderConfig specifies the settings for generating Go code from a TypeQL schema.
@@ -41,11 +44,13 @@ func DefaultConfig() RenderConfig {
 	}
 }
 
-// Render processes a ParsedSchema and writes the generated Go source code to
-// the provided writer. It returns an error when two schema labels would fold
-// to the same Go identifier (e.g. "user-name" and "user_name"), since the
-// generated code would not compile. Non-fatal issues (unknown value types,
-// undefined attributes, roles with no resolvable player) are reported to
+// Render processes a ParsedSchema and writes the generated Go source code,
+// gofmt-formatted, to the provided writer. It returns an error when two
+// schema labels would fold to the same Go identifier (e.g. "user-name" and
+// "user_name"), since the generated code would not compile, and when the
+// rendered output is not valid Go (the raw output is still written so it can
+// be inspected). Non-fatal issues (unknown value types, undefined attributes,
+// roles with no resolvable player, skipped functions) are reported to
 // cfg.WarnWriter (os.Stderr by default).
 func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error {
 	if cfg.PackageName == "" {
@@ -71,6 +76,11 @@ func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error {
 		}
 	}
 
+	// TypeQL struct definitions map naturally onto plain Go structs (issue #78).
+	for _, s := range schema.Structs {
+		data.Structs = append(data.Structs, r.buildStructCtx(s))
+	}
+
 	for _, e := range schema.Entities {
 		if cfg.SkipAbstract && e.Abstract {
 			continue
@@ -85,13 +95,41 @@ func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error {
 		data.Relations = append(data.Relations, r.buildRelationCtx(rel))
 	}
 
+	// TypeQL functions have no Go codegen; say so instead of dropping them
+	// silently (issue #78).
+	for _, fn := range schema.Functions {
+		r.warnf("function %q has no Go codegen; skipped", fn.Name)
+	}
+
 	data.NeedsTime = r.needsTime
+	data.NeedsGotype = len(data.Entities)+len(data.Relations) > 0
 
 	if err := checkNameCollisions(data); err != nil {
 		return err
 	}
 
-	return renderTemplate.Execute(w, data)
+	return writeFormattedGo(w, renderTemplate, data)
+}
+
+// writeFormattedGo executes tmpl into a buffer, formats the result with
+// gofmt (go/format), and writes it to w. When formatting fails — meaning the
+// generator emitted syntactically invalid Go — the raw output is still
+// written so it can be inspected, and an error is returned so the malformed
+// generation is loud instead of landing silently in a file (issue #107).
+func writeFormattedGo(w io.Writer, tmpl *template.Template, data any) error {
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return err
+	}
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		if _, werr := w.Write(buf.Bytes()); werr != nil {
+			return fmt.Errorf("generated code is not valid Go: %v (writing raw output also failed: %w)", err, werr)
+		}
+		return fmt.Errorf("generated code is not valid Go: %w", err)
+	}
+	_, err = w.Write(formatted)
+	return err
 }
 
 // renderer carries per-render state shared by the context builders: the
@@ -100,8 +138,9 @@ func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error {
 type renderer struct {
 	cfg       RenderConfig
 	schema    *ParsedSchema
-	attrTypes map[string]string        // attr name -> value type
+	attrSpecs map[string]AttributeSpec // attr name -> spec
 	relations map[string]*RelationSpec // relation name -> spec
+	structs   map[string]bool          // TypeQL struct names
 	warnTo    io.Writer
 	needsTime bool
 }
@@ -110,18 +149,22 @@ func newRenderer(schema *ParsedSchema, cfg RenderConfig) *renderer {
 	r := &renderer{
 		cfg:       cfg,
 		schema:    schema,
-		attrTypes: make(map[string]string, len(schema.Attributes)),
+		attrSpecs: make(map[string]AttributeSpec, len(schema.Attributes)),
 		relations: make(map[string]*RelationSpec, len(schema.Relations)),
+		structs:   make(map[string]bool, len(schema.Structs)),
 		warnTo:    cfg.WarnWriter,
 	}
 	if r.warnTo == nil {
 		r.warnTo = os.Stderr
 	}
 	for _, a := range schema.Attributes {
-		r.attrTypes[a.Name] = a.ValueType
+		r.attrSpecs[a.Name] = a
 	}
 	for i := range schema.Relations {
 		r.relations[schema.Relations[i].Name] = &schema.Relations[i]
+	}
+	for _, s := range schema.Structs {
+		r.structs[s.Name] = true
 	}
 	return r
 }
@@ -138,7 +181,9 @@ type renderData struct {
 	PackageName string
 	ModulePath  string
 	NeedsTime   bool
+	NeedsGotype bool
 	Enums       []enumCtx
+	Structs     []structCtx
 	Entities    []entityCtx
 	Relations   []relationCtx
 }
@@ -193,6 +238,15 @@ type fieldCtx struct {
 	AttrName     string // TypeDB attribute name (source label)
 	Comment      string
 	MetaComments []string
+	Constraints  []string // @regex/@range constraints, emitted as comments
+}
+
+type structCtx struct {
+	GoName       string
+	TypeName     string // TypeDB struct name
+	Comment      string
+	MetaComments []string
+	Fields       []fieldCtx
 }
 
 type roleCtx struct {
@@ -218,11 +272,73 @@ func buildEnumCtx(a AttributeSpec, cfg RenderConfig) enumCtx {
 	}
 	for _, v := range a.Values {
 		ctx.Values = append(ctx.Values, enumValueCtx{
-			GoName: prefix + goTypeName(v, cfg),
+			GoName: prefix + goEnumValueName(v, cfg),
 			Value:  v,
 		})
 	}
 	return ctx
+}
+
+// goEnumValueName converts an arbitrary @values string into a Go identifier
+// fragment. Runes that are not letters or digits act as word separators, so
+// "n/a" becomes "NA" and `with "quote"` becomes "WithQuote" (issue #72). A
+// value containing no letters or digits at all falls back to "X" so the
+// constant still gets a name; duplicates are caught by the collision check.
+func goEnumValueName(v string, cfg RenderConfig) string {
+	mapped := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		return '-'
+	}, v)
+	name := goTypeName(mapped, cfg)
+	if name == "" {
+		return "X"
+	}
+	return name
+}
+
+// buildStructCtx maps a TypeQL struct definition onto a plain Go struct:
+// each field keeps its declared value type and optional fields become
+// pointers. Fields whose value type is another TypeQL struct reference the
+// generated Go struct for it (issue #78).
+func (r *renderer) buildStructCtx(s StructSpec) structCtx {
+	cfg := r.cfg
+	ctx := structCtx{
+		GoName:       goTypeName(s.Name, cfg),
+		TypeName:     s.Name,
+		Comment:      docComment(s.Doc),
+		MetaComments: metaComments(s.Meta),
+	}
+	for _, f := range s.Fields {
+		goType := r.structFieldGoType(s, f)
+		if f.Optional {
+			goType = "*" + goType
+		}
+		ctx.Fields = append(ctx.Fields, fieldCtx{
+			GoName:       goFieldName(f.Name, cfg),
+			GoType:       goType,
+			Tag:          structTagLiteral(fmt.Sprintf(`typedb:%s`, strconv.Quote(f.Name))),
+			AttrName:     f.Name,
+			Comment:      docComment(f.Doc),
+			MetaComments: metaComments(f.Meta),
+		})
+	}
+	return ctx
+}
+
+func (r *renderer) structFieldGoType(s StructSpec, f StructFieldSpec) string {
+	if r.structs[f.ValueType] {
+		return goTypeName(f.ValueType, r.cfg)
+	}
+	goType, known := typeDBToGoStrict(f.ValueType)
+	if !known {
+		r.warnf("struct %q field %q has unsupported value type %q; defaulting to string", s.Name, f.Name, f.ValueType)
+	}
+	if strings.Contains(goType, "time.") {
+		r.needsTime = true
+	}
+	return goType
 }
 
 func (r *renderer) buildEntityCtx(e EntitySpec) entityCtx {
@@ -310,16 +426,25 @@ func (r *renderer) buildFieldCtx(o OwnsSpec, owner string) fieldCtx {
 	}
 
 	// Determine Go type from TypeDB value type
-	vtype, defined := r.attrTypes[o.Attribute]
-	goType, known := typeDBToGoStrict(vtype)
+	spec, defined := r.attrSpecs[o.Attribute]
+	goType, known := typeDBToGoStrict(spec.ValueType)
 	switch {
 	case !defined:
 		r.warnf("attribute %q owned by %s is not defined in the schema; defaulting to string", o.Attribute, owner)
 	case !known:
-		r.warnf("attribute %q has unsupported value type %q; defaulting to string", o.Attribute, vtype)
+		r.warnf("attribute %q has unsupported value type %q; defaulting to string", o.Attribute, spec.ValueType)
 	}
 	if strings.Contains(goType, "time.") {
 		r.needsTime = true
+	}
+
+	// Surface @regex/@range constraints as comments so schema intent survives
+	// the round trip through generated code (issue #77).
+	if spec.Regex != "" {
+		f.Constraints = append(f.Constraints, fmt.Sprintf("@regex(%s)", strconv.Quote(spec.Regex)))
+	}
+	if spec.RangeOp != "" {
+		f.Constraints = append(f.Constraints, fmt.Sprintf("@range(%s)", docComment(spec.RangeOp)))
 	}
 
 	// Build tag parts
@@ -372,6 +497,17 @@ func checkNameCollisions(data *renderData) error {
 	for _, e := range data.Enums {
 		for _, v := range e.Values {
 			if err := claim(top, v.GoName, fmt.Sprintf("enum constant for attribute %q value %q", e.AttrName, v.Value)); err != nil {
+				return err
+			}
+		}
+	}
+	for _, s := range data.Structs {
+		if err := claim(top, s.GoName, fmt.Sprintf("struct %q", s.TypeName)); err != nil {
+			return err
+		}
+		fields := make(map[string]string)
+		for _, f := range s.Fields {
+			if err := claim(fields, f.GoName, fmt.Sprintf("field %q on struct %q", f.AttrName, s.TypeName)); err != nil {
 				return err
 			}
 		}
@@ -596,13 +732,17 @@ var renderTemplate = template.Must(template.New("models").Funcs(template.FuncMap
 }).Parse(`// Code generated by tqlgen. DO NOT EDIT.
 
 package {{.PackageName}}
+{{- if or .NeedsGotype .NeedsTime}}
 
 import (
+{{- if .NeedsGotype}}
 	"github.com/CaliLuke/go-typeql/gotype"
+{{- end}}
 {{- if .NeedsTime}}
 	"time"
 {{- end}}
 )
+{{- end}}
 {{- if .Enums}}
 
 // --- Enum constants (from @values constraints) ---
@@ -616,9 +756,36 @@ import (
 // {{.GoPrefix}} values for the "{{.AttrName}}" attribute.
 const (
 {{- range .Values}}
-	{{.GoName}} = "{{.Value}}"
+	{{.GoName}} = {{quote .Value}}
 {{- end}}
 )
+{{end}}
+{{- end}}
+{{- if .Structs}}
+
+// --- Value structs (from TypeQL struct definitions) ---
+{{range .Structs}}
+{{- if .Comment}}
+// {{.GoName}} — {{.Comment}}
+{{- end}}
+{{- range .MetaComments}}
+// {{.}}
+{{- end}}
+// {{.GoName}} is generated from TypeQL struct "{{.TypeName}}".
+type {{.GoName}} struct {
+{{- range .Fields}}
+{{- if .Comment}}
+	// {{.GoName}} — {{.Comment}}
+{{- end}}
+{{- range .MetaComments}}
+	// {{.}}
+{{- end}}
+{{- range .Constraints}}
+	// {{.}}
+{{- end}}
+	{{.GoName}} {{.GoType}} {{.Tag}}
+{{- end}}
+}
 {{end}}
 {{- end}}
 {{range .Entities}}
@@ -638,6 +805,9 @@ type {{.GoName}} struct {
 	// {{.GoName}} — {{.Comment}}
 {{- end}}
 {{- range .MetaComments}}
+	// {{.}}
+{{- end}}
+{{- range .Constraints}}
 	// {{.}}
 {{- end}}
 	{{.GoName}} {{.GoType}} {{.Tag}}
@@ -688,6 +858,9 @@ type {{.GoName}} struct {
 	// {{.GoName}} — {{.Comment}}
 {{- end}}
 {{- range .MetaComments}}
+	// {{.}}
+{{- end}}
+{{- range .Constraints}}
 	// {{.}}
 {{- end}}
 	{{.GoName}} {{.GoType}} {{.Tag}}
