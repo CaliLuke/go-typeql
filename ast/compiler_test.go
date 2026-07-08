@@ -670,6 +670,31 @@ func TestCompiler_Values(t *testing.T) {
 			want: "2024-01-15T10:30:00",
 		},
 		{
+			// Issue #53: non-UTC instants convert to UTC before the zone is
+			// dropped, and sub-second precision is preserved.
+			name: "datetime non-utc converts to UTC",
+			node: LiteralValue{Val: time.Date(2024, 1, 15, 12, 30, 0, 123456789, time.FixedZone("UTC+2", 2*60*60)), ValueType: "datetime"},
+			want: "2024-01-15T10:30:00.123456789",
+		},
+		{
+			// Issue #66: a midnight datetime stays a datetime literal.
+			name: "datetime midnight stays datetime",
+			node: LiteralValue{Val: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), ValueType: "datetime"},
+			want: "2024-01-15T00:00:00",
+		},
+		{
+			// Issue #66: datetime-tz keeps the value's own offset and
+			// sub-second precision.
+			name: "datetime-tz keeps offset",
+			node: LiteralValue{Val: time.Date(2024, 1, 15, 12, 30, 0, 500000000, time.FixedZone("UTC+2", 2*60*60)), ValueType: "datetime-tz"},
+			want: "2024-01-15T12:30:00.5+02:00",
+		},
+		{
+			name: "datetime-tz UTC uses Z",
+			node: LiteralValue{Val: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), ValueType: "datetime-tz"},
+			want: "2024-01-15T10:30:00Z",
+		},
+		{
 			name: "date",
 			node: LiteralValue{Val: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), ValueType: "date"},
 			want: "2024-01-15",

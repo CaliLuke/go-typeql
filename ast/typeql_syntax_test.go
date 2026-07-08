@@ -156,6 +156,26 @@ func TestTypeQLSyntax_Compiler(t *testing.T) {
 			)},
 		},
 		{
+			// Issues #53/#66: datetime literals are naive UTC (never date or
+			// datetime-tz literals), keep sub-second precision, and midnight
+			// values stay datetime literals.
+			name: "insert datetime literal shapes",
+			nodes: []QueryNode{Insert(
+				IsaStmt("$e", "event"),
+				HasStmt("$e", "created", ValueFromGo(time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC))),
+				HasStmt("$e", "updated", ValueFromGo(time.Date(2024, 1, 15, 12, 30, 0, 123456789, time.FixedZone("UTC+2", 2*60*60)))),
+			)},
+		},
+		{
+			// Issue #66: explicit datetime-tz literals carry the offset.
+			name: "insert datetime-tz literal",
+			nodes: []QueryNode{Insert(
+				IsaStmt("$e", "event"),
+				HasStmt("$e", "seen-at", Lit(time.Date(2024, 1, 15, 12, 30, 0, 500000000, time.FixedZone("UTC+2", 2*60*60)), "datetime-tz")),
+				HasStmt("$e", "logged-at", Lit(time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), "datetime-tz")),
+			)},
+		},
+		{
 			// Issue #81: FetchAttrPath with a bare variable fetches the variable.
 			name: "fetch attr path variants",
 			nodes: []QueryNode{

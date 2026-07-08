@@ -3,6 +3,7 @@ package gotype
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"sync/atomic"
 	"time"
@@ -301,11 +302,15 @@ func coerceStringFast(val any) (string, bool) {
 	}
 }
 
+// setIntegerFast sets an integer-typed field. It refuses values that would
+// overflow a narrow target (e.g. 300 into an int8), handing them to the slow
+// path so hydration fails with a descriptive error instead of reflect's
+// silent truncation (issue #52).
 func setIntegerFast(field reflect.Value, fi *FieldInfo, targetType reflect.Type, val any) bool {
 	switch targetType.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		i64, ok := coerceInt64Fast(val)
-		if !ok {
+		if !ok || reflect.Zero(targetType).OverflowInt(i64) {
 			return false
 		}
 		if fi.IsPointer {
@@ -319,7 +324,7 @@ func setIntegerFast(field reflect.Value, fi *FieldInfo, targetType reflect.Type,
 
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		u64, ok := coerceUint64Fast(val)
-		if !ok {
+		if !ok || reflect.Zero(targetType).OverflowUint(u64) {
 			return false
 		}
 		if fi.IsPointer {
@@ -350,6 +355,10 @@ func setFloatFast(field reflect.Value, fi *FieldInfo, targetType reflect.Type, v
 	return targetType.Kind() == reflect.Float32 || targetType.Kind() == reflect.Float64
 }
 
+// coerceInt64Fast converts a raw result value to int64 without allocation.
+// It refuses (returns false) on non-integral floats and values outside the
+// int64 range instead of silently truncating or wrapping (issue #52); the
+// slow path (coerceToInt64) then reports a descriptive error.
 func coerceInt64Fast(val any) (int64, bool) {
 	switch v := val.(type) {
 	case int:
@@ -363,6 +372,9 @@ func coerceInt64Fast(val any) (int64, bool) {
 	case int64:
 		return v, true
 	case uint:
+		if uint64(v) > math.MaxInt64 {
+			return 0, false
+		}
 		return int64(v), true
 	case uint8:
 		return int64(v), true
@@ -371,14 +383,26 @@ func coerceInt64Fast(val any) (int64, bool) {
 	case uint32:
 		return int64(v), true
 	case uint64:
+		if v > math.MaxInt64 {
+			return 0, false
+		}
 		return int64(v), true
 	case float32:
-		return int64(v), true
+		return int64FromFloat(float64(v))
 	case float64:
-		return int64(v), true
+		return int64FromFloat(v)
 	default:
 		return 0, false
 	}
+}
+
+// int64FromFloat converts a float to int64 only when it is integral and in
+// range. JSON transports TypeDB integers as float64, so integral floats must
+// convert, but 3.9 or out-of-range values must not silently become 3 or wrap
+// (issue #52).
+func int64FromFloat(v float64) (int64, bool) {
+	i64, err := float64ToInt64Checked(v)
+	return i64, err == nil
 }
 
 func coerceUint64Fast(val any) (uint64, bool) {
@@ -419,18 +443,21 @@ func coerceUint64Fast(val any) (uint64, bool) {
 		}
 		return uint64(v), true
 	case float32:
-		if v < 0 {
-			return 0, false
-		}
-		return uint64(v), true
+		return uint64FromFloat(float64(v))
 	case float64:
-		if v < 0 {
-			return 0, false
-		}
-		return uint64(v), true
+		return uint64FromFloat(v)
 	default:
 		return 0, false
 	}
+}
+
+// uint64FromFloat converts a float to uint64 only when it is integral,
+// non-negative, and in range (issue #52).
+func uint64FromFloat(v float64) (uint64, bool) {
+	if v != math.Trunc(v) || v < 0 || v >= math.MaxUint64 {
+		return 0, false
+	}
+	return uint64(v), true
 }
 
 func coerceFloat64Fast(val any) (float64, bool) {
@@ -470,13 +497,22 @@ var timeCoerceLayouts = [...]string{
 	"2006-01-02",
 }
 
+// coerceTimeFast parses a datetime result value. Zone-less strings parse as
+// UTC, matching the write side, which stores plain datetime values as UTC
+// wall-clock time (issue #53); fractional seconds are accepted by all
+// layouts. The layout cache is a pointer shared by every copy of the
+// FieldInfo and is accessed atomically (issue #43).
 func coerceTimeFast(val any, fi *FieldInfo) (time.Time, bool) {
 	switch v := val.(type) {
 	case time.Time:
 		return v, true
 	case string:
+		var hint *atomic.Uint32
 		if fi != nil {
-			if idx := atomic.LoadUint32(&fi.timeLayoutHint); idx > 0 && int(idx-1) < len(timeCoerceLayouts) {
+			hint = fi.timeLayoutHint
+		}
+		if hint != nil {
+			if idx := hint.Load(); idx > 0 && int(idx-1) < len(timeCoerceLayouts) {
 				if t, err := time.Parse(timeCoerceLayouts[idx-1], v); err == nil {
 					return t, true
 				}
@@ -485,8 +521,8 @@ func coerceTimeFast(val any, fi *FieldInfo) (time.Time, bool) {
 		for i, layout := range timeCoerceLayouts {
 			t, err := time.Parse(layout, v)
 			if err == nil {
-				if fi != nil {
-					atomic.StoreUint32(&fi.timeLayoutHint, uint32(i+1))
+				if hint != nil {
+					hint.Store(uint32(i + 1))
 				}
 				return t, true
 			}
@@ -495,30 +531,79 @@ func coerceTimeFast(val any, fi *FieldInfo) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// setSliceField populates a slice-valued field from a single value or a slice
+// of raw result values. It supports pointer-to-slice fields (*[]T), slices of
+// pointers ([]*T), and named/unsigned element types, none of which may panic
+// during hydration (issue #93).
 func setSliceField(field reflect.Value, fi *FieldInfo, val any) error {
+	sliceType := fi.FieldType
+	if sliceType.Kind() == reflect.Pointer {
+		sliceType = sliceType.Elem()
+	}
+	if sliceType.Kind() != reflect.Slice {
+		return fmt.Errorf("cannot hydrate multi-valued attribute into %s", fi.FieldType)
+	}
+	elemType := sliceType.Elem()
+
 	rv := reflect.ValueOf(val)
+	var slice reflect.Value
 	if rv.Kind() != reflect.Slice {
 		// Single value -> wrap in slice
-		converted, err := coerceValue(val, fi)
+		elem, err := coerceSliceElem(val, fi, elemType)
 		if err != nil {
 			return err
 		}
-		slice := reflect.MakeSlice(fi.FieldType, 1, 1)
-		slice.Index(0).Set(reflect.ValueOf(converted))
-		field.Set(slice)
-		return nil
+		slice = reflect.MakeSlice(sliceType, 1, 1)
+		slice.Index(0).Set(elem)
+	} else {
+		slice = reflect.MakeSlice(sliceType, rv.Len(), rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			elem, err := coerceSliceElem(rv.Index(i).Interface(), fi, elemType)
+			if err != nil {
+				return fmt.Errorf("index %d: %w", i, err)
+			}
+			slice.Index(i).Set(elem)
+		}
 	}
 
-	slice := reflect.MakeSlice(fi.FieldType, rv.Len(), rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		converted, err := coerceValue(rv.Index(i).Interface(), fi)
-		if err != nil {
-			return fmt.Errorf("index %d: %w", i, err)
-		}
-		slice.Index(i).Set(reflect.ValueOf(converted))
+	if fi.FieldType.Kind() == reflect.Pointer {
+		ptr := reflect.New(sliceType)
+		ptr.Elem().Set(slice)
+		field.Set(ptr)
+		return nil
 	}
 	field.Set(slice)
 	return nil
+}
+
+// coerceSliceElem coerces a raw result value into a slice element of
+// elemType, wrapping the value in a pointer when the element type is a
+// pointer (e.g. []*string) and converting to assignment-compatible named
+// types.
+func coerceSliceElem(val any, fi *FieldInfo, elemType reflect.Type) (reflect.Value, error) {
+	converted, err := coerceValue(val, fi)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+
+	base := elemType
+	if base.Kind() == reflect.Pointer {
+		base = base.Elem()
+	}
+	cv := reflect.ValueOf(converted)
+	if !cv.Type().AssignableTo(base) {
+		if !cv.Type().ConvertibleTo(base) {
+			return reflect.Value{}, fmt.Errorf("cannot assign %T to slice element type %s", converted, base)
+		}
+		cv = cv.Convert(base)
+	}
+
+	if elemType.Kind() == reflect.Pointer {
+		ptr := reflect.New(base)
+		ptr.Elem().Set(cv)
+		return ptr, nil
+	}
+	return cv, nil
 }
 
 func coerceValue(val any, fi *FieldInfo) (any, error) {
@@ -569,40 +654,93 @@ func lookupResultValue(data map[string]any, key string) (any, bool) {
 	return unwrapValue(val), true
 }
 
+// coerceToInt64 converts a raw result value to the integer target type,
+// returning an error instead of silently truncating non-integral floats,
+// wrapping out-of-range values, or overflowing narrow targets (issue #52).
+// Unsigned target kinds are supported so fields like []uint hydrate instead
+// of panicking (issue #93). The returned value has exactly targetType's
+// dynamic type (including named types).
 func coerceToInt64(val any, targetType reflect.Type) (any, error) {
-	var i64 int64
-	switch v := val.(type) {
-	case float64:
-		i64 = int64(v)
-	case float32:
-		i64 = int64(v)
-	case int:
-		i64 = int64(v)
-	case int64:
-		i64 = v
-	case int32:
-		i64 = int64(v)
-	case uint64:
-		i64 = int64(v)
-	default:
-		return nil, fmt.Errorf("cannot coerce %T to integer", val)
+	i64, err := toInt64Checked(val)
+	if err != nil {
+		return nil, err
 	}
 
-	// Convert to the actual target type
 	switch targetType.Kind() {
-	case reflect.Int:
-		return int(i64), nil
-	case reflect.Int8:
-		return int8(i64), nil
-	case reflect.Int16:
-		return int16(i64), nil
-	case reflect.Int32:
-		return int32(i64), nil
-	case reflect.Int64:
-		return i64, nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if reflect.Zero(targetType).OverflowInt(i64) {
+			return nil, fmt.Errorf("value %d overflows %s", i64, targetType)
+		}
+		out := reflect.New(targetType).Elem()
+		out.SetInt(i64)
+		return out.Interface(), nil
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if i64 < 0 {
+			return nil, fmt.Errorf("value %d overflows %s", i64, targetType)
+		}
+		u64 := uint64(i64)
+		if reflect.Zero(targetType).OverflowUint(u64) {
+			return nil, fmt.Errorf("value %d overflows %s", i64, targetType)
+		}
+		out := reflect.New(targetType).Elem()
+		out.SetUint(u64)
+		return out.Interface(), nil
+
 	default:
-		return int(i64), nil
+		return nil, fmt.Errorf("cannot hydrate integer value into %s", targetType)
 	}
+}
+
+// toInt64Checked converts a raw result value to int64, rejecting non-integral
+// floats and values outside the int64 range (issue #52).
+func toInt64Checked(val any) (int64, error) {
+	switch v := val.(type) {
+	case int:
+		return int64(v), nil
+	case int8:
+		return int64(v), nil
+	case int16:
+		return int64(v), nil
+	case int32:
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case uint:
+		if uint64(v) > math.MaxInt64 {
+			return 0, fmt.Errorf("value %d overflows int64", v)
+		}
+		return int64(v), nil
+	case uint8:
+		return int64(v), nil
+	case uint16:
+		return int64(v), nil
+	case uint32:
+		return int64(v), nil
+	case uint64:
+		if v > math.MaxInt64 {
+			return 0, fmt.Errorf("value %d overflows int64", v)
+		}
+		return int64(v), nil
+	case float32:
+		return float64ToInt64Checked(float64(v))
+	case float64:
+		return float64ToInt64Checked(v)
+	default:
+		return 0, fmt.Errorf("cannot coerce %T to integer", val)
+	}
+}
+
+// float64ToInt64Checked converts a float64 to int64, rejecting non-integral
+// and out-of-range values (issue #52).
+func float64ToInt64Checked(v float64) (int64, error) {
+	if v != math.Trunc(v) {
+		return 0, fmt.Errorf("cannot coerce non-integral float %v to integer", v)
+	}
+	if v < math.MinInt64 || v >= math.MaxInt64 {
+		return 0, fmt.Errorf("float value %v overflows int64", v)
+	}
+	return int64(v), nil
 }
 
 func coerceToFloat64(val any, targetType reflect.Type) (any, error) {
