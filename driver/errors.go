@@ -49,4 +49,9 @@ var (
 	ErrNotConnected = errors.New("driver: not connected")
 	// ErrNilPointer is returned when an FFI call unexpectedly returns a nil pointer.
 	ErrNilPointer = errors.New("driver: nil pointer")
+	// ErrTransactionAbandoned is returned when an operation is attempted on a
+	// transaction that was abandoned by a cancelled QueryWithContext call. The
+	// in-flight query goroutine frees the underlying native handle once the
+	// driver call returns; the transaction cannot be reused.
+	ErrTransactionAbandoned = errors.New("driver: transaction abandoned after context cancellation")
 )

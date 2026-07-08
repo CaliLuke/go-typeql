@@ -25,10 +25,26 @@ const (
 )
 
 // Tx is the interface for a TypeDB transaction, allowing for query execution and lifecycle management.
+//
+// The driver package's *driver.Transaction satisfies Tx. It also provides
+// QueryWithContextAndOptions(ctx, query, *driver.QueryOptions,
+// *driver.GivenRows) for composing cancellation with per-query options such
+// as prefetch size; callers that hold the concrete transaction (for example
+// via TransactionContext.Tx or Manager.WithTx) can reach it with a type
+// assertion.
 type Tx interface {
 	// Query executes a TypeQL query and returns the results.
 	Query(query string) ([]map[string]any, error)
 	// QueryWithContext executes a TypeQL query with context cancellation support.
+	//
+	// Implementations wrapping a synchronous driver (such as
+	// *driver.Transaction) release the caller with ctx.Err() when ctx is
+	// cancelled while the underlying driver call keeps running in the
+	// background. The go-typeql driver then marks the transaction abandoned:
+	// the native handle is freed once the in-flight call returns, and
+	// Commit, Rollback, Close, and IsOpen return immediately instead of
+	// blocking behind it. Other implementations may block in Close until
+	// their query call completes.
 	QueryWithContext(ctx context.Context, query string) ([]map[string]any, error)
 	// Commit persists changes made in the transaction.
 	Commit() error
@@ -169,6 +185,12 @@ func (db *Database) openTransaction(ctx context.Context, txType TransactionType)
 // ExecuteWrite executes a query in a new write transaction and commits it.
 // If Commit fails, the underlying transaction has already been consumed by the
 // driver and cannot be rolled back or reused.
+//
+// If ctx is cancelled mid-query, ExecuteWrite returns ctx.Err() without
+// committing. With the go-typeql driver the deferred transaction close does
+// not block on the abandoned in-flight call; the native handle is freed in
+// the background once the driver call returns. Other Tx implementations may
+// block in Close until their query call completes.
 func (db *Database) ExecuteWrite(ctx context.Context, query string) ([]map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("write: context cancelled: %w", err)
@@ -190,6 +212,10 @@ func (db *Database) ExecuteWrite(ctx context.Context, query string) ([]map[strin
 }
 
 // ExecuteRead executes a query in a new read transaction.
+//
+// If ctx is cancelled mid-query, ExecuteRead returns ctx.Err() immediately;
+// see ExecuteWrite for how the deferred transaction close behaves after
+// cancellation.
 func (db *Database) ExecuteRead(ctx context.Context, query string) ([]map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("read: context cancelled: %w", err)
@@ -281,6 +307,10 @@ func (tc *TransactionContext) handleLeak() {
 }
 
 // ExecuteSchema executes a schema modification query in a schema transaction.
+//
+// If ctx is cancelled mid-query, ExecuteSchema returns ctx.Err() without
+// committing; see ExecuteWrite for how the deferred transaction close behaves
+// after cancellation.
 func (db *Database) ExecuteSchema(ctx context.Context, query string) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("schema: context cancelled: %w", err)

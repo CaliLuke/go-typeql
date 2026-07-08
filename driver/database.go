@@ -17,8 +17,8 @@ type DatabaseManager struct {
 
 // All returns the names of all databases currently existing on the server.
 func (dm *DatabaseManager) All() ([]string, error) {
-	dm.driver.mu.Lock()
-	defer dm.driver.mu.Unlock()
+	dm.driver.mu.RLock()
+	defer dm.driver.mu.RUnlock()
 
 	if dm.driver.ptr == nil {
 		return nil, ErrNotConnected
@@ -44,8 +44,8 @@ func (dm *DatabaseManager) All() ([]string, error) {
 
 // Create creates a new database with the given name on the server.
 func (dm *DatabaseManager) Create(name string) error {
-	dm.driver.mu.Lock()
-	defer dm.driver.mu.Unlock()
+	dm.driver.mu.RLock()
+	defer dm.driver.mu.RUnlock()
 
 	if dm.driver.ptr == nil {
 		return ErrNotConnected
@@ -61,8 +61,8 @@ func (dm *DatabaseManager) Create(name string) error {
 
 // Contains returns true if a database with the specified name exists on the server.
 func (dm *DatabaseManager) Contains(name string) (bool, error) {
-	dm.driver.mu.Lock()
-	defer dm.driver.mu.Unlock()
+	dm.driver.mu.RLock()
+	defer dm.driver.mu.RUnlock()
 
 	if dm.driver.ptr == nil {
 		return false, ErrNotConnected
@@ -81,8 +81,8 @@ func (dm *DatabaseManager) Contains(name string) (bool, error) {
 
 // Schema returns the full schema of the specified database as a TypeQL 'define' query string.
 func (dm *DatabaseManager) Schema(name string) (string, error) {
-	dm.driver.mu.Lock()
-	defer dm.driver.mu.Unlock()
+	dm.driver.mu.RLock()
+	defer dm.driver.mu.RUnlock()
 
 	if dm.driver.ptr == nil {
 		return "", ErrNotConnected
@@ -106,8 +106,8 @@ func (dm *DatabaseManager) Schema(name string) (string, error) {
 
 // Delete permanently removes the database with the specified name from the server.
 func (dm *DatabaseManager) Delete(name string) error {
-	dm.driver.mu.Lock()
-	defer dm.driver.mu.Unlock()
+	dm.driver.mu.RLock()
+	defer dm.driver.mu.RUnlock()
 
 	if dm.driver.ptr == nil {
 		return ErrNotConnected

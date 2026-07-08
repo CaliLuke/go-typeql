@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+	"weak"
 )
 
 // TransactionType specifies the intended mode of operation for a transaction.
@@ -40,12 +41,22 @@ func ensureLoggingInitialized() {
 
 // Driver represents an active connection to a TypeDB server.
 // It is used to open transactions and manage databases.
+//
+// The underlying Rust driver handle is internally thread-safe, so driver-level
+// operations (opening transactions, database management, ServerVersion) run
+// concurrently; only Close serializes against them while it frees the handle.
 type Driver struct {
-	ptr         unsafe.Pointer
-	mu          sync.Mutex
+	ptr unsafe.Pointer
+	// mu guards the ptr lifecycle: RLock for FFI calls on the handle, Lock
+	// only while Close drops it.
+	mu          sync.RWMutex
 	closeWorker *transactionCloseWorker
 	txMu        sync.Mutex
-	txs         map[uint64]*Transaction
+	// txs tracks locally opened transactions by id. Entries are weak so an
+	// abandoned *Transaction can still be garbage-collected, letting its
+	// finalizer free the native handle; Close and the per-database helpers
+	// prune entries whose transaction has been collected.
+	txs map[uint64]weak.Pointer[Transaction]
 }
 
 // DriverOptions configures connection-level TypeDB driver behavior.
@@ -221,7 +232,7 @@ func newDriver(ptr unsafe.Pointer) *Driver {
 	return &Driver{
 		ptr:         ptr,
 		closeWorker: newTransactionCloseWorker(),
-		txs:         make(map[uint64]*Transaction),
+		txs:         make(map[uint64]weak.Pointer[Transaction]),
 	}
 }
 
@@ -289,8 +300,8 @@ func cStringArray(values []string) ([]*C.char, func()) {
 
 // IsOpen checks if the driver connection is still open.
 func (d *Driver) IsOpen() bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	if d.ptr == nil {
 		return false
 	}
@@ -302,8 +313,8 @@ func (d *Driver) IsOpen() bool {
 // It is useful for startup diagnostics and for checking that the server is
 // compatible with the linked TypeDB driver protocol.
 func (d *Driver) ServerVersion() (ServerVersion, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	if d.ptr == nil {
 		return ServerVersion{}, ErrNotConnected
 	}
@@ -326,7 +337,19 @@ func (d *Driver) ServerVersion() (ServerVersion, error) {
 }
 
 // Close closes the driver connection and frees resources.
+//
+// Transactions still open on this driver are closed first (their close jobs
+// drain through the async close worker), so forgotten transactions do not
+// leak native handles or server-side transactions. Close blocks behind
+// in-flight FFI calls: a running query on an open, non-abandoned transaction
+// must return before that transaction can be closed, and in-flight driver
+// calls (transaction opens, database operations) must return before the
+// driver handle is freed.
 func (d *Driver) Close() {
+	for _, tx := range d.openTransactions() {
+		tx.Close()
+	}
+
 	d.mu.Lock()
 	worker := d.closeWorker
 	d.closeWorker = nil
@@ -350,21 +373,14 @@ func (d *Driver) Close() {
 // transactions for the named database that have not been committed, rolled
 // back, or closed.
 func (d *Driver) HasOpenTransactions(databaseName string) (bool, error) {
-	d.mu.Lock()
+	d.mu.RLock()
 	connected := d.ptr != nil
-	d.mu.Unlock()
+	d.mu.RUnlock()
 	if !connected {
 		return false, ErrNotConnected
 	}
 
-	d.txMu.Lock()
-	defer d.txMu.Unlock()
-	for _, tx := range d.txs {
-		if tx.dbName == databaseName {
-			return true, nil
-		}
-	}
-	return false, nil
+	return len(d.transactionsForDatabase(databaseName)) > 0, nil
 }
 
 // CloseDatabaseTransactions synchronously closes all transactions opened by
@@ -373,9 +389,9 @@ func (d *Driver) CloseDatabaseTransactions(ctx context.Context, databaseName str
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	d.mu.Lock()
+	d.mu.RLock()
 	connected := d.ptr != nil
-	d.mu.Unlock()
+	d.mu.RUnlock()
 	if !connected {
 		return ErrNotConnected
 	}
@@ -397,7 +413,7 @@ func (d *Driver) CloseDatabaseTransactions(ctx context.Context, databaseName str
 
 func (d *Driver) registerTransaction(tx *Transaction) {
 	d.txMu.Lock()
-	d.txs[tx.id] = tx
+	d.txs[tx.id] = weak.Make(tx)
 	d.txMu.Unlock()
 }
 
@@ -407,17 +423,33 @@ func (d *Driver) unregisterTransaction(id uint64) {
 	d.txMu.Unlock()
 }
 
-func (d *Driver) transactionsForDatabase(databaseName string) []*Transaction {
+// liveTransactions returns strong references to the registered transactions
+// accepted by keep, pruning entries whose transaction has been collected (the
+// finalizer backstop handles those native handles).
+func (d *Driver) liveTransactions(keep func(*Transaction) bool) []*Transaction {
 	d.txMu.Lock()
 	defer d.txMu.Unlock()
 
-	transactions := make([]*Transaction, 0)
-	for _, tx := range d.txs {
-		if tx.dbName == databaseName {
+	transactions := make([]*Transaction, 0, len(d.txs))
+	for id, ref := range d.txs {
+		tx := ref.Value()
+		if tx == nil {
+			delete(d.txs, id)
+			continue
+		}
+		if keep(tx) {
 			transactions = append(transactions, tx)
 		}
 	}
 	return transactions
+}
+
+func (d *Driver) transactionsForDatabase(databaseName string) []*Transaction {
+	return d.liveTransactions(func(tx *Transaction) bool { return tx.dbName == databaseName })
+}
+
+func (d *Driver) openTransactions() []*Transaction {
+	return d.liveTransactions(func(*Transaction) bool { return true })
 }
 
 // Transaction opens a new transaction with default options.
@@ -429,8 +461,8 @@ func (d *Driver) Transaction(databaseName string, txnType TransactionType) (*Tra
 func (d *Driver) TransactionWithOptions(databaseName string, txnType TransactionType, opts *TransactionOptions) (*Transaction, error) {
 	start := time.Now()
 	txID := nextTxID()
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 
 	if d.ptr == nil {
 		logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", ErrNotConnected.Error())
