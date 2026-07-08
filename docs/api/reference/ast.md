@@ -185,7 +185,7 @@ func DeleteArtifactWithOptions(identifier, typeName string, opts DeleteArtifactO
 DeleteArtifactWithOptions builds a delete query with custom identifier matching options.
 
 <a name="EscapeString"></a>
-## func [EscapeString](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L681>)
+## func [EscapeString](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L692>)
 
 ```go
 func EscapeString(s string) string
@@ -194,7 +194,7 @@ func EscapeString(s string) string
 EscapeString escapes special characters in a string for use in TypeQL string literals. It handles backslashes, quotes, newlines, carriage returns, and tabs.
 
 <a name="FormatGoValue"></a>
-## func [FormatGoValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L690>)
+## func [FormatGoValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L701>)
 
 ```go
 func FormatGoValue(value any) string
@@ -203,13 +203,15 @@ func FormatGoValue(value any) string
 FormatGoValue converts a Go value into its TypeQL literal string representation. It handles basic types, pointers, and time.Time; common concrete types take a fast path, and reflection is used only for pointers and named/unknown types. This is the canonical formatting function for Go values; other packages should use this instead of implementing their own formatting logic.
 
 <a name="FormatLiteral"></a>
-## func [FormatLiteral](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L597>)
+## func [FormatLiteral](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L603>)
 
 ```go
 func FormatLiteral(val any, valueType string) string
 ```
 
 FormatLiteral formats a Go value as a TypeQL literal string. When val does not match valueType \(e.g. an int passed as a "string" literal\), it falls back to FormatGoValue instead of silently emitting a zero value. The compiler itself reports such mismatches as errors.
+
+A time.Time with valueType "datetime" is stored as UTC: the instant is converted to UTC and emitted as a naive \(zone\-less\) datetime literal with up to nanosecond precision, and hydration parses it back as UTC, so the instant survives round trips. Use "datetime\-tz" to keep the value's own offset, or "date" for a date\-only literal.
 
 <a name="PaginatedSearch"></a>
 ## func [PaginatedSearch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L525>)
@@ -1785,13 +1787,15 @@ type Value interface {
 ```
 
 <a name="ValueFromGo"></a>
-### func [ValueFromGo](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L229>)
+### func [ValueFromGo](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L234>)
 
 ```go
 func ValueFromGo(val any) Value
 ```
 
 ValueFromGo converts a Go value to an AST Value node. It handles strings, booleans, all integer and unsigned integer widths, floats, time.Time, and \(via reflection\) pointers and named types of those kinds; other types fall back to their string representation. A nil value \(or nil pointer\) yields a Value whose compilation fails with a descriptive error rather than silently becoming an empty string.
+
+A time.Time becomes a plain "datetime" value: the instant is stored as UTC and compiles to a naive \(zone\-less\) datetime literal. Use Lit\(t, "datetime\-tz"\) or Lit\(t, "date"\) for the other temporal literal kinds.
 
 <a name="ValueComparisonPattern"></a>
 ## type [ValueComparisonPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L189-L197>)

@@ -224,6 +224,9 @@ all, err := persons.All(ctx)
 // Get with attribute filters
 results, err := persons.Get(ctx, map[string]any{"name": "Alice"})
 
+// Get exactly one match (*NotFoundError / *NotUniqueError otherwise)
+person, err := persons.GetOne(ctx, map[string]any{"name": "Alice"})
+
 // Get by internal ID
 person, err := persons.GetByIID(ctx, "0x1e00000000000000000123")
 
@@ -355,10 +358,10 @@ q.Offset(20)
 // Get all results
 results, err := q.Execute(ctx)  // or q.All(ctx)
 
-// Get first result
+// Get first result (does not mutate the builder)
 first, err := q.First(ctx)
 
-// Count matches
+// Count distinct matching entities (multi-valued attributes don't inflate the count)
 count, err := q.Count(ctx)
 
 // Check existence
@@ -872,17 +875,19 @@ func TestSomething(t *testing.T) {
 
 3. **IID required for Update/Delete**: Instances must have their IID set (from Insert, Get, or GetByIID) before calling Update or Delete.
 
-4. **Role player matching**: When inserting relations, role player entities are identified by:
+4. **Key attributes must be non-zero on Insert/Put**: a zero-value key (`""`, `0`, nil pointer) returns `*KeyAttributeError`. Relation inserts error when no role players resolve (no more silent `links ()` output).
+
+5. **Role player matching**: When inserting relations, role player entities are identified by:
    - **IID (preferred)**: If the entity was fetched from DB and has IID set.
    - **Key attributes (fallback)**: Uses `key` tagged fields to match.
 
-5. **Transaction types**:
+6. **Transaction types**:
    - `gotype.ReadTransaction` (0): For queries
    - `gotype.WriteTransaction` (1): For insert/update/delete
    - `gotype.SchemaTransaction` (2): For schema changes
 
-6. **TypeDB uses `mean` not `avg`**: The ORM handles this mapping internally.
+7. **TypeDB uses `mean` not `avg`**: The ORM handles this mapping internally.
 
-7. **Result unwrapping**: TypeDB wraps values as `{"value": X}`. The ORM unwraps these automatically via `unwrapResult`/`unwrapValue`.
+8. **Result unwrapping**: TypeDB wraps values as `{"value": X}`. The ORM unwraps these automatically via `unwrapResult`/`unwrapValue`.
 
-8. **Reserved words**: TypeQL has 111 reserved keywords. The registry validates type names, attribute names, and role names against these and returns `ReservedWordError` if a conflict is found.
+9. **Reserved words**: TypeQL has 111 reserved keywords. The registry validates type names, attribute names, and role names against these and returns `ReservedWordError` if a conflict is found.
