@@ -68,6 +68,9 @@ type ModelInfo struct {
 	// KeyFields is a subset of Fields containing attributes marked as keys.
 	KeyFields      []FieldInfo
 	baseFieldIndex int
+	// typeNameOverride records an explicit type: tag override so conflicting
+	// overrides on different fields can be detected.
+	typeNameOverride string
 }
 
 // FieldByName retrieves FieldInfo by the Go struct field name.
@@ -92,6 +95,10 @@ func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool) {
 
 // ExtractModelInfo analyzes a Go struct type and extracts its TypeDB model metadata.
 // The struct must embed BaseEntity or BaseRelation to be a valid model.
+// Type-level tag options (abstract, type:name, sub:parent-name) may appear on
+// any field, including the embedded base field and blank (`_`) fields.
+// Fields with unsupported Go types or option-only tags without an attribute
+// name cause an error so invalid schemas fail at registration time.
 func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -125,69 +132,117 @@ func ExtractModelInfo(t reflect.Type) (*ModelInfo, error) {
 
 	// Scan fields
 	for field := range t.Fields() {
-		// Skip unexported fields
-		if !field.IsExported() {
-			continue
-		}
-
-		// Skip the embedded base types
-		if field.Anonymous {
-			continue
-		}
-
-		tagStr := field.Tag.Get("typedb")
-		if tagStr == "" || tagStr == "-" {
-			continue
-		}
-
-		tag, err := ParseTag(tagStr)
-		if err != nil {
-			return nil, fmt.Errorf("field %s: %w", field.Name, err)
-		}
-
-		if tag.Skip {
-			continue
-		}
-
-		// Handle abstract flag
-		if tag.Abstract {
-			info.IsAbstract = true
-		}
-
-		if tag.IsRole() {
-			// Role player field
-			role := RoleInfo{
-				RoleName:   tag.RoleName,
-				FieldName:  field.Name,
-				FieldIndex: field.Index[0],
-			}
-
-			// Determine player type name
-			ft := field.Type
-			if ft.Kind() == reflect.Pointer {
-				ft = ft.Elem()
-			}
-			if ft.Kind() == reflect.Slice {
-				ft = ft.Elem()
-				if ft.Kind() == reflect.Pointer {
-					ft = ft.Elem()
-				}
-			}
-			role.PlayerTypeName = toKebabCase(ft.Name())
-
-			info.Roles = append(info.Roles, role)
-		} else {
-			// Attribute field
-			fi := buildFieldInfo(field, field.Index[0], tag)
-			info.Fields = append(info.Fields, fi)
-
-			if tag.Key {
-				info.KeyFields = append(info.KeyFields, fi)
-			}
+		if err := scanModelField(info, field); err != nil {
+			return nil, err
 		}
 	}
 
 	return info, nil
+}
+
+// scanModelField processes a single struct field during model extraction,
+// routing it to the role list, the attribute list, or type-level options.
+func scanModelField(info *ModelInfo, field reflect.StructField) error {
+	tagStr := field.Tag.Get("typedb")
+	if tagStr == "" || tagStr == "-" {
+		return nil
+	}
+
+	tag, err := ParseTag(tagStr)
+	if err != nil {
+		return fmt.Errorf("field %s: %w", field.Name, err)
+	}
+	if tag.Skip {
+		return nil
+	}
+
+	// Embedded base types and unexported fields (e.g. `_ byte`) may carry
+	// type-level options (abstract, type:, sub:) but never map to attributes.
+	if field.Anonymous || !field.IsExported() {
+		if tag.Name != "" || tag.hasFieldOptions() || tag.IsRole() {
+			return fmt.Errorf("field %s: only type-level options (abstract, type:, sub:) are allowed on embedded or unexported fields, got %q", field.Name, tagStr)
+		}
+		return applyTypeLevelTag(info, field.Name, tag)
+	}
+
+	// Type-level options may ride on any field's tag.
+	if err := applyTypeLevelTag(info, field.Name, tag); err != nil {
+		return err
+	}
+
+	if tag.IsRole() {
+		return addRoleField(info, field, tag)
+	}
+
+	if tag.Name == "" {
+		if tag.hasTypeLevelOptions() && !tag.hasFieldOptions() {
+			// Pure type-level tag (e.g. `typedb:"abstract"`); no attribute.
+			return nil
+		}
+		return fmt.Errorf("field %s: typedb tag %q has options but no attribute name", field.Name, tagStr)
+	}
+
+	// Attribute field
+	fi, err := buildFieldInfo(field, field.Index[0], tag)
+	if err != nil {
+		return err
+	}
+	info.Fields = append(info.Fields, fi)
+
+	if tag.Key {
+		info.KeyFields = append(info.KeyFields, fi)
+	}
+	return nil
+}
+
+// addRoleField appends a role player field to the model's role list.
+func addRoleField(info *ModelInfo, field reflect.StructField, tag FieldTag) error {
+	if tag.Name != "" {
+		return fmt.Errorf("field %s: tag cannot declare both an attribute name %q and a role %q", field.Name, tag.Name, tag.RoleName)
+	}
+	role := RoleInfo{
+		RoleName:   tag.RoleName,
+		FieldName:  field.Name,
+		FieldIndex: field.Index[0],
+	}
+
+	// Determine player type name
+	ft := field.Type
+	if ft.Kind() == reflect.Pointer {
+		ft = ft.Elem()
+	}
+	if ft.Kind() == reflect.Slice {
+		ft = ft.Elem()
+		if ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+	}
+	role.PlayerTypeName = toKebabCase(ft.Name())
+
+	info.Roles = append(info.Roles, role)
+	return nil
+}
+
+// applyTypeLevelTag applies type-level tag options (abstract, type:, sub:) to
+// the model, rejecting conflicting values coming from different fields.
+func applyTypeLevelTag(info *ModelInfo, fieldName string, tag FieldTag) error {
+	if tag.Abstract {
+		info.IsAbstract = true
+	}
+	if tag.TypeName != "" {
+		if info.typeNameOverride != "" && info.typeNameOverride != tag.TypeName {
+			return fmt.Errorf("field %s: conflicting type name overrides %q and %q", fieldName, info.typeNameOverride, tag.TypeName)
+		}
+		info.typeNameOverride = tag.TypeName
+		info.TypeName = tag.TypeName
+	}
+	if tag.Sub != "" {
+		if info.Supertype != "" && info.Supertype != tag.Sub {
+			return fmt.Errorf("field %s: conflicting supertypes %q and %q", fieldName, info.Supertype, tag.Sub)
+		}
+		info.Supertype = tag.Sub
+	}
+	return nil
 }
 
 var (
@@ -272,7 +327,7 @@ func schemaMetaForType(t reflect.Type) []Meta {
 	return meta
 }
 
-func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) FieldInfo {
+func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) (FieldInfo, error) {
 	fi := FieldInfo{
 		Tag:        tag,
 		Doc:        field.Tag.Get("typedb_doc"),
@@ -296,8 +351,12 @@ func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) FieldInf
 		}
 	}
 
-	fi.ValueType = goTypeToTypeDB(ft)
-	return fi
+	valueType, err := goTypeToTypeDB(ft)
+	if err != nil {
+		return FieldInfo{}, fmt.Errorf("field %s: %w", field.Name, err)
+	}
+	fi.ValueType = valueType
+	return fi, nil
 }
 
 // ToDict converts a registered model instance to a map[string]any using
@@ -381,16 +440,25 @@ func lookupStrategy[T any]() (*ModelInfo, ModelStrategy, error) {
 	return info, strategyFor(info.Kind), nil
 }
 
-// toKebabCase converts a PascalCase Go struct name to kebab-case.
-// e.g. "UserAccount" → "user-account", "HTTPServer" → "httpserver"
+// toKebabCase converts a PascalCase Go struct name to kebab-case, treating
+// consecutive uppercase runs as initialisms.
+// e.g. "UserAccount" → "user-account", "HTTPServer" → "http-server",
+// "User2FA" → "user2-fa".
 func toKebabCase(name string) string {
 	if name == "" {
 		return ""
 	}
+	runes := []rune(name)
+	isUpper := func(r rune) bool { return r >= 'A' && r <= 'Z' }
 	var b strings.Builder
-	for i, r := range name {
-		if r >= 'A' && r <= 'Z' {
-			if i > 0 {
+	for i, r := range runes {
+		if isUpper(r) {
+			// Start a new word when the previous rune is not uppercase (end of a
+			// lowercase/digit run), or when this uppercase rune starts a new word
+			// after an initialism run (next rune is lowercase).
+			startsWord := i > 0 && (!isUpper(runes[i-1]) ||
+				(i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'))
+			if startsWord {
 				b.WriteByte('-')
 			}
 			b.WriteByte(byte(r - 'A' + 'a'))
@@ -401,23 +469,25 @@ func toKebabCase(name string) string {
 	return b.String()
 }
 
-// goTypeToTypeDB maps Go types to TypeDB value type strings.
-func goTypeToTypeDB(t reflect.Type) string {
+// goTypeToTypeDB maps Go types to TypeDB value type strings. It returns an
+// error for Go types that have no TypeDB attribute value type equivalent so
+// registration fails early instead of emitting a broken schema.
+func goTypeToTypeDB(t reflect.Type) (string, error) {
 	switch t.Kind() {
 	case reflect.String:
-		return "string"
+		return "string", nil
 	case reflect.Bool:
-		return "boolean"
+		return "boolean", nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return "integer"
+		return "integer", nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return "integer"
+		return "integer", nil
 	case reflect.Float32, reflect.Float64:
-		return "double"
+		return "double", nil
 	default:
 		if t == reflect.TypeOf(time.Time{}) {
-			return "datetime"
+			return "datetime", nil
 		}
-		return "string"
+		return "", fmt.Errorf("unsupported type %s for a TypeDB attribute", t)
 	}
 }

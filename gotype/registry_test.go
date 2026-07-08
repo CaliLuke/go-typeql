@@ -2,6 +2,7 @@ package gotype
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -163,5 +164,212 @@ func TestFieldByAttrName(t *testing.T) {
 	}
 	if f.FieldName != "Email" {
 		t.Errorf("FieldName: got %q, want %q", f.FieldName, "Email")
+	}
+}
+
+// Issue #29: role names are validated at registration time.
+
+type reservedRoleRelation struct {
+	BaseRelation
+	Target *TestPerson `typedb:"role:delete"`
+}
+
+type invalidRoleRelation struct {
+	BaseRelation
+	Target *TestPerson `typedb:"role:has space"`
+}
+
+func TestRegister_RoleNameValidation(t *testing.T) {
+	ClearRegistry()
+
+	if err := Register[reservedRoleRelation](); err == nil {
+		t.Fatal("expected error for reserved role name 'delete'")
+	}
+	if err := Register[invalidRoleRelation](); err == nil {
+		t.Fatal("expected error for role name with whitespace")
+	}
+}
+
+// Issue #33: RegisteredTypes, and everything derived from it, is deterministic.
+
+type orderModelA struct {
+	BaseEntity
+	Name string `typedb:"order-a-name,key"`
+}
+
+type orderModelB struct {
+	BaseEntity
+	Name string `typedb:"order-b-name,key"`
+}
+
+type orderModelC struct {
+	BaseEntity
+	Name string `typedb:"order-c-name,key"`
+}
+
+type orderModelD struct {
+	BaseRelation
+	Left  *orderModelA `typedb:"role:order-left"`
+	Right *orderModelB `typedb:"role:order-right"`
+}
+
+type orderModelE struct {
+	BaseEntity
+	Name string `typedb:"order-e-name,key"`
+}
+
+func TestRegisteredTypes_DeterministicOrder(t *testing.T) {
+	ClearRegistry()
+	MustRegister[orderModelE]()
+	MustRegister[orderModelC]()
+	MustRegister[orderModelA]()
+	MustRegister[orderModelD]()
+	MustRegister[orderModelB]()
+
+	want := []string{"order-model-a", "order-model-b", "order-model-c", "order-model-d", "order-model-e"}
+	for run := 0; run < 50; run++ {
+		types := RegisteredTypes()
+		if len(types) != len(want) {
+			t.Fatalf("got %d types, want %d", len(types), len(want))
+		}
+		for i, info := range types {
+			if info.TypeName != want[i] {
+				t.Fatalf("run %d: types[%d] = %q, want %q", run, i, info.TypeName, want[i])
+			}
+		}
+	}
+}
+
+func TestGenerateSchema_StableAcrossRuns(t *testing.T) {
+	ClearRegistry()
+	MustRegister[orderModelD]()
+	MustRegister[orderModelB]()
+	MustRegister[orderModelE]()
+	MustRegister[orderModelA]()
+	MustRegister[orderModelC]()
+
+	first := GenerateSchema()
+	for run := 0; run < 50; run++ {
+		if got := GenerateSchema(); got != first {
+			t.Fatalf("run %d: GenerateSchema output changed:\nfirst:\n%s\ngot:\n%s", run, first, got)
+		}
+	}
+}
+
+// Registered supertypes must precede their subtypes even when the child
+// sorts first alphabetically, so per-statement migrations define parents first.
+type aaaChildModel struct {
+	BaseEntity `typedb:"sub:zzz-parent-model"`
+	Name       string `typedb:"aaa-child-name,key"`
+}
+
+type zzzParentModel struct {
+	BaseEntity `typedb:"abstract"`
+	Name       string `typedb:"zzz-parent-name,key"`
+}
+
+func TestRegisteredTypes_SupertypesFirst(t *testing.T) {
+	ClearRegistry()
+	MustRegister[aaaChildModel]()
+	MustRegister[zzzParentModel]()
+
+	types := RegisteredTypes()
+	if len(types) != 2 {
+		t.Fatalf("got %d types, want 2", len(types))
+	}
+	if types[0].TypeName != "zzz-parent-model" || types[1].TypeName != "aaa-child-model" {
+		t.Fatalf("expected parent before child, got [%s, %s]", types[0].TypeName, types[1].TypeName)
+	}
+}
+
+// Issue #91: sub: makes SubtypesOf reachable.
+func TestSubtypesOf_WithSubTag(t *testing.T) {
+	ClearRegistry()
+	MustRegister[zzzParentModel]()
+	MustRegister[aaaChildModel]()
+
+	subs := SubtypesOf("zzz-parent-model")
+	if len(subs) != 1 || subs[0].TypeName != "aaa-child-model" {
+		t.Fatalf("expected [aaa-child-model], got %#v", subs)
+	}
+}
+
+type selfSupertypeModel struct {
+	BaseEntity `typedb:"sub:self-supertype-model"`
+	Name       string `typedb:"name,key"`
+}
+
+func TestRegister_SelfSupertypeErrors(t *testing.T) {
+	ClearRegistry()
+	if err := Register[selfSupertypeModel](); err == nil {
+		t.Fatal("expected error for self-referential supertype")
+	}
+}
+
+// Issue #54: conflicting value types for a shared attribute name fail at
+// registration instead of emitting a self-contradictory define.
+
+type conflictAgeIntModel struct {
+	BaseEntity
+	Name string `typedb:"conflict-name,key"`
+	Age  int    `typedb:"conflict-age"`
+}
+
+type conflictAgeStringModel struct {
+	BaseEntity
+	Title string `typedb:"conflict-title,key"`
+	Age   string `typedb:"conflict-age"`
+}
+
+func TestRegister_AttributeValueTypeConflict(t *testing.T) {
+	ClearRegistry()
+	MustRegister[conflictAgeIntModel]()
+
+	err := Register[conflictAgeStringModel]()
+	if err == nil {
+		t.Fatal("expected error for conflicting value types of attribute conflict-age")
+	}
+	if !strings.Contains(err.Error(), "conflict-age") {
+		t.Errorf("error should name the attribute, got: %v", err)
+	}
+
+	// Re-registering the same model stays idempotent.
+	if err := Register[conflictAgeIntModel](); err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+}
+
+type duplicateAttrModel struct {
+	BaseEntity
+	A string `typedb:"dup-attr,key"`
+	B int    `typedb:"dup-attr"`
+}
+
+func TestRegister_DuplicateAttributeInModelErrors(t *testing.T) {
+	ClearRegistry()
+	if err := Register[duplicateAttrModel](); err == nil {
+		t.Fatal("expected error for duplicate attribute name within one model")
+	}
+}
+
+// Issue #92: Go type names that collide case-insensitively must not silently
+// overwrite each other in the byGoName index.
+
+type ABTest struct {
+	BaseEntity
+	Name string `typedb:"ab-test-name,key"`
+}
+
+type AbTest struct {
+	BaseEntity
+	Name string `typedb:"abtest-name,key"`
+}
+
+func TestRegister_GoNameCollisionErrors(t *testing.T) {
+	ClearRegistry()
+	MustRegister[ABTest]()
+
+	if err := Register[AbTest](); err == nil {
+		t.Fatal("expected error for case-insensitive Go name collision")
 	}
 }
