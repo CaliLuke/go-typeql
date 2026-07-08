@@ -130,7 +130,15 @@ type IsSimilarTo struct {
 | `typedb:"type:my-type"`  | N/A                    | Override the TypeDB type name      |
 | `typedb:"sub:parent"`    | `sub parent`           | Explicit supertype declaration     |
 | `typedb:"abstract"`      | `@abstract`            | Abstract type                      |
+| `typedb:"price,value:decimal"` | `value decimal`  | Fixed-point decimal attribute      |
 | `typedb:"-"`             | N/A                    | Skip field                         |
+
+**Decimal attributes:** `value:decimal` registers the attribute as TypeDB `decimal`
+instead of the Go-type default. Allowed Go carriers: `float64`/`float32` (idiomatic,
+lossy for non-representable fractions) and `string` (exact — hydrated digits verbatim,
+e.g. `"0.1"`). Writes emit `dec`-suffixed literals (`99.99dec`); reads strip the
+server's `dec` suffix automatically. Filters compare with double literals, so exact
+equality on non-representable fractions can miss — prefer range comparisons there.
 
 Type-level options (`abstract`, `type:`, `sub:`) may sit on the embedded base field
 (``gotype.BaseEntity `typedb:"abstract"` ``) or a blank `_ byte` field. Registration
@@ -332,6 +340,13 @@ q.Filter(gotype.Or(
 // NOT
 q.Filter(gotype.Not(gotype.Eq("status", "inactive")))
 ```
+
+Variables introduced inside `or {}` / `not {}` blocks are renamed with scope suffixes
+(`$e_o1__name`, `$e_n1__x`) to satisfy TypeDB 3.x local-scoping rules. Suffix numbering
+is deterministic and restarts per built query, so the same logical query always produces
+byte-identical TypeQL. Caveat: a user-defined composite `Filter` that wraps an
+`OrFilter` internally falls back to a fresh scope and could collide with a sibling
+block binding the same attribute — compose with the built-in `And`/`Or`/`Not` instead.
 
 ### Role Player Filters
 
@@ -725,15 +740,19 @@ The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstrac
 - Multi-valued attributes (list syntax `owns tag[]` or `@card` allowing >1) become slice
   fields (`[]string`), not scalars
 - Full 3.x value-type mapping (`date`/`datetime-tz` → `time.Time`, `duration` →
-  `time.Duration`, `decimal` → `float64`); unknown value types warn (stderr /
+  `time.Duration`, `decimal` → `float64` with a `value:decimal` tag so gotype registers,
+  writes, and hydrates it as TypeDB decimal); unknown value types warn (stderr /
   `RenderConfig.WarnWriter`) before defaulting to string
 - `Render` errors when two schema labels map to the same Go name; roles nobody plays are
   emitted as `// TODO` comments instead of undefined Go types
 - All output is gofmt-formatted; invalid generated Go is a hard error. `PackageName` is
   required for DTO/registry/leaf-constant rendering
-- TypeQL `struct` definitions become plain Go value structs; `@values` enum names are
-  sanitized (`"n/a"` → `GradeNA`); `@regex`/`@range` surface as field comments and as
-  registry `AttributeRegex`/`AttributeRange` maps
+- TypeQL `struct` definitions become plain Go value structs in models AND DTO output
+  (`DTOData.Structs`); struct-valued attributes reference the generated struct type, and
+  registry JSON-schema mode maps them to `"object"` with per-struct property maps in
+  `StructTypeJSONSchema`. `@values` enum names are sanitized (`"n/a"` → `GradeNA`);
+  `@regex`/`@range` surface as field comments and as registry
+  `AttributeRegex`/`AttributeRange` maps
 - Generates string constants from `@values` constraints (`-enums`, on by default)
 - Decodes escaped TypeQL string literals in schema annotations, including `\uXXXX` and `\u{...}` forms in `@regex` and `@values`
 - Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas, abstract tracking, key attributes, schema hash
@@ -746,7 +765,9 @@ The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstrac
 - Attribute subtyping: `attribute email sub name;` and abstract attributes parse; subtypes
   inherit the parent's value type when they omit a `value` clause
 - List syntax: `owns nicknames[]` / `relates members[]` parse and surface as
-  `OwnsSpec.IsList` / `RelatesSpec.IsList` in the parsed model
+  `OwnsSpec.IsList` / `RelatesSpec.IsList`; both are consumed by render — list (or
+  many-cardinality) ownerships become slice fields and list roles become `[]*Player`
+  role fields
 - `@range` accepts all operand forms (integer, decimal, string, date/datetime, half-open
   like `@range(0..)`), captured verbatim in `AttributeSpec.RangeOp`
 - TypeQL functions (`fun ...`) are parsed by the grammar; definitions after a function
@@ -774,6 +795,11 @@ For each non-abstract relation `Bar`:
 
 - `BarOut` — response: `ID string`, `Type string`, role player IIDs, owned attributes
 - `BarCreate` — request: role player IDs (required), owned attributes
+
+List roles (`relates members[]` or `@card` max > 1) emit `[]string` role IID/ID fields
+in relation Out/Create DTOs instead of `*string`/`string`. TypeQL structs are emitted
+as plain value structs alongside the DTOs, and struct-valued attribute fields reference
+them.
 
 Plus interfaces: `EntityOut`, `EntityCreate`, `EntityPatch`, `RelationOut`, `RelationCreate` with `TypeName() string` method.
 
