@@ -77,7 +77,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.13.0
+go get github.com/CaliLuke/go-typeql@v1.14.0
 ```
 
 The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package targets TypeDB `3.12.0` with the final `typedb-driver` and `typeql` `3.12.0` Rust crates. Stay on the `v1.10.x` line for TypeDB `3.10.x`.
@@ -97,7 +97,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 platform="$(go env GOOS)-$(go env GOARCH)"
 
 # Download for your platform
-gh release download v1.13.0 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
+gh release download v1.14.0 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 libdir=/usr/local/lib
@@ -120,7 +120,7 @@ For a complete runnable example covering connect, schema, and CRUD, see the [Get
 ## Running tests
 
 ```bash
-# Unit tests (437 tests, no database needed)
+# Unit tests (645 tests, no database needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (with the repo compose file, TypeDB is exposed on host port 1730)
