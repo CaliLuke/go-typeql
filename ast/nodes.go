@@ -21,7 +21,8 @@ type Value interface {
 type FunctionCallValue struct {
 	// Function is the name of the function to call.
 	Function string
-	// Args contains the arguments for the function, which can be Value nodes or variable strings.
+	// Args contains the arguments for the function: Value nodes, "$"-prefixed
+	// variable strings, or plain Go values (converted via ValueFromGo).
 	Args []any
 }
 
@@ -42,11 +43,13 @@ func (LiteralValue) value()     {}
 // ArithmeticValue represents a binary arithmetic operation between two values.
 // It supports TypeQL infix operators like +, -, *, /, %, and ^.
 type ArithmeticValue struct {
-	// Left is the left operand (Value or variable string).
+	// Left is the left operand: a Value node, a "$"-prefixed variable
+	// string, or a plain Go value (converted via ValueFromGo).
 	Left any
 	// Operator is the infix operator (+, -, *, /, %, ^).
 	Operator string
-	// Right is the right operand (Value or variable string).
+	// Right is the right operand: a Value node, a "$"-prefixed variable
+	// string, or a plain Go value (converted via ValueFromGo).
 	Right any
 }
 
@@ -86,7 +89,8 @@ func (IidConstraint) constraint() {}
 type HasConstraint struct {
 	// AttrName is the name of the attribute type.
 	AttrName string
-	// Value is the value of the attribute (Value or variable string).
+	// Value is the value of the attribute: a Value node, a "$"-prefixed
+	// variable string, or a plain Go value (converted via ValueFromGo).
 	Value any
 }
 
@@ -187,7 +191,8 @@ type ValueComparisonPattern struct {
 	Var string
 	// Operator is the comparison operator (e.g., >, <, ==).
 	Operator string
-	// Value is the value to compare against (Value or variable string).
+	// Value is the value to compare against: a Value node, a "$"-prefixed
+	// variable string, or a plain Go value (converted via ValueFromGo).
 	Value any
 }
 
@@ -545,7 +550,9 @@ type AggregateExpr struct {
 	FuncName string
 	// Var is the variable being aggregated.
 	Var string
-	// AttrName is the optional attribute name to aggregate on if the variable is a thing.
+	// AttrName is unsupported: TypeQL 3.x reduce aggregates variables only,
+	// so setting it produces a compile error. Bind the attribute to a
+	// variable in the match clause and aggregate that variable instead.
 	AttrName string
 }
 
@@ -555,7 +562,8 @@ func (AggregateExpr) queryNode() {}
 type ReduceAssignment struct {
 	// Variable is the variable receiving the aggregated value.
 	Variable string
-	// Expression is the aggregation expression (AggregateExpr or variable string).
+	// Expression is the aggregation expression: an AggregateExpr, a Value
+	// such as FunctionCallValue, or a raw expression string (e.g. "count($p)").
 	Expression any
 }
 
