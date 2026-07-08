@@ -17,6 +17,11 @@ type DTOData struct {
 	// Base structs (from BaseStructConfig)
 	BaseStructs []baseStructDTOCtx
 
+	// Value structs generated from TypeQL struct definitions. Structs are
+	// value types, so a single plain Go struct is emitted per TypeQL struct
+	// (no Out/Create/Patch triple).
+	Structs []structDTOCtx
+
 	// Entity DTOs
 	Entities []entityDTOCtx
 
@@ -78,6 +83,14 @@ type dtoFieldCtx struct {
 	JSONTag string // e.g. `json:"name"`
 }
 
+// structDTOCtx is a plain Go value struct generated from a TypeQL struct
+// definition; optional fields become pointers.
+type structDTOCtx struct {
+	GoName   string // e.g. "Address"
+	TypeName string // e.g. "address"
+	Fields   []dtoFieldCtx
+}
+
 type compositeDTOCtx struct {
 	GoName   string // e.g. "ArtifactDTO"
 	TypeName string // e.g. "artifact"
@@ -90,8 +103,10 @@ type roleFieldCtx struct {
 	JSONTag    string
 	OutName    string // e.g. "EmployeeIID"
 	OutJSON    string
+	OutType    string // "*string", or "[]string" for list/many roles
 	CreateName string // e.g. "EmployeeID"
 	CreateJSON string
+	CreateType string // "string", or "[]string" for list/many roles
 }
 
 // BuildDTOData populates DTOData from a parsed schema.
@@ -106,10 +121,20 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 	excludeEntities := toSet(cfg.ExcludeEntities)
 	excludeRelations := toSet(cfg.ExcludeRelations)
 
-	// Index attributes
-	attrTypes := make(map[string]string, len(schema.Attributes))
+	// Index attributes and TypeQL struct names; struct-valued attributes
+	// resolve to the generated struct types instead of defaulting to string.
+	valueTypes := make(map[string]string, len(schema.Attributes))
 	for _, a := range schema.Attributes {
-		attrTypes[a.Name] = a.ValueType
+		valueTypes[a.Name] = a.ValueType
+	}
+	structNames := make(map[string]bool, len(schema.Structs))
+	for _, s := range schema.Structs {
+		structNames[s.Name] = true
+	}
+	attrTypes := attrTypeIndex{
+		valueTypes:  valueTypes,
+		structNames: structNames,
+		useAcronyms: cfg.UseAcronyms,
 	}
 
 	// Index entities
@@ -146,8 +171,9 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 	}
 
 	// Check if we need time import
-	data.NeedsTime = needsTimeDTOImport(schema, attrTypes, excludeEntities, excludeRelations)
+	data.NeedsTime = needsTimeDTOImport(schema, valueTypes, excludeEntities, excludeRelations)
 
+	buildDTOStructs(data, cfg, schema, structNames)
 	buildDTOBaseStructs(data, cfg, attrTypes, entityIndex)
 	buildDTOEntities(data, cfg, attrTypes, entityIndex, baseStructMap, inheritedAttrSets, overrides, excludeEntities, schema)
 	buildDTORelations(data, cfg, attrTypes, schema, excludeRelations)
@@ -156,7 +182,51 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
 	return data
 }
 
-func buildDTOBaseStructs(data *DTOData, cfg DTOConfig, attrTypes map[string]string, entityIndex map[string]EntitySpec) {
+// attrTypeIndex resolves attribute names to DTO Go types. Attributes whose
+// value type is a TypeQL struct reference the generated struct's Go type;
+// everything else goes through typeDBToGo (unknown value types default to
+// string).
+type attrTypeIndex struct {
+	valueTypes  map[string]string // attr name -> TypeDB value type
+	structNames map[string]bool
+	useAcronyms bool
+}
+
+func (idx attrTypeIndex) goType(attr string) string {
+	vt := idx.valueTypes[attr]
+	if idx.structNames[vt] {
+		return goTypeName(vt, RenderConfig{UseAcronyms: idx.useAcronyms})
+	}
+	return typeDBToGo(vt)
+}
+
+// buildDTOStructs emits one plain Go value struct per TypeQL struct
+// definition, sorted by name; optional fields become pointers and
+// struct-typed fields reference the generated structs.
+func buildDTOStructs(data *DTOData, cfg DTOConfig, schema *ParsedSchema, structNames map[string]bool) {
+	structs := make([]StructSpec, len(schema.Structs))
+	copy(structs, schema.Structs)
+	sort.Slice(structs, func(i, j int) bool { return structs[i].Name < structs[j].Name })
+
+	rcfg := RenderConfig{UseAcronyms: cfg.UseAcronyms}
+	for _, s := range structs {
+		var fields []dtoFieldCtx
+		for _, f := range s.Fields {
+			goType, _ := structGoFieldType(f, structNames, rcfg)
+			if isTimeValueType(f.ValueType) {
+				data.NeedsTime = true
+			}
+			fields = append(fields, makeDTOField(f.Name, goType, f.Optional, cfg.UseAcronyms))
+		}
+		data.Structs = append(data.Structs, structDTOCtx{
+			GoName:   goTypeName(s.Name, rcfg),
+			TypeName: s.Name,
+			Fields:   fields,
+		})
+	}
+}
+
+func buildDTOBaseStructs(data *DTOData, cfg DTOConfig, attrTypes attrTypeIndex, entityIndex map[string]EntitySpec) {
 	for _, bs := range cfg.BaseStructs {
 		entity, ok := entityIndex[bs.SourceEntity]
 		if !ok {
@@ -165,7 +235,7 @@ func buildDTOBaseStructs(data *DTOData, cfg DTOConfig, attrTypes map[string]stri
 		var outFields, patchFields []dtoFieldCtx
 		for _, attrName := range bs.InheritedAttrs {
 			o := findOwns(entity.Owns, attrName)
-			goType := typeDBToGo(attrTypes[attrName])
+			goType := attrTypes.goType(attrName)
 			pointer := !cfg.StrictOut || !isRequiredOwns(o)
 			outFields = append(outFields, dtoFieldFor(o, goType, pointer, cfg.UseAcronyms))
 			patchFields = append(patchFields, dtoFieldFor(o, goType, true, cfg.UseAcronyms))
@@ -196,7 +266,7 @@ func buildDTOBaseStructs(data *DTOData, cfg DTOConfig, attrTypes map[string]stri
 	}
 }
 
-func buildDTOEntities(data *DTOData, cfg DTOConfig, attrTypes map[string]string, entityIndex map[string]EntitySpec, baseStructMap map[string]BaseStructConfig, inheritedAttrSets map[string]map[string]bool, overrides map[string][]EntityFieldOverride, excludeEntities map[string]bool, schema *ParsedSchema) {
+func buildDTOEntities(data *DTOData, cfg DTOConfig, attrTypes attrTypeIndex, entityIndex map[string]EntitySpec, baseStructMap map[string]BaseStructConfig, inheritedAttrSets map[string]map[string]bool, overrides map[string][]EntityFieldOverride, excludeEntities map[string]bool, schema *ParsedSchema) {
 	allEntities := make([]string, 0, len(schema.Entities))
 	for _, e := range schema.Entities {
 		allEntities = append(allEntities, e.Name)
@@ -240,12 +310,12 @@ func buildDTOEntities(data *DTOData, cfg DTOConfig, attrTypes map[string]string,
 	}
 }
 
-func entityDTOFields(e EntitySpec, attrTypes map[string]string, skipAttrs map[string]bool, entityName string, overrides map[string][]EntityFieldOverride, cfg DTOConfig) (out, create, patch []dtoFieldCtx) {
+func entityDTOFields(e EntitySpec, attrTypes attrTypeIndex, skipAttrs map[string]bool, entityName string, overrides map[string][]EntityFieldOverride, cfg DTOConfig) (out, create, patch []dtoFieldCtx) {
 	for _, o := range sortedOwns(e.Owns) {
 		if skipAttrs[o.Attribute] {
 			continue
 		}
-		goType := typeDBToGo(attrTypes[o.Attribute])
+		goType := attrTypes.goType(o.Attribute)
 		required := isRequiredOwns(o)
 		outReq, createReq := required, required
 		for _, ov := range overrides[entityName+":"+o.Attribute] {
@@ -266,7 +336,7 @@ func entityDTOFields(e EntitySpec, attrTypes map[string]string, skipAttrs map[st
 	return
 }
 
-func buildDTORelations(data *DTOData, cfg DTOConfig, attrTypes map[string]string, schema *ParsedSchema, excludeRelations map[string]bool) {
+func buildDTORelations(data *DTOData, cfg DTOConfig, attrTypes attrTypeIndex, schema *ParsedSchema, excludeRelations map[string]bool) {
 	allRelations := make([]string, 0, len(schema.Relations))
 	for _, r := range schema.Relations {
 		allRelations = append(allRelations, r.Name)
@@ -286,17 +356,25 @@ func buildDTORelations(data *DTOData, cfg DTOConfig, attrTypes map[string]string
 		var roles []roleFieldCtx
 		for _, rel := range r.Relates {
 			roleGoName := goTypeName(rel.Role, RenderConfig{UseAcronyms: cfg.UseAcronyms})
+			// List roles (relates role[]) and roles whose cardinality allows
+			// more than one player carry a slice of IIDs/IDs.
+			outType, createType := "*string", "string"
+			if rel.IsList || cardAllowsMany(rel.Card) {
+				outType, createType = "[]string", "[]string"
+			}
 			roles = append(roles, roleFieldCtx{
 				OutName:    roleGoName + cfg.IDFieldName,
 				OutJSON:    fmt.Sprintf("`json:%q`", rel.Role+"_"+strings.ToLower(cfg.IDFieldName)),
+				OutType:    outType,
 				CreateName: roleGoName + "ID",
 				CreateJSON: fmt.Sprintf("`json:%q`", rel.Role+"_id"),
+				CreateType: createType,
 			})
 		}
 
 		var outFields, createFields []dtoFieldCtx
 		for _, o := range sortedOwns(r.Owns) {
-			goType := typeDBToGo(attrTypes[o.Attribute])
+			goType := attrTypes.goType(o.Attribute)
 			required := isRequiredOwns(o)
 			outFields = append(outFields, dtoFieldFor(o, goType, !cfg.StrictOut || !required, cfg.UseAcronyms))
 			createFields = append(createFields, dtoFieldFor(o, goType, !required, cfg.UseAcronyms))
@@ -316,7 +394,7 @@ func buildDTORelations(data *DTOData, cfg DTOConfig, attrTypes map[string]string
 	}
 }
 
-func buildDTOComposites(data *DTOData, cfg DTOConfig, attrTypes map[string]string, entityIndex map[string]EntitySpec) {
+func buildDTOComposites(data *DTOData, cfg DTOConfig, attrTypes attrTypeIndex, entityIndex map[string]EntitySpec) {
 	for _, comp := range cfg.CompositeEntities {
 		seen := make(map[string]bool)
 		var fields []dtoFieldCtx
@@ -330,7 +408,7 @@ func buildDTOComposites(data *DTOData, cfg DTOConfig, attrTypes map[string]strin
 					continue
 				}
 				seen[o.Attribute] = true
-				fields = append(fields, dtoFieldFor(o, typeDBToGo(attrTypes[o.Attribute]), true, cfg.UseAcronyms))
+				fields = append(fields, dtoFieldFor(o, attrTypes.goType(o.Attribute), true, cfg.UseAcronyms))
 			}
 		}
 		sort.Slice(fields, func(i, j int) bool { return fields[i].GoName < fields[j].GoName })
@@ -511,6 +589,17 @@ package {{.PackageName}}
 {{if .NeedsTime}}
 import "time"
 {{end}}
+{{- if .Structs}}
+// --- Value structs (from TypeQL struct definitions) ---
+{{range .Structs}}
+// {{.GoName}} is generated from TypeQL struct "{{.TypeName}}".
+type {{.GoName}} struct {
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} {{.JSONTag}}
+{{- end}}
+}
+{{end}}
+{{- end}}
 {{- range .BaseStructs}}
 // --- {{.BaseName}} base structs ---
 
@@ -588,7 +677,7 @@ type {{.GoName}}Out struct {
 	{{$.IDFieldName}} string ` + "`" + `json:"{{$.IDFieldName | lower}}"` + "`" + `
 	Type string ` + "`" + `json:"type"` + "`" + `
 {{- range .Roles}}
-	{{.OutName}} *string {{.OutJSON}}
+	{{.OutName}} {{.OutType}} {{.OutJSON}}
 {{- end}}
 {{- range .OutFields}}
 	{{.GoName}} {{.GoType}} {{.JSONTag}}
@@ -608,7 +697,7 @@ type {{.GoName}}Create struct {
 {{- end}}
 	Type string ` + "`" + `json:"type"` + "`" + `
 {{- range .Roles}}
-	{{.CreateName}} string {{.CreateJSON}}
+	{{.CreateName}} {{.CreateType}} {{.CreateJSON}}
 {{- end}}
 {{- range .CreateFields}}
 	{{.GoName}} {{.GoType}} {{.JSONTag}}

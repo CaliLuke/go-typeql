@@ -328,10 +328,7 @@ func (r *renderer) buildStructCtx(s StructSpec) structCtx {
 }
 
 func (r *renderer) structFieldGoType(s StructSpec, f StructFieldSpec) string {
-	if r.structs[f.ValueType] {
-		return goTypeName(f.ValueType, r.cfg)
-	}
-	goType, known := typeDBToGoStrict(f.ValueType)
+	goType, known := structGoFieldType(f, r.structs, r.cfg)
 	if !known {
 		r.warnf("struct %q field %q has unsupported value type %q; defaulting to string", s.Name, f.Name, f.ValueType)
 	}
@@ -339,6 +336,19 @@ func (r *renderer) structFieldGoType(s StructSpec, f StructFieldSpec) string {
 		r.needsTime = true
 	}
 	return goType
+}
+
+// structGoFieldType maps a TypeQL struct field's value type onto Go, shared
+// by the models and DTO renderers. Fields whose value type is another TypeQL
+// struct reference that struct's generated Go type; other value types go
+// through typeDBToGoStrict. known is false when the value type is neither a
+// struct nor a recognized TypeDB value type (the mapping then defaults to
+// string).
+func structGoFieldType(f StructFieldSpec, structNames map[string]bool, cfg RenderConfig) (goType string, known bool) {
+	if structNames[f.ValueType] {
+		return goTypeName(f.ValueType, cfg), true
+	}
+	return typeDBToGoStrict(f.ValueType)
 }
 
 func (r *renderer) buildEntityCtx(e EntitySpec) entityCtx {
@@ -397,7 +407,14 @@ func (r *renderer) buildRelationCtx(rel RelationSpec) relationCtx {
 		playerType := r.findRolePlayer(rel, rs)
 		if playerType != "" {
 			role.PlayerType = goTypeName(playerType, cfg)
-			role.GoType = "*" + role.PlayerType
+			// List roles (relates role[]) and roles whose cardinality allows
+			// more than one player become slices, mirroring how multi-valued
+			// ownerships are handled in buildFieldCtx.
+			if rs.IsList || cardAllowsMany(rs.Card) {
+				role.GoType = "[]*" + role.PlayerType
+			} else {
+				role.GoType = "*" + role.PlayerType
+			}
 		} else {
 			// Never invent a Go type name: emit the field as a comment so the
 			// generated file still compiles (issue #39).
@@ -455,6 +472,15 @@ func (r *renderer) buildFieldCtx(o OwnsSpec, owner string) fieldCtx {
 	}
 	if o.Unique {
 		tagParts = append(tagParts, "unique")
+	}
+	// Contract with gotype: value:decimal makes ParseTag register the
+	// attribute as TypeDB value type decimal, format write literals as
+	// <number>dec, and hydrate the driver's decimal strings. The tag option
+	// sits after key/unique and before card.
+	if spec.ValueType == "decimal" {
+		tagParts = append(tagParts, "value:decimal")
+		f.Constraints = append(f.Constraints,
+			"decimal: precision is preserved on the wire; the Go field is float64")
 	}
 	if o.Card != "" {
 		tagParts = append(tagParts, "card="+o.Card)
@@ -704,8 +730,9 @@ func typeDBToGoStrict(vtype string) (string, bool) {
 	case "double":
 		return "float64", true
 	case "decimal":
-		// Go has no native fixed-point decimal; float64 is the closest
-		// match and what the ORM hydrates numeric values into.
+		// Go has no native fixed-point decimal; the field is float64 and
+		// buildFieldCtx adds value:decimal to the tag so gotype registers the
+		// attribute as decimal and preserves precision on the wire.
 		return "float64", true
 	case "boolean":
 		return "bool", true

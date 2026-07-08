@@ -73,6 +73,10 @@ type RegistryData struct {
 	// JSON schema fragments
 	JSONSchema       bool
 	EntityJSONSchema []JSONSchemaCtx
+	// StructJSONSchema carries one property map per TypeQL struct definition;
+	// struct-valued fields (and struct-valued attributes in EntityJSONSchema)
+	// map to the JSON type "object".
+	StructJSONSchema []JSONSchemaCtx
 }
 
 // TypeConstCtx holds a Go constant name and its string value.
@@ -186,7 +190,7 @@ func BuildRegistryData(schema *ParsedSchema, cfg RegistryConfig) *RegistryData {
 	fillEntityData(data, cfg, entityIndex, allEntities)
 	fillRelationData(data, cfg, schema, entityIndex, relIndex, allRelations)
 	if cfg.JSONSchema {
-		fillJSONSchemaData(data, cfg, attrIndex, entityIndex, allEntities)
+		fillJSONSchemaData(data, cfg, schema, attrIndex, entityIndex, allEntities)
 	}
 
 	return data
@@ -356,7 +360,20 @@ func fillRelationData(data *RegistryData, cfg RegistryConfig, schema *ParsedSche
 	}
 }
 
-func fillJSONSchemaData(data *RegistryData, cfg RegistryConfig, attrIndex map[string]AttributeSpec, entityIndex map[string]EntitySpec, allEntities []string) {
+func fillJSONSchemaData(data *RegistryData, cfg RegistryConfig, schema *ParsedSchema, attrIndex map[string]AttributeSpec, entityIndex map[string]EntitySpec, allEntities []string) {
+	// Struct-valued attributes and struct fields map to "object"; scalar
+	// value types go through typeDBToJSONSchemaType.
+	structNames := make(map[string]bool, len(schema.Structs))
+	for _, s := range schema.Structs {
+		structNames[s.Name] = true
+	}
+	jsonType := func(vtype string) string {
+		if structNames[vtype] {
+			return "object"
+		}
+		return typeDBToJSONSchemaType(vtype)
+	}
+
 	for _, name := range allEntities {
 		e := entityIndex[name]
 		if cfg.SkipAbstract && e.Abstract {
@@ -369,7 +386,7 @@ func fillJSONSchemaData(data *RegistryData, cfg RegistryConfig, attrIndex map[st
 			if !ok {
 				continue
 			}
-			props = append(props, JSONSchemaPropCtx{Name: o.Attribute, JSONType: typeDBToJSONSchemaType(attr.ValueType)})
+			props = append(props, JSONSchemaPropCtx{Name: o.Attribute, JSONType: jsonType(attr.ValueType)})
 			if o.Key || o.Unique {
 				required = append(required, o.Attribute)
 			}
@@ -378,6 +395,29 @@ func fillJSONSchemaData(data *RegistryData, cfg RegistryConfig, attrIndex map[st
 		sort.Strings(required)
 		data.EntityJSONSchema = append(data.EntityJSONSchema, JSONSchemaCtx{
 			TypeName:   name,
+			Properties: props,
+			Required:   required,
+		})
+	}
+
+	// One property map per TypeQL struct definition, sorted by struct name;
+	// non-optional fields are required.
+	structs := make([]StructSpec, len(schema.Structs))
+	copy(structs, schema.Structs)
+	sort.Slice(structs, func(i, j int) bool { return structs[i].Name < structs[j].Name })
+	for _, s := range structs {
+		var props []JSONSchemaPropCtx
+		var required []string
+		for _, f := range s.Fields {
+			props = append(props, JSONSchemaPropCtx{Name: f.Name, JSONType: jsonType(f.ValueType)})
+			if !f.Optional {
+				required = append(required, f.Name)
+			}
+		}
+		sort.Slice(props, func(i, j int) bool { return props[i].Name < props[j].Name })
+		sort.Strings(required)
+		data.StructJSONSchema = append(data.StructJSONSchema, JSONSchemaCtx{
+			TypeName:   s.Name,
 			Properties: props,
 			Required:   required,
 		})
@@ -493,8 +533,10 @@ func buildAnnotationCtx(annotations map[string]map[string]string, schema *Parsed
 
 // typeDBToJSONSchemaType maps TypeDB value types to JSON Schema types. It
 // covers the full TypeDB 3.x value-type set (decimal maps to number; the
-// date/time types and duration map to ISO 8601 strings). Unknown value types
-// fall back to "string", JSON Schema's least-wrong default.
+// date/time types and duration map to ISO 8601 strings). Struct value types
+// are resolved to "object" by the caller (fillJSONSchemaData), which knows
+// the schema's struct names. Unknown value types fall back to "string",
+// JSON Schema's least-wrong default.
 func typeDBToJSONSchemaType(vtype string) string {
 	switch vtype {
 	case "string":
@@ -876,6 +918,26 @@ var EntityTypeJSONSchema = map[string]map[string]any{
 	},
 {{- end}}
 }
+{{- if .StructJSONSchema}}
+
+// StructTypeJSONSchema contains JSON schema property maps per TypeQL struct
+// type. Struct-valued fields map to the JSON type "object".
+var StructTypeJSONSchema = map[string]map[string]any{
+{{- range .StructJSONSchema}}
+	"{{.TypeName}}": {
+		"type": "object",
+		"properties": map[string]any{
+		{{- range .Properties}}
+			"{{.Name}}": map[string]any{"type": "{{.JSONType}}"},
+		{{- end}}
+		},
+		{{- if .Required}}
+		"required": []string{{goStrSlice .Required}},
+		{{- end}}
+	},
+{{- end}}
+}
+{{- end}}
 {{- end}}
 
 // --- Convenience functions ---
