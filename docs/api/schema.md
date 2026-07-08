@@ -134,8 +134,9 @@ diff := gotype.DiffSchemaFromRegistry(current)
 
 if !diff.IsEmpty() {
     fmt.Println(diff.Summary())
-    for _, stmt := range diff.GenerateMigration() {
-        fmt.Println(stmt)
+    plan := diff.Plan() // batched queries, exactly what Migrate would execute
+    for _, q := range plan.Queries {
+        fmt.Println(q)
     }
 }
 ```
@@ -160,15 +161,27 @@ Compares the currently registered Go models against the provided database schema
 
 ```go
 type SchemaDiff struct {
-    AddAttributes []AttrChange    // New attribute types
-    AddEntities   []TypeChange    // New entity types
-    AddRelations  []TypeChange    // New relation types
-    AddOwns       []OwnsChange    // New owns clauses on existing types
-    AddRelates    []RelatesChange // New relates clauses on existing relations
-    RemoveOwns    []OwnsChange    // Owns in DB not in Go (informational)
-    RemoveTypes   []string        // Types in DB not in Go (informational)
+    AddAttributes    []AttrChange     // New attribute types
+    AddEntities      []TypeChange     // New entity types
+    AddRelations     []TypeChange     // New relation types
+    AddOwns          []OwnsChange     // New owns clauses on existing types
+    AddRelates       []RelatesChange  // New relates clauses on existing relations
+    AddPlays         []PlaysChange    // New plays clauses on existing types
+    ModifyOwns       []OwnsModify     // In-place redefines (explicit @card changes)
+    RemoveOwns       []OwnsChange     // Owns in DB not in Go (destructive)
+    RemoveTypes      []string         // Types in DB not in Go (destructive)
+    RemoveAttributes []string         // Attribute types in DB not in Go (destructive)
+    Unsupported      []BreakingChange // Detected but not automatable (value-type
+                                      // changes, @key/@unique toggles, supertype
+                                      // or abstractness changes)
 }
 ```
+
+The diff is deep, not presence-only: it compares value types, owns annotations,
+plays clauses, supertypes, and abstractness. Changes it refuses to automate land
+in `Unsupported` and surface through `Summary()` and `HasBreakingChanges()`.
+Removal lists are sorted, so plans are deterministic. The ORM's internal
+migration-tracking types are excluded from every removal scan.
 
 ### Supporting Change Types
 
@@ -293,9 +306,38 @@ stmts := diff.GenerateMigrationWithOpts(gotype.WithDestructive())
 
 ```go
 type BreakingChange struct {
-    Type   string // "removal", "type_change", "cardinality_change"
+    Type   string // "removal", "type_change", "cardinality_change", "annotation_change"
     Entity string // Affected type name
     Detail string // Human-readable description
+}
+```
+
+## Plan / Preview
+
+Preview exactly what a migration would execute — including the force-mode
+undefine block — without touching the database:
+
+```go
+func PlanSchema(ctx context.Context, db *Database, opts ...SyncSchemaOption) (*MigrationPlan, error)
+
+type MigrationPlan struct {
+    Diff       *SchemaDiff // The diff the plan was built from
+    Statements []string    // Individual statements, in application order (review/logging)
+    Queries    []string    // Batched queries executed atomically in one schema tx
+}
+```
+
+`SchemaDiff.Plan(opts...)` builds the same plan from an existing diff. The
+batched `Queries` contain at most one `define` block, one `redefine` per
+ownership modification, and (with force) one `undefine` block.
+
+```go
+plan, err := gotype.PlanSchema(ctx, db, gotype.WithForce())
+if !plan.IsEmpty() {
+    fmt.Println(plan.Summary())
+    for _, q := range plan.Queries {
+        fmt.Println(q) // review before applying
+    }
 }
 ```
 
@@ -309,18 +351,27 @@ func SyncSchema(ctx context.Context, db *Database, opts ...SyncSchemaOption) (*S
 
 Options:
 
-| Option               | Description                               |
-| -------------------- | ----------------------------------------- |
-| `WithForce()`        | Also apply destructive changes (removals) |
-| `WithSkipIfExists()` | Skip migration if schema already matches  |
+| Option               | Description                                                        |
+| -------------------- | ------------------------------------------------------------------ |
+| `WithForce()`        | Also apply destructive changes (removals)                          |
+| `WithSkipIfExists()` | Bootstrap guard: skip entirely if the DB already has user-defined types |
 
 ```go
-// Skip if already up to date
+// Bootstrap only: apply nothing if the database already has a schema
 diff, err := gotype.SyncSchema(ctx, db, gotype.WithSkipIfExists())
 
 // Force destructive changes
 diff, err := gotype.SyncSchema(ctx, db, gotype.WithForce())
 ```
+
+All migration paths (`Migrate`, `MigrateWithState`, `SyncSchema`) execute their
+plan in a **single schema transaction** — a failure rolls back everything,
+including the migration-state record, so partial schema states are never
+observable. Migration-tracking types survive force syncs.
+
+**`WithForce()` really removes types.** TypeDB refuses to undefine a type that
+still has instances — delete the data first. Use `PlanSchema` to review the
+undefine block before running a force sync.
 
 ## Migration State Tracking
 
@@ -423,6 +474,17 @@ Validates, sorts by name, and applies pending migrations. Returns names of appli
 applied, err := gotype.RunSequentialMigrations(ctx, db, migrations)
 ```
 
+Statement-based migrations (anything built with `TQLMigration`) apply their Up
+statements **and** the tracking record in a single transaction — a schema
+transaction when any statement is a `define`/`undefine`/`redefine`, otherwise a
+write transaction — so a failure never leaves a half-applied or
+applied-but-unrecorded migration. Migrations with custom `Up`/`Down` functions
+own their transactions and keep the apply-then-record ordering; make their
+statements idempotent to survive a crash between the two steps.
+
+Checksums are recorded in a delimited format that detects statement-boundary
+changes; records written by older versions (undelimited format) still verify.
+
 ### Options
 
 | Option                | Description                                         |
@@ -430,6 +492,10 @@ applied, err := gotype.RunSequentialMigrations(ctx, db, migrations)
 | `WithSeqDryRun()`     | Validate and return pending names without executing |
 | `WithSeqTarget(name)` | Stop after applying the named migration             |
 | `WithSeqLogger(fn)`   | Callback for progress messages                      |
+
+`WithSeqTarget` errors when the named migration doesn't exist in the set, and
+never applies migrations past the target — targeting an already-applied
+migration applies only the pending ones before it.
 
 ### ValidateSequentialMigrations
 

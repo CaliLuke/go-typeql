@@ -706,7 +706,9 @@ func TestAccumulateInheritance(t *testing.T) {
 		t.Fatalf("ParseSchema failed: %v", err)
 	}
 
-	schema.AccumulateInheritance()
+	if err := schema.AccumulateInheritance(); err != nil {
+		t.Fatalf("AccumulateInheritance failed: %v", err)
+	}
 
 	// task inherits from artifact: should have artifact's owns + its own
 	var task *EntitySpec
@@ -773,7 +775,9 @@ func TestRender_BasicOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseSchema failed: %v", err)
 	}
-	schema.AccumulateInheritance()
+	if err := schema.AccumulateInheritance(); err != nil {
+		t.Fatalf("AccumulateInheritance failed: %v", err)
+	}
 
 	var buf strings.Builder
 	cfg := DefaultConfig()
@@ -833,5 +837,172 @@ func TestRender_BasicOutput(t *testing.T) {
 	// Check DO NOT EDIT header
 	if !strings.Contains(output, "DO NOT EDIT") {
 		t.Error("expected DO NOT EDIT header")
+	}
+}
+
+// TestParseSchema_ListSyntax is a regression test for issue #80: TypeQL 3.x
+// ordered-list syntax (owns name[], relates member[]) must parse and surface
+// IsList on the resulting specs.
+// The comma-constraint sub form is how generators emit annotated subtypes
+// (annotations after an inline `sub` bind to the sub clause — server ANN9).
+func TestParseSchema_SubAsCommaConstraint(t *testing.T) {
+	schema, err := ParseSchema(`define
+attribute name, value string;
+entity artifact @abstract, owns name;
+entity document @abstract,
+    sub artifact,
+    owns name;
+relation grouping, relates member;
+relation team @abstract,
+    sub grouping,
+    relates captain;
+`)
+	if err != nil {
+		t.Fatalf("ParseSchema failed: %v", err)
+	}
+	var doc *EntitySpec
+	for i := range schema.Entities {
+		if schema.Entities[i].Name == "document" {
+			doc = &schema.Entities[i]
+		}
+	}
+	if doc == nil {
+		t.Fatal("document entity not parsed")
+	}
+	if doc.Parent != "artifact" {
+		t.Errorf("document Parent = %q, want artifact", doc.Parent)
+	}
+	if !doc.Abstract {
+		t.Error("document should be abstract")
+	}
+	var team *RelationSpec
+	for i := range schema.Relations {
+		if schema.Relations[i].Name == "team" {
+			team = &schema.Relations[i]
+		}
+	}
+	if team == nil {
+		t.Fatal("team relation not parsed")
+	}
+	if team.Parent != "grouping" {
+		t.Errorf("team Parent = %q, want grouping", team.Parent)
+	}
+}
+
+func TestParseSchema_ListSyntax(t *testing.T) {
+	schema, err := ParseSchema(`define
+attribute name, value string;
+attribute nickname, value string;
+entity person, owns name[] @card(1..10), owns nickname;
+relation team, relates member[] @card(2..), relates leader, owns name[];
+`)
+	if err != nil {
+		t.Fatalf("ParseSchema failed: %v", err)
+	}
+
+	person := schema.Entities[0]
+	if len(person.Owns) != 2 {
+		t.Fatalf("expected 2 owns on person, got %#v", person.Owns)
+	}
+	if !person.Owns[0].IsList {
+		t.Error("expected owns name[] to set IsList")
+	}
+	if person.Owns[0].Card != "1..10" {
+		t.Errorf("expected card 1..10 on list ownership, got %q", person.Owns[0].Card)
+	}
+	if person.Owns[1].IsList {
+		t.Error("expected owns nickname (no []) to leave IsList false")
+	}
+
+	team := schema.Relations[0]
+	if len(team.Relates) != 2 {
+		t.Fatalf("expected 2 relates on team, got %#v", team.Relates)
+	}
+	if !team.Relates[0].IsList {
+		t.Error("expected relates member[] to set IsList")
+	}
+	if team.Relates[0].Card != "2.." {
+		t.Errorf("expected card 2.. on list role, got %q", team.Relates[0].Card)
+	}
+	if team.Relates[1].IsList {
+		t.Error("expected relates leader (no []) to leave IsList false")
+	}
+	if len(team.Owns) != 1 || !team.Owns[0].IsList {
+		t.Errorf("expected relation owns name[] to set IsList, got %#v", team.Owns)
+	}
+}
+
+// TestParseSchema_RangeOperandForms is a regression test for issue #106:
+// @range must accept every operand form TypeQL allows (decimal, string,
+// date/datetime, half-open), not just a single integer-range token, and the
+// operand must be preserved verbatim in RangeOp.
+func TestParseSchema_RangeOperandForms(t *testing.T) {
+	cases := []struct {
+		name      string
+		valueType string
+		operand   string
+	}{
+		{"integer", "integer", "1..5"},
+		{"integer half-open low", "integer", "0.."},
+		{"integer half-open high", "integer", "..10"},
+		{"decimal", "double", "0.5..9.5"},
+		{"string", "string", `"a".."z"`},
+		{"date", "date", "2020-01-01..2030-12-31"},
+		{"datetime", "datetime", "1900-01-01T00:00:00..2100-01-01T00:00:00"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "define\nattribute bounded, value " + tc.valueType + " @range(" + tc.operand + ");\n"
+			schema, err := ParseSchema(input)
+			if err != nil {
+				t.Fatalf("ParseSchema failed: %v", err)
+			}
+			if len(schema.Attributes) != 1 {
+				t.Fatalf("expected 1 attribute, got %#v", schema.Attributes)
+			}
+			if got := schema.Attributes[0].RangeOp; got != tc.operand {
+				t.Errorf("expected RangeOp %q, got %q", tc.operand, got)
+			}
+		})
+	}
+}
+
+// TestExtractAnnotations_BlankAndCommentLinesBetween is a regression test for
+// issue #109: blank lines and plain comments between "# @key value"
+// annotations and the definition they document must not discard them. Only a
+// non-comment code line clears pending annotations.
+func TestExtractAnnotations_BlankAndCommentLinesBetween(t *testing.T) {
+	input := `define
+
+# @owner alice
+entity person,
+    owns name @key;
+
+# @owner bob
+
+# just a plain comment, not an annotation
+entity robot,
+    owns name @key;
+
+# @owner carol
+attribute stray, value string;
+entity widget,
+    owns name @key;
+`
+	annots := ExtractAnnotations(input)
+
+	if got := annots["person"]["owner"]; got != "alice" {
+		t.Errorf("expected person owner alice, got %q", got)
+	}
+	if got := annots["robot"]["owner"]; got != "bob" {
+		t.Errorf("expected robot owner bob (annotation separated by blank line and comment), got %q", got)
+	}
+	// carol belongs to the attribute definition directly below it...
+	if got := annots["stray"]["owner"]; got != "carol" {
+		t.Errorf("expected stray owner carol, got %q", got)
+	}
+	// ...and must not leak past that code line onto the next definition.
+	if _, ok := annots["widget"]; ok {
+		t.Errorf("expected no annotations for widget, got %#v", annots["widget"])
 	}
 }

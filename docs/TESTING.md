@@ -17,9 +17,9 @@ go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Integration tests (requires TypeDB + Rust library)
 docker compose up -d
-TEST_DB_ADDRESS=localhost:1730 make test-integration
+make test-integration
 # Or directly:
-TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 # Lint
 make lint
@@ -48,7 +48,7 @@ Benchmark runs are persisted in `benchmarks/benchmarks.sqlite`. The recorder app
 
 Use `make bench` for an explicit performance checkpoint, or `make test-all` to run unit tests and then record a benchmark run.
 
-When using the repo `docker-compose.yml`, TypeDB is exposed on host port `1730` by default even though the server listens on container port `1729`. The tests default to `localhost:1729`, so set `TEST_DB_ADDRESS=localhost:1730` when running against the compose-managed instance.
+When using the repo `docker-compose.yml`, TypeDB is exposed on host port `1730` by default even though the server listens on container port `1729`. The tests default to `localhost:1729`, so set `TEST_DB_ADDRESS=localhost:1730` when running against the compose-managed instance. Because the container advertises its internal `127.0.0.1:1729` address, also set `TYPEDB_GO_COMPOSE_PORT_MAP=1` so the driver maps the dialed `localhost:1730` back to the advertised address (the driver no longer rewrites localhost ports implicitly; `make test-integration` sets both variables by default).
 
 ## Mock Patterns
 
@@ -120,6 +120,39 @@ func registerTestTypes(t *testing.T) {
     gotype.Register[testEmployment]()
 }
 ```
+
+## TypeQL Syntax Validation
+
+Everything this library emits is TypeQL text, so syntax bugs historically surfaced only as
+cryptic server errors far from the code that generated them. The test suite now validates
+generated TypeQL with the official `typeql-check` CLI from
+[typedb/typedb-tools](https://github.com/typedb/typedb-tools) — the same parser the server uses.
+
+```bash
+# One-time install (into ~/go/bin, version pinned in the Makefile)
+make install-typeql-check
+```
+
+**How it works:**
+
+- `internal/typeqlcheck` locates the binary (`$TYPEQL_CHECK` env override → `$PATH` →
+  `~/go/bin`) and exposes `AssertValid(t, label, query)` / `Validate(query)`.
+- Dedicated syntax batteries pipe real generator output through the tool:
+  - `ast/typeql_syntax_test.go` — compiler and fluent-layer output
+  - `gotype/typeql_syntax_test.go` — CRUD queries (via mocks), `GenerateSchema`, migration statements
+  - `tqlgen/typeql_syntax_test.go` — parser conformance: schemas the official grammar accepts
+    should parse in tqlgen too
+- **Soft dependency:** without the binary, assertions print a one-time warning and pass, so
+  contributors are never blocked. `check.sh` detects the binary and sets
+  `TYPEQL_CHECK_REQUIRED=1`, which turns a missing binary into a hard failure — so on a machine
+  with the tool installed (and in CI), the syntax gates are mandatory.
+- **Known-invalid outputs** (open bugs from the 2026-07 code review, e.g. #23, #24, #32) are
+  marked with a `knownIssue` in the test tables: they skip while the bug exists and **fail
+  loudly once the output becomes valid**, forcing the marker's removal alongside the fix.
+
+When adding a new query generator or changing emitted TypeQL, add the output to the matching
+syntax battery — a `typeql-check` failure at unit-test time beats a `[TQL03]` server error at
+integration time.
 
 ## Test Fixtures
 

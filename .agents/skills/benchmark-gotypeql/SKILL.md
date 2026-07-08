@@ -182,9 +182,11 @@ Do not jump straight to "roll back" unless the regression is reproduced and mate
 ```bash
 make build-rust
 docker compose up -d
-TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
 
 - Use Colima with Docker Compose on this machine.
-- The compose file exposes TypeDB on host port `1730`.
+- The compose file exposes TypeDB on host port `1730`. `TYPEDB_GO_COMPOSE_PORT_MAP=1` is
+  required for compose-based runs — the driver no longer rewrites localhost ports
+  implicitly (`make test-integration` sets both variables).
 - If you add a benchmark during investigation, keep it focused and remove throwaway instrumentation before finishing unless the user wants the benchmark kept.

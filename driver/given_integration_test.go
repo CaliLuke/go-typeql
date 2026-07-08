@@ -149,12 +149,14 @@ insert
 	if err != nil {
 		t.Fatalf("open read tx: %v", err)
 	}
-	conceptRows, err := readTx.Query(`
+	handleOpts := NewQueryOptions().SetConceptHandles(true)
+	defer handleOpts.Close()
+	conceptRows, err := readTx.QueryWithOptions(`
 match
   $p isa person, has name $n;
 select $p, $n;
 sort $n asc;
-`)
+`, handleOpts)
 	if err != nil {
 		t.Fatalf("select concepts: %v", err)
 	}
@@ -174,6 +176,8 @@ sort $n asc;
 	if alice.Handle == "" || bob.Handle == "" || alice.Handle == bob.Handle {
 		t.Fatalf("expected distinct non-empty handles: alice=%#v bob=%#v", alice, bob)
 	}
+	defer alice.Release()
+	defer bob.Release()
 
 	givenRows := NewGivenRows("p", "a").
 		MustAdd(ConceptGiven(alice), IntGiven(30)).
@@ -447,10 +451,12 @@ insert
 	if err != nil {
 		t.Fatalf("open read tx: %v", err)
 	}
-	relationRows, err := readTx.Query(`
+	handleOpts := NewQueryOptions().SetConceptHandles(true)
+	defer handleOpts.Close()
+	relationRows, err := readTx.QueryWithOptions(`
 match $f isa friendship;
 select $f;
-`)
+`, handleOpts)
 	if err != nil {
 		t.Fatalf("select relation: %v", err)
 	}
@@ -462,6 +468,7 @@ select $f;
 	if !ok {
 		t.Fatalf("expected relation concept, got %#v", relationRows[0]["f"])
 	}
+	defer relation.Release()
 	if relation.Kind != "relation" {
 		t.Fatalf("expected relation kind, got %#v", relation)
 	}
@@ -498,6 +505,157 @@ fetch { "since": $s };
 	since, ok := integerResult(results[0]["since"])
 	if !ok || since != 2026 {
 		t.Fatalf("expected since 2026, got %#v", results[0])
+	}
+}
+
+func TestQueryResultsOmitConceptHandlesByDefault(t *testing.T) {
+	conn, err := OpenWithTLS(testAddr(), "admin", "password", false, "")
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer conn.Close()
+
+	dbName := "test_no_handles_by_default"
+	dm := conn.Databases()
+	_ = dm.Delete(dbName)
+	if err := dm.Create(dbName); err != nil {
+		t.Fatalf("create db: %v", err)
+	}
+	defer dm.Delete(dbName)
+
+	schemaTx, err := conn.Transaction(dbName, Schema)
+	if err != nil {
+		t.Fatalf("open schema tx: %v", err)
+	}
+	if _, err := schemaTx.Query(`
+define
+  attribute name, value string;
+  entity person,
+    owns name @key;
+`); err != nil {
+		t.Fatalf("define schema: %v", err)
+	}
+	if err := schemaTx.Commit(); err != nil {
+		t.Fatalf("commit schema: %v", err)
+	}
+
+	writeTx, err := conn.Transaction(dbName, Write)
+	if err != nil {
+		t.Fatalf("open write tx: %v", err)
+	}
+	if _, err := writeTx.Query(`insert $p isa person, has name "Alice";`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := writeTx.Commit(); err != nil {
+		t.Fatalf("commit write: %v", err)
+	}
+
+	readTx, err := conn.Transaction(dbName, Read)
+	if err != nil {
+		t.Fatalf("open read tx: %v", err)
+	}
+	defer readTx.Close()
+	rows, err := readTx.Query(`match $p isa person; select $p;`)
+	if err != nil {
+		t.Fatalf("select person: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d: %#v", len(rows), rows)
+	}
+	fields, ok := rows[0]["p"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured concept object, got %#v", rows[0]["p"])
+	}
+	if iid, _ := fields["_iid"].(string); iid == "" {
+		t.Fatalf("expected _iid to still be present, got %#v", fields)
+	}
+	if handle, present := fields["_concept_handle"]; present {
+		t.Fatalf("expected no concept handle without opt-in, got %#v", handle)
+	}
+	if concept, ok := AsConcept(rows[0]["p"]); ok {
+		t.Fatalf("AsConcept should fail without opt-in, got %#v", concept)
+	}
+}
+
+func TestConceptReleaseInvalidatesHandle(t *testing.T) {
+	conn, err := OpenWithTLS(testAddr(), "admin", "password", false, "")
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer conn.Close()
+
+	dbName := "test_concept_release"
+	dm := conn.Databases()
+	_ = dm.Delete(dbName)
+	if err := dm.Create(dbName); err != nil {
+		t.Fatalf("create db: %v", err)
+	}
+	defer dm.Delete(dbName)
+
+	schemaTx, err := conn.Transaction(dbName, Schema)
+	if err != nil {
+		t.Fatalf("open schema tx: %v", err)
+	}
+	if _, err := schemaTx.Query(`
+define
+  attribute name, value string;
+  entity person,
+    owns name @key;
+`); err != nil {
+		t.Fatalf("define schema: %v", err)
+	}
+	if err := schemaTx.Commit(); err != nil {
+		t.Fatalf("commit schema: %v", err)
+	}
+
+	writeTx, err := conn.Transaction(dbName, Write)
+	if err != nil {
+		t.Fatalf("open write tx: %v", err)
+	}
+	if _, err := writeTx.Query(`insert $p isa person, has name "Alice";`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := writeTx.Commit(); err != nil {
+		t.Fatalf("commit write: %v", err)
+	}
+
+	handleOpts := NewQueryOptions().SetConceptHandles(true)
+	defer handleOpts.Close()
+
+	readTx, err := conn.Transaction(dbName, Read)
+	if err != nil {
+		t.Fatalf("open read tx: %v", err)
+	}
+	rows, err := readTx.QueryWithOptions(`match $p isa person; select $p;`, handleOpts)
+	if err != nil {
+		t.Fatalf("select person: %v", err)
+	}
+	readTx.Close()
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d: %#v", len(rows), rows)
+	}
+	person, ok := AsConcept(rows[0]["p"])
+	if !ok {
+		t.Fatalf("expected concept with handle, got %#v", rows[0]["p"])
+	}
+
+	person.Release()
+	person.Release() // releasing twice is a no-op
+
+	tx, err := conn.Transaction(dbName, Read)
+	if err != nil {
+		t.Fatalf("open tx: %v", err)
+	}
+	defer tx.Close()
+	_, err = tx.QueryWithRows(`
+given $p: person;
+match $p isa person;
+`, NewGivenRows("p").MustAdd(ConceptGiven(person)))
+	if err == nil {
+		t.Fatal("expected released handle to be rejected")
+	}
+	if !strings.Contains(err.Error(), "unknown concept handle") {
+		t.Fatalf("expected unknown handle error after release, got %v", err)
 	}
 }
 

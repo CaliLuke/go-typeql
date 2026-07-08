@@ -23,7 +23,13 @@ err := persons.Insert(ctx, alice)
 // alice.GetIID() is now set (e.g., "0x826e80018000000000000001")
 ```
 
-`InsertMany` inserts multiple instances in a single write transaction. IIDs are populated via a follow-up read transaction after the batch commit.
+`InsertMany` inserts multiple instances in a single write transaction; IIDs are fetched
+inside that same transaction and applied after the commit succeeds. `PutMany` works the
+same way (one transaction total).
+
+Insert and Put (and their Many variants) validate key attributes before writing: a
+zero-value key (`""`, `0`, nil pointer) returns a `*KeyAttributeError` instead of
+inserting an unidentifiable instance.
 
 ## Get
 
@@ -36,6 +42,8 @@ results, err := persons.Get(ctx, map[string]any{"name": "Alice"})
 Other retrieval methods:
 
 - `All(ctx)` -- shorthand for `Get(ctx, nil)`
+- `GetOne(ctx, filters)` -- exactly one match: returns `*NotFoundError` on zero matches,
+  `*NotUniqueError` on more than one
 - `GetByIID(ctx, iid)` -- fetch by TypeDB internal ID, returns nil if not found
 - `GetByIIDPolymorphic(ctx, iid)` -- also returns the actual TypeDB type label
 - `GetByIIDPolymorphicAny(ctx, iid)` -- hydrates as the concrete subtype (returns `any`)
@@ -140,10 +148,11 @@ The ORM is decoupled from the driver via interfaces. The `driver.Driver` satisfi
 The `gotype` package defines structured error types for common failure modes:
 
 - **NotRegisteredError** -- type not found in registry
-- **KeyAttributeError** -- required key attribute is missing
+- **KeyAttributeError** -- key attribute missing or zero-valued (returned by
+  `Insert`/`InsertMany`/`Put`/`PutMany`)
 - **HydrationError** -- failed to populate struct from query results (supports `Unwrap`)
-- **NotFoundError** -- no matching entity/relation found
-- **NotUniqueError** -- multiple matches when one expected
+- **NotFoundError** -- no matching entity/relation found (returned by `GetOne`)
+- **NotUniqueError** -- multiple matches when one expected (returned by `GetOne`)
 - **ReservedWordError** -- attribute/type name is a TypeQL reserved word
 - **SchemaValidationError** -- schema definition is invalid
 - **SchemaConflictError** -- conflicting schema definitions

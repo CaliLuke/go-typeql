@@ -3,6 +3,8 @@ package gotype
 import (
 	"strings"
 	"testing"
+
+	"github.com/CaliLuke/go-typeql/tqlgen"
 )
 
 func TestGenerateSchemaFor_Entity(t *testing.T) {
@@ -174,6 +176,46 @@ func TestGenerateSchema_Multiple(t *testing.T) {
 	}
 	if !strings.Contains(schema, "entity test-company") {
 		t.Error("missing test-company")
+	}
+}
+
+// Issue #91: models declaring sub: emit a sub clause parseable by the
+// schema introspector.
+func TestGenerateSchema_Supertype(t *testing.T) {
+	ClearRegistry()
+	MustRegister[zzzParentModel]()
+	MustRegister[aaaChildModel]()
+
+	schema := GenerateSchema()
+
+	if !strings.Contains(schema, "entity zzz-parent-model @abstract") {
+		t.Errorf("missing abstract parent definition\n%s", schema)
+	}
+	// sub is a comma constraint so annotations bind to the type name, not
+	// the sub clause (ANN9 on the live server).
+	if !strings.Contains(schema, "entity aaa-child-model,\n    sub zzz-parent-model") {
+		t.Errorf("missing sub constraint on child definition\n%s", schema)
+	}
+	// Parent must be defined before the child.
+	if strings.Index(schema, "entity zzz-parent-model") > strings.Index(schema, "entity aaa-child-model") {
+		t.Errorf("parent should be defined before child\n%s", schema)
+	}
+
+	parsed, err := IntrospectSchemaFromString(schema)
+	if err != nil {
+		t.Fatalf("IntrospectSchemaFromString: %v\nschema:\n%s", err, schema)
+	}
+	var child *tqlgen.EntitySpec
+	for i := range parsed.Entities {
+		if parsed.Entities[i].Name == "aaa-child-model" {
+			child = &parsed.Entities[i]
+		}
+	}
+	if child == nil {
+		t.Fatalf("child entity not parsed\n%s", schema)
+	}
+	if child.Parent != "zzz-parent-model" {
+		t.Fatalf("child Parent = %q, want zzz-parent-model", child.Parent)
 	}
 }
 

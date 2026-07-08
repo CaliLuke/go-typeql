@@ -33,11 +33,14 @@ gotype.Lte("priority", 3)     // <=
 ### String Filters
 
 ```go
-gotype.Contains("email", "@example.com") // contains
+gotype.Contains("email", "@example.com") // contains (literal substring)
 gotype.Like("name", "Ali.*")             // like (regex)
 gotype.Regex("email", "^[^@]+@.+")       // like (regex)
-gotype.Startswith("name", "Al")           // like (prefix)
+gotype.Startswith("name", "Al")           // literal prefix (metacharacters are escaped)
 ```
+
+`Startswith` treats the prefix as a literal string — regex metacharacters are
+quoted. Use `Like` or `Regex` when you want pattern semantics.
 
 ### Set Membership
 
@@ -45,6 +48,9 @@ gotype.Startswith("name", "Al")           // like (prefix)
 gotype.In("status", []any{"active", "pending"})    // or block with equality per value
 gotype.NotIn("status", []any{"banned", "deleted"})  // wrapped in not block
 ```
+
+An empty `In` (or `IIDIn` with no IIDs) matches nothing; an empty `NotIn` matches
+everything.
 
 ### Range
 
@@ -70,6 +76,14 @@ gotype.IIDIn("0x123", "0x456", "0x789")
 // For relations: filter by role player attributes
 gotype.RolePlayer("employee", gotype.Eq("name", "Alice"))
 ```
+
+### Input Validation
+
+Filters and identifiers are validated before any query text is built: attribute
+names must match `[a-zA-Z][a-zA-Z0-9_-]*`, IIDs must be `0x`-prefixed hex, and
+filter values must be scalars. Misuse returns a descriptive error from
+`Execute`/`Get`/`Count`/etc. instead of reaching the server (or panicking).
+Every filter type also exposes `Validate() error` for early checking.
 
 ### Computed Expressions
 
@@ -117,11 +131,16 @@ Sort attributes automatically get `has` patterns added to the match clause.
 ```go
 results, err := q.Execute(ctx)           // run query, return all matches
 results, err := q.All(ctx)               // alias for Execute
-first, err := q.First(ctx)              // limit 1, return first (nil if none)
-count, err := q.Count(ctx)              // count of matches
+first, err := q.First(ctx)              // first match (nil if none); doesn't mutate the builder
+count, err := q.Count(ctx)              // count of distinct matching entities
 exists, err := q.Exists(ctx)            // true if any match exists
-deleted, err := q.Delete(ctx)           // delete all matches, return count
+deleted, err := q.Delete(ctx)           // delete all matches, return distinct-entity count
 ```
+
+`Count` and `Delete` count distinct entities, not answer rows — an entity matched
+through several values of a multi-valued attribute counts once. Queries built from a
+transaction-bound Manager (`MustNewManagerWithTx`) run inside that transaction: reads
+see uncommitted writes, and write operations never auto-commit the bound transaction.
 
 ### Functional Update (UpdateWith)
 

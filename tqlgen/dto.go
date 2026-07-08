@@ -44,6 +44,11 @@ type baseStructDTOCtx struct {
 	BaseName    string // e.g. "BaseArtifact"
 	OutFields   []dtoFieldCtx
 	ExtraFields []dtoFieldCtx
+	// PatchFields and PatchExtraFields carry single-pointer (or slice) types
+	// for the Patch variant; re-pointering OutFields in the template used to
+	// produce **string fields (issue #79).
+	PatchFields      []dtoFieldCtx
+	PatchExtraFields []dtoFieldCtx
 }
 
 type entityDTOCtx struct {
@@ -91,10 +96,9 @@ type roleFieldCtx struct {
 
 // BuildDTOData populates DTOData from a parsed schema.
 // The schema should have AccumulateInheritance() called before this.
+// PackageName is required to render the result: RenderDTO returns an error
+// when it is empty.
 func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData {
-	if cfg.PackageName == "" {
-		return &DTOData{}
-	}
 	if cfg.IDFieldName == "" {
 		cfg.IDFieldName = "ID"
 	}
@@ -158,25 +162,36 @@ func buildDTOBaseStructs(data *DTOData, cfg DTOConfig, attrTypes map[string]stri
 		if !ok {
 			continue
 		}
-		var outFields []dtoFieldCtx
+		var outFields, patchFields []dtoFieldCtx
 		for _, attrName := range bs.InheritedAttrs {
+			o := findOwns(entity.Owns, attrName)
 			goType := typeDBToGo(attrTypes[attrName])
-			pointer := !cfg.StrictOut || !isRequiredAttr(attrName, entity)
-			outFields = append(outFields, makeDTOField(attrName, goType, pointer, cfg.UseAcronyms))
+			pointer := !cfg.StrictOut || !isRequiredOwns(o)
+			outFields = append(outFields, dtoFieldFor(o, goType, pointer, cfg.UseAcronyms))
+			patchFields = append(patchFields, dtoFieldFor(o, goType, true, cfg.UseAcronyms))
 		}
-		var extraFields []dtoFieldCtx
+		var extraFields, patchExtraFields []dtoFieldCtx
 		for name, goType := range bs.ExtraFields {
-			extraFields = append(extraFields, dtoFieldCtx{
+			field := dtoFieldCtx{
 				GoName:  goTypeName(name, RenderConfig{UseAcronyms: cfg.UseAcronyms}),
 				GoType:  goType,
 				JSONTag: fmt.Sprintf("`json:%q`", name),
-			})
+			}
+			extraFields = append(extraFields, field)
+			field.GoType = pointerize(goType)
+			patchExtraFields = append(patchExtraFields, field)
 		}
-		sort.Slice(extraFields, func(i, j int) bool { return extraFields[i].GoName < extraFields[j].GoName })
+		sortFields := func(fields []dtoFieldCtx) {
+			sort.Slice(fields, func(i, j int) bool { return fields[i].GoName < fields[j].GoName })
+		}
+		sortFields(extraFields)
+		sortFields(patchExtraFields)
 		data.BaseStructs = append(data.BaseStructs, baseStructDTOCtx{
-			BaseName:    bs.BaseName,
-			OutFields:   outFields,
-			ExtraFields: extraFields,
+			BaseName:         bs.BaseName,
+			OutFields:        outFields,
+			ExtraFields:      extraFields,
+			PatchFields:      patchFields,
+			PatchExtraFields: patchExtraFields,
 		})
 	}
 }
@@ -226,14 +241,14 @@ func buildDTOEntities(data *DTOData, cfg DTOConfig, attrTypes map[string]string,
 }
 
 func entityDTOFields(e EntitySpec, attrTypes map[string]string, skipAttrs map[string]bool, entityName string, overrides map[string][]EntityFieldOverride, cfg DTOConfig) (out, create, patch []dtoFieldCtx) {
-	for _, attrName := range sortedOwnedAttrs(e) {
-		if skipAttrs[attrName] {
+	for _, o := range sortedOwns(e.Owns) {
+		if skipAttrs[o.Attribute] {
 			continue
 		}
-		goType := typeDBToGo(attrTypes[attrName])
-		required := isRequiredAttr(attrName, e)
+		goType := typeDBToGo(attrTypes[o.Attribute])
+		required := isRequiredOwns(o)
 		outReq, createReq := required, required
-		for _, ov := range overrides[entityName+":"+attrName] {
+		for _, ov := range overrides[entityName+":"+o.Attribute] {
 			if ov.Required == nil {
 				continue
 			}
@@ -244,9 +259,9 @@ func entityDTOFields(e EntitySpec, attrTypes map[string]string, skipAttrs map[st
 				createReq = *ov.Required
 			}
 		}
-		out = append(out, makeDTOField(attrName, goType, !cfg.StrictOut || !outReq, cfg.UseAcronyms))
-		create = append(create, makeDTOField(attrName, goType, !createReq, cfg.UseAcronyms))
-		patch = append(patch, makeDTOField(attrName, goType, true, cfg.UseAcronyms))
+		out = append(out, dtoFieldFor(o, goType, !cfg.StrictOut || !outReq, cfg.UseAcronyms))
+		create = append(create, dtoFieldFor(o, goType, !createReq, cfg.UseAcronyms))
+		patch = append(patch, dtoFieldFor(o, goType, true, cfg.UseAcronyms))
 	}
 	return
 }
@@ -280,11 +295,11 @@ func buildDTORelations(data *DTOData, cfg DTOConfig, attrTypes map[string]string
 		}
 
 		var outFields, createFields []dtoFieldCtx
-		for _, attrName := range sortedRelationOwnedAttrs(r) {
-			goType := typeDBToGo(attrTypes[attrName])
-			required := isRequiredRelAttr(attrName, r)
-			outFields = append(outFields, makeDTOField(attrName, goType, !cfg.StrictOut || !required, cfg.UseAcronyms))
-			createFields = append(createFields, makeDTOField(attrName, goType, !required, cfg.UseAcronyms))
+		for _, o := range sortedOwns(r.Owns) {
+			goType := typeDBToGo(attrTypes[o.Attribute])
+			required := isRequiredOwns(o)
+			outFields = append(outFields, dtoFieldFor(o, goType, !cfg.StrictOut || !required, cfg.UseAcronyms))
+			createFields = append(createFields, dtoFieldFor(o, goType, !required, cfg.UseAcronyms))
 		}
 
 		data.Relations = append(data.Relations, relationDTOCtx{
@@ -315,7 +330,7 @@ func buildDTOComposites(data *DTOData, cfg DTOConfig, attrTypes map[string]strin
 					continue
 				}
 				seen[o.Attribute] = true
-				fields = append(fields, makeDTOField(o.Attribute, typeDBToGo(attrTypes[o.Attribute]), true, cfg.UseAcronyms))
+				fields = append(fields, dtoFieldFor(o, typeDBToGo(attrTypes[o.Attribute]), true, cfg.UseAcronyms))
 			}
 		}
 		sort.Slice(fields, func(i, j int) bool { return fields[i].GoName < fields[j].GoName })
@@ -327,9 +342,14 @@ func buildDTOComposites(data *DTOData, cfg DTOConfig, attrTypes map[string]strin
 	}
 }
 
-// RenderDTO writes a DTO Go file from DTOData.
+// RenderDTO writes a gofmt-formatted DTO Go file from DTOData. It returns an
+// error when data.PackageName is empty (the generated file would not be
+// valid Go) or when the rendered output fails to format.
 func RenderDTO(w io.Writer, data *DTOData) error {
-	return dtoTemplate.Execute(w, data)
+	if data.PackageName == "" {
+		return fmt.Errorf("tqlgen: DTOConfig.PackageName is required")
+	}
+	return writeFormattedGo(w, dtoTemplate, data)
 }
 
 // --- helpers ---
@@ -354,36 +374,44 @@ func makeDTOField(attrName, goType string, pointer bool, useAcronyms bool) dtoFi
 	}
 }
 
-func isRequiredAttr(attrName string, e EntitySpec) bool {
-	for _, o := range e.Owns {
-		if o.Attribute == attrName {
-			if o.Key || o.Unique {
-				return true
-			}
-			if o.Card != "" {
-				min := parseCardMin(o.Card)
-				return min >= 1
-			}
-			return false
-		}
+// dtoFieldFor builds a DTO field for one ownership. List ownerships and
+// cardinalities allowing more than one value become slices (never pointered,
+// since nil already expresses absence); scalar fields become pointers when
+// pointer is true.
+func dtoFieldFor(o OwnsSpec, goType string, pointer bool, useAcronyms bool) dtoFieldCtx {
+	if o.IsList || cardAllowsMany(o.Card) {
+		return makeDTOField(o.Attribute, "[]"+goType, false, useAcronyms)
 	}
-	return false
+	return makeDTOField(o.Attribute, goType, pointer, useAcronyms)
 }
 
-func isRequiredRelAttr(attrName string, r RelationSpec) bool {
-	for _, o := range r.Owns {
-		if o.Attribute == attrName {
-			if o.Key || o.Unique {
-				return true
-			}
-			if o.Card != "" {
-				min := parseCardMin(o.Card)
-				return min >= 1
-			}
-			return false
+// pointerize prepends "*" to a Go type unless it is already a pointer or a
+// slice (whose zero value already expresses absence).
+func pointerize(goType string) string {
+	if strings.HasPrefix(goType, "*") || strings.HasPrefix(goType, "[]") {
+		return goType
+	}
+	return "*" + goType
+}
+
+// findOwns returns the ownership spec for attr, or a zero OwnsSpec carrying
+// only the attribute name when the owner has no such clause.
+func findOwns(owns []OwnsSpec, attr string) OwnsSpec {
+	for _, o := range owns {
+		if o.Attribute == attr {
+			return o
 		}
 	}
-	return false
+	return OwnsSpec{Attribute: attr}
+}
+
+// isRequiredOwns reports whether an ownership implies a required field:
+// @key, @unique, or a minimum cardinality of at least 1.
+func isRequiredOwns(o OwnsSpec) bool {
+	if o.Key || o.Unique {
+		return true
+	}
+	return o.Card != "" && parseCardMin(o.Card) >= 1
 }
 
 // parseCardMin extracts the minimum from a cardinality string like "1", "0..1", "1..".
@@ -397,22 +425,12 @@ func parseCardMin(card string) int {
 	return min
 }
 
-func sortedOwnedAttrs(e EntitySpec) []string {
-	attrs := make([]string, 0, len(e.Owns))
-	for _, o := range e.Owns {
-		attrs = append(attrs, o.Attribute)
-	}
-	sort.Strings(attrs)
-	return attrs
-}
-
-func sortedRelationOwnedAttrs(r RelationSpec) []string {
-	attrs := make([]string, 0, len(r.Owns))
-	for _, o := range r.Owns {
-		attrs = append(attrs, o.Attribute)
-	}
-	sort.Strings(attrs)
-	return attrs
+// sortedOwns returns the owns clauses sorted by attribute name.
+func sortedOwns(owns []OwnsSpec) []OwnsSpec {
+	out := make([]OwnsSpec, len(owns))
+	copy(out, owns)
+	sort.Slice(out, func(i, j int) bool { return out[i].Attribute < out[j].Attribute })
+	return out
 }
 
 func findRelation(schema *ParsedSchema, name string) RelationSpec {
@@ -463,7 +481,7 @@ func needsTimeDTOImport(schema *ParsedSchema, attrTypes map[string]string, exclu
 			continue
 		}
 		for _, o := range e.Owns {
-			if attrTypes[o.Attribute] == "datetime" {
+			if isTimeValueType(attrTypes[o.Attribute]) {
 				return true
 			}
 		}
@@ -473,7 +491,7 @@ func needsTimeDTOImport(schema *ParsedSchema, attrTypes map[string]string, exclu
 			continue
 		}
 		for _, o := range r.Owns {
-			if attrTypes[o.Attribute] == "datetime" {
+			if isTimeValueType(attrTypes[o.Attribute]) {
 				return true
 			}
 		}
@@ -515,11 +533,11 @@ type {{.BaseName}}Create struct {
 }
 
 type {{.BaseName}}Patch struct {
-{{- range .OutFields}}
-	{{.GoName}} *{{.GoType}} {{.JSONTag}}
+{{- range .PatchFields}}
+	{{.GoName}} {{.GoType}} {{.JSONTag}}
 {{- end}}
-{{- range .ExtraFields}}
-	{{.GoName}} *{{.GoType}} {{.JSONTag}}
+{{- range .PatchExtraFields}}
+	{{.GoName}} {{.GoType}} {{.JSONTag}}
 {{- end}}
 }
 {{end}}

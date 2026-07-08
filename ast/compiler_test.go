@@ -384,7 +384,7 @@ func TestCompiler_FetchClause(t *testing.T) {
 				},
 			},
 			want: `fetch {
-  "attrs": $p.*
+  "attrs": { $p.* }
 };`,
 		},
 		{
@@ -469,6 +469,95 @@ func TestCompiler_ReduceClause(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("got: %q, want: %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCompiler_ReduceAggregateExpr is a regression test for issue #63:
+// AggregateExpr must be compilable as a ReduceAssignment expression.
+func TestCompiler_ReduceAggregateExpr(t *testing.T) {
+	c := &Compiler{}
+	tests := []struct {
+		name string
+		node ReduceClause
+		want string
+	}{
+		{
+			name: "count",
+			node: ReduceClause{Assignments: []ReduceAssignment{
+				{Variable: "$c", Expression: AggregateExpr{FuncName: "count", Var: "$p"}},
+			}},
+			want: "reduce $c = count($p);",
+		},
+		{
+			name: "mean with groupby",
+			node: ReduceClause{
+				Assignments: []ReduceAssignment{
+					{Variable: "$avg", Expression: AggregateExpr{FuncName: "mean", Var: "$age"}},
+				},
+				GroupBy: "$city",
+			},
+			want: "reduce $avg = mean($age) groupby $city;",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := c.Compile(tt.node)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got: %q, want: %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCompiler_ReduceAggregateExprErrors verifies malformed AggregateExprs
+// report descriptive errors instead of emitting invalid TypeQL (issue #63).
+func TestCompiler_ReduceAggregateExprErrors(t *testing.T) {
+	c := &Compiler{}
+	tests := []struct {
+		name string
+		expr AggregateExpr
+	}{
+		{"missing function name", AggregateExpr{Var: "$p"}},
+		{"missing variable", AggregateExpr{FuncName: "count"}},
+		{"attribute projection unsupported", AggregateExpr{FuncName: "sum", Var: "$p", AttrName: "salary"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := ReduceClause{Assignments: []ReduceAssignment{
+				{Variable: "$x", Expression: tt.expr},
+			}}
+			if got, err := c.Compile(node); err == nil {
+				t.Errorf("expected compile error, got %q", got)
+			}
+		})
+	}
+}
+
+// TestCompiler_EmptyClausesError is a regression test for issue #83: empty
+// clauses must fail at compile time instead of emitting invalid TypeQL like
+// "insert\n;".
+func TestCompiler_EmptyClausesError(t *testing.T) {
+	c := &Compiler{}
+	tests := []struct {
+		name string
+		node QueryNode
+	}{
+		{"empty match", Match()},
+		{"empty match-let", MatchLetClause{}},
+		{"empty insert", Insert()},
+		{"empty delete", Delete()},
+		{"empty update", Update()},
+		{"empty put", Put()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, err := c.Compile(tt.node); err == nil {
+				t.Errorf("expected compile error for %s, got %q", tt.name, got)
 			}
 		})
 	}
@@ -579,6 +668,31 @@ func TestCompiler_Values(t *testing.T) {
 			name: "datetime",
 			node: LiteralValue{Val: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), ValueType: "datetime"},
 			want: "2024-01-15T10:30:00",
+		},
+		{
+			// Issue #53: non-UTC instants convert to UTC before the zone is
+			// dropped, and sub-second precision is preserved.
+			name: "datetime non-utc converts to UTC",
+			node: LiteralValue{Val: time.Date(2024, 1, 15, 12, 30, 0, 123456789, time.FixedZone("UTC+2", 2*60*60)), ValueType: "datetime"},
+			want: "2024-01-15T10:30:00.123456789",
+		},
+		{
+			// Issue #66: a midnight datetime stays a datetime literal.
+			name: "datetime midnight stays datetime",
+			node: LiteralValue{Val: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), ValueType: "datetime"},
+			want: "2024-01-15T00:00:00",
+		},
+		{
+			// Issue #66: datetime-tz keeps the value's own offset and
+			// sub-second precision.
+			name: "datetime-tz keeps offset",
+			node: LiteralValue{Val: time.Date(2024, 1, 15, 12, 30, 0, 500000000, time.FixedZone("UTC+2", 2*60*60)), ValueType: "datetime-tz"},
+			want: "2024-01-15T12:30:00.5+02:00",
+		},
+		{
+			name: "datetime-tz UTC uses Z",
+			node: LiteralValue{Val: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), ValueType: "datetime-tz"},
+			want: "2024-01-15T10:30:00Z",
 		},
 		{
 			name: "date",

@@ -159,8 +159,10 @@ func TestIn_Empty(t *testing.T) {
 	f := In("name", []any{})
 	patterns := f.ToPatterns("e")
 	joined := strings.Join(patterns, " ")
-	// Empty set should produce a contradiction
-	assertContains(t, joined, "iid 0xFFFFFFFFFFFFFFFF")
+	// Empty set should produce a structurally valid contradiction, not a
+	// fabricated IID literal (issue #85).
+	assertContains(t, joined, "not { $e is $e; };")
+	assertNotContains(t, joined, "0xFFFFFFFFFFFFFFFF")
 }
 
 func TestNotIn(t *testing.T) {
@@ -307,6 +309,8 @@ func TestIIDIn_Empty(t *testing.T) {
 	if len(patterns) != 1 {
 		t.Fatalf("expected 1 pattern, got %d", len(patterns))
 	}
-	// Empty IIDIn should produce an impossible match
-	assertContains(t, patterns[0], "0xFFFFFFFFFFFFFFFF")
+	// Empty IIDIn should produce a structurally valid contradiction, not a
+	// fabricated IID literal (issue #85).
+	assertContains(t, patterns[0], "not { $e is $e; };")
+	assertNotContains(t, patterns[0], "0xFFFFFFFFFFFFFFFF")
 }

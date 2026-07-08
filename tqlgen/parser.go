@@ -15,10 +15,16 @@ import (
 // These define the TypeQL schema grammar using struct tags.
 // The grammar handles attribute, entity, relation, struct, and function definitions.
 
-// AttrDef parses: attribute name [,] value type [@constraint(...)];
+// AttrDef parses: attribute name [sub parent] [annotations] [,] [value type] [@constraint(...)];
+// The value clause is optional: abstract attribute supertypes omit it, and
+// subtyped attributes inherit it from their parent chain (resolved in
+// convertAST).
 type AttrDef struct {
-	Name      string       `parser:"'attribute' @Ident ','?"`
-	ValueType string       `parser:"'value' @Ident"`
+	Name      string       `parser:"'attribute' @Ident"`
+	Parent    *SubClause   `parser:"@@?"`
+	PreAnnots []Annotation `parser:"@@*"`
+	Comma     string       `parser:"','?"`
+	ValueType string       `parser:"('value' @Ident)?"`
 	Annots    []Annotation `parser:"@@*"`
 	Semi      string       `parser:"';'"`
 }
@@ -38,15 +44,20 @@ type SubClause struct {
 	Annots []Annotation `parser:"@@*"`
 }
 
-// EntityClause is one of: owns or plays.
+// EntityClause is one of: owns, plays, or sub. The comma-constraint sub form
+// (`entity x @abstract, sub y`) is how generators emit annotated subtypes,
+// since annotations after an inline `sub` bind to the sub clause (ANN9).
 type EntityClause struct {
-	Owns  *OwnsDef  `parser:"  @@"`
-	Plays *PlaysDef `parser:"| @@"`
+	Owns  *OwnsDef   `parser:"  @@"`
+	Plays *PlaysDef  `parser:"| @@"`
+	Sub   *SubClause `parser:"| @@"`
 }
 
-// OwnsDef parses: owns attr-name [@key] [@unique] [@card(...)]
+// OwnsDef parses: owns attr-name[[]] [@key] [@unique] [@card(...)]
+// The optional '[]' suffix marks a TypeQL 3.x ordered-list ownership.
 type OwnsDef struct {
 	Attribute string       `parser:"'owns' @Ident"`
+	IsList    bool         `parser:"( @'[' ']' )?"`
 	Annots    []Annotation `parser:"@@*"`
 }
 
@@ -66,16 +77,20 @@ type RelationDef struct {
 	Clauses []RelationClause `parser:"( @@ ( ',' @@ )* )? ';'"`
 }
 
-// RelationClause is one of: relates, owns, or plays.
+// RelationClause is one of: relates, owns, plays, or sub (comma-constraint
+// form; see EntityClause).
 type RelationClause struct {
 	Relates *RelatesDef `parser:"  @@"`
 	Owns    *OwnsDef    `parser:"| @@"`
 	Plays   *PlaysDef   `parser:"| @@"`
+	Sub     *SubClause  `parser:"| @@"`
 }
 
-// RelatesDef parses: relates role-name [as parent-role] [@card(...)]
+// RelatesDef parses: relates role-name[[]] [as parent-role] [@card(...)]
+// The optional '[]' suffix marks a TypeQL 3.x ordered-list role.
 type RelatesDef struct {
 	Role     string       `parser:"'relates' @Ident"`
+	IsList   bool         `parser:"( @'[' ']' )?"`
 	AsParent *AsClause    `parser:"@@?"`
 	Annots   []Annotation `parser:"@@*"`
 }
@@ -119,9 +134,30 @@ type ValuesAnnot struct {
 	Values []string `parser:"'@values' '(' @String ( ',' @String )* ')'"`
 }
 
-// RangeAnnot parses: @range(expr)
+// RangeAnnot parses: @range(operand), where the operand is any TypeQL range
+// expression — integer (1..5), decimal (0.5..9.5), date/datetime, or string
+// ("a".."z") bounds, including half-open forms. The operand is captured as a
+// flat token list up to the closing parenthesis and reassembled verbatim by
+// Expr.
 type RangeAnnot struct {
-	Expr string `parser:"'@range' '(' @CardExpr ')'"`
+	Toks []RangeTok `parser:"'@range' '(' @@+ ')'"`
+}
+
+// RangeTok matches a single token of a @range operand: anything except the
+// closing parenthesis that ends the annotation.
+type RangeTok struct {
+	Tok string `parser:"(?! ')' ) @(Ident | Punct | String | CardExpr | Var | Operator)"`
+}
+
+// Expr returns the range operand reassembled from its tokens. TypeQL range
+// operands contain no significant whitespace, so plain concatenation
+// reconstructs the source text (e.g. "0.5..9.5", `"a".."z"`).
+func (r *RangeAnnot) Expr() string {
+	var b strings.Builder
+	for _, t := range r.Toks {
+		b.WriteString(t.Tok)
+	}
+	return b.String()
 }
 
 // SubkeyAnnot parses: @subkey(identifier)
@@ -208,24 +244,25 @@ type SimpleDef struct {
 	Fun       *FunDef      `parser:"| @@"`
 }
 
-// FunDef parses: fun name <body tokens until next fun or EOF>
+// FunDef parses: fun name <body tokens until the next top-level definition or EOF>
 // The body is captured as a flat list of tokens for signature extraction.
 type FunDef struct {
-	Name string       `parser:"FunKW @Ident"`
+	Name string       `parser:"'fun' @Ident"`
 	Body []FunBodyTok `parser:"@@*"`
 }
 
-// FunBodyTok matches every token type EXCEPT FunKW. When the parser hits the
-// next `fun`, it exits the current FunDef and starts a new one.
+// FunBodyTok matches any token except the keywords that open a new top-level
+// definition (or another fun), so the parser exits the function body at the
+// next definition instead of swallowing the rest of the file. Limitation: a
+// function body using one of these words as a bare label (e.g. `$t sub entity`)
+// ends the body early at that word.
 type FunBodyTok struct {
-	Tok string `parser:"@(Ident | Keyword | Punct | String | CardExpr | AnnotKW | Var | Arrow | Operator)"`
+	Tok string `parser:"(?! 'entity' | 'relation' | 'attribute' | 'struct' | 'fun' ) @(Ident | Punct | String | CardExpr | AnnotKW | Var | Arrow | Operator)"`
 }
 
 var simpleLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Comment", Pattern: `#[^\n]*`},
 	{Name: "Whitespace", Pattern: `[\s]+`},
-	{Name: "FunKW", Pattern: `\bfun\b`},
-	{Name: "Keyword", Pattern: `\b(define|given|attribute|entity|relation|sub|value|owns|plays|relates|as|struct|match|return|isa|has|not|or|in|is|count|sum|max|min|mean|median|std|group)\b`},
 	{Name: "AnnotKW", Pattern: `@(key|unique|abstract|cascade|independent|distinct|card|regex|values|range|subkey|doc|meta)`},
 	{Name: "String", Pattern: `"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`},
 	{Name: "Var", Pattern: `\$[a-zA-Z_][a-zA-Z0-9_-]*`},
@@ -357,7 +394,33 @@ func convertAST(file *TQLFileSimple) *ParsedSchema {
 		}
 	}
 
+	resolveAttrValueTypes(schema)
 	return schema
+}
+
+// resolveAttrValueTypes fills the value type of subtyped attributes that omit
+// an explicit `value` clause by walking the parent chain (with a cycle guard).
+// Abstract roots with no value type anywhere in the chain keep an empty
+// ValueType.
+func resolveAttrValueTypes(schema *ParsedSchema) {
+	byName := make(map[string]*AttributeSpec, len(schema.Attributes))
+	for i := range schema.Attributes {
+		byName[schema.Attributes[i].Name] = &schema.Attributes[i]
+	}
+	for i := range schema.Attributes {
+		a := &schema.Attributes[i]
+		seen := map[string]bool{a.Name: true}
+		parent := a.Parent
+		for a.ValueType == "" && parent != "" && !seen[parent] {
+			seen[parent] = true
+			p, ok := byName[parent]
+			if !ok {
+				break
+			}
+			a.ValueType = p.ValueType
+			parent = p.Parent
+		}
+	}
 }
 
 func convertStruct(s *StructDefP) StructSpec {
@@ -386,8 +449,14 @@ func convertAttr(a *AttrDef) AttributeSpec {
 		Name:      a.Name,
 		ValueType: a.ValueType,
 	}
-	applyDocMeta(a.Annots, &spec.Doc, &spec.Meta)
-	for _, ann := range a.Annots {
+	annots := append(append([]Annotation{}, a.PreAnnots...), a.Annots...)
+	if a.Parent != nil {
+		spec.Parent = a.Parent.Parent
+		annots = append(annots, a.Parent.Annots...)
+	}
+	spec.Abstract = hasAbstract(annots)
+	applyDocMeta(annots, &spec.Doc, &spec.Meta)
+	for _, ann := range annots {
 		if ann.Regex != nil {
 			spec.Regex = unquote(ann.Regex.Pattern)
 		}
@@ -397,7 +466,7 @@ func convertAttr(a *AttrDef) AttributeSpec {
 			}
 		}
 		if ann.Range != nil {
-			spec.RangeOp = ann.Range.Expr
+			spec.RangeOp = ann.Range.Expr()
 		}
 	}
 	return spec
@@ -424,6 +493,9 @@ func convertEntity(e *EntityDef) EntitySpec {
 			applyDocMeta(c.Plays.Annots, &plays.Doc, &plays.Meta)
 			spec.Plays = append(spec.Plays, plays)
 		}
+		if c.Sub != nil && spec.Parent == "" {
+			spec.Parent = c.Sub.Parent
+		}
 	}
 	return spec
 }
@@ -439,7 +511,7 @@ func convertRelation(r *RelationDef) RelationSpec {
 	}
 	for _, c := range r.Clauses {
 		if c.Relates != nil {
-			rs := RelatesSpec{Role: c.Relates.Role}
+			rs := RelatesSpec{Role: c.Relates.Role, IsList: c.Relates.IsList}
 			if c.Relates.AsParent != nil {
 				rs.AsParent = c.Relates.AsParent.Parent
 			}
@@ -461,6 +533,9 @@ func convertRelation(r *RelationDef) RelationSpec {
 			}
 			applyDocMeta(c.Plays.Annots, &plays.Doc, &plays.Meta)
 			spec.Plays = append(spec.Plays, plays)
+		}
+		if c.Sub != nil && spec.Parent == "" {
+			spec.Parent = c.Sub.Parent
 		}
 	}
 	return spec
@@ -490,7 +565,7 @@ func hasAbstract(annots []Annotation) bool {
 }
 
 func convertOwns(o *OwnsDef) OwnsSpec {
-	spec := OwnsSpec{Attribute: o.Attribute}
+	spec := OwnsSpec{Attribute: o.Attribute, IsList: o.IsList}
 	applyDocMeta(o.Annots, &spec.Doc, &spec.Meta)
 	for _, ann := range o.Annots {
 		if ann.Key {
@@ -632,7 +707,14 @@ func ExtractAnnotations(input string) map[string]map[string]string {
 			continue
 		}
 
-		// Check if this line defines a type
+		// Blank lines and plain (non-annotation) comments between the
+		// annotations and the definition do not clear pending annotations.
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// A code line: attach pending annotations if it defines a type,
+		// then clear them either way.
 		if len(pendingAnnots) > 0 {
 			if m := typeRe.FindStringSubmatch(trimmed); m != nil {
 				annots := make(map[string]string)
@@ -641,8 +723,6 @@ func ExtractAnnotations(input string) map[string]map[string]string {
 				}
 				result[m[2]] = annots
 			}
-			pendingAnnots = nil
-		} else if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
 			pendingAnnots = nil
 		}
 	}

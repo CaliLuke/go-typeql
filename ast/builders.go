@@ -2,6 +2,9 @@
 package ast
 
 import (
+	"fmt"
+	"math"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -85,7 +88,10 @@ func Role(roleName, playerVar string) RolePlayer {
 }
 
 // Has creates a HasConstraint for the given attribute name and value.
-// The value can be any Go value that will be formatted via FormatGoValue.
+// The value can be a Value node (Str, Long, ...), a string beginning with
+// "$" (treated as a variable reference), or any other Go value, which is
+// converted via ValueFromGo and emitted as a quoted/escaped TypeQL literal.
+// To match a literal string that begins with "$", wrap it in Str.
 func Has(attrName string, value any) HasConstraint {
 	return HasConstraint{AttrName: attrName, Value: value}
 }
@@ -161,13 +167,14 @@ func FetchAttr(key, varName, attrName string) FetchAttribute {
 }
 
 // FetchAttrPath is a convenience for creating FetchAttribute from a dotted path like "$p.name".
+// The path is split at the first dot. A path without a dot (e.g. "$p") is
+// treated as a bare variable and compiles to a plain variable fetch.
 func FetchAttrPath(key, attrPath string) FetchAttribute {
-	parts := strings.Split(attrPath, ".")
-	if len(parts) != 2 {
-		// Fallback to raw format
-		return FetchAttribute{Key: key, Var: attrPath, AttrName: ""}
+	varName, attrName, found := strings.Cut(attrPath, ".")
+	if !found {
+		return FetchAttribute{Key: key, Var: attrPath}
 	}
-	return FetchAttribute{Key: key, Var: parts[0], AttrName: parts[1]}
+	return FetchAttribute{Key: key, Var: varName, AttrName: attrName}
 }
 
 // FetchVar creates a FetchVariable for fetching a variable directly.
@@ -187,6 +194,9 @@ func DeleteHas(attrVar, ownerVar string) DeleteHasStatement {
 }
 
 // Cmp creates a ValueComparisonPattern for comparing a variable to a value.
+// The value can be a Value node, a string beginning with "$" (treated as a
+// variable reference), or any other Go value, which is converted via
+// ValueFromGo and emitted as a quoted/escaped TypeQL literal.
 func Cmp(variable, operator string, value any) ValueComparisonPattern {
 	return ValueComparisonPattern{Var: variable, Operator: operator, Value: value}
 }
@@ -197,32 +207,109 @@ func Or(alternatives ...[]Pattern) OrPattern {
 	return OrPattern{Alternatives: alternatives}
 }
 
-// ValueFromGo converts a Go value to an AST Value node.
-// Handles common types: string, int, int64, float64, bool, time.Time.
-// Falls back to string representation for unknown types.
-func ValueFromGo(val any) Value {
-	if val == nil {
-		return Str("") // or handle nil differently
-	}
+// errorValue is a Value carrying a conversion error. Compiling it surfaces
+// the error, so invalid conversions (e.g. nil) fail at compile time instead
+// of silently producing a wrong literal.
+type errorValue struct{ err error }
 
+func (errorValue) queryNode() {}
+func (errorValue) value()     {}
+
+// errValuef creates an errorValue with a formatted message.
+func errValuef(format string, args ...any) Value {
+	return errorValue{err: fmt.Errorf(format, args...)}
+}
+
+// ValueFromGo converts a Go value to an AST Value node.
+// It handles strings, booleans, all integer and unsigned integer widths,
+// floats, time.Time, and (via reflection) pointers and named types of those
+// kinds; other types fall back to their string representation. A nil value
+// (or nil pointer) yields a Value whose compilation fails with a descriptive
+// error rather than silently becoming an empty string.
+//
+// A time.Time becomes a plain "datetime" value: the instant is stored as UTC
+// and compiles to a naive (zone-less) datetime literal. Use
+// Lit(t, "datetime-tz") or Lit(t, "date") for the other temporal literal
+// kinds.
+func ValueFromGo(val any) Value {
 	switch v := val.(type) {
+	case nil:
+		return errValuef("cannot convert nil to a TypeQL value")
 	case string:
 		return Str(v)
+	case bool:
+		return Bool(v)
 	case int:
+		return Long(int64(v))
+	case int8:
+		return Long(int64(v))
+	case int16:
+		return Long(int64(v))
+	case int32:
 		return Long(int64(v))
 	case int64:
 		return Long(v)
+	case uint:
+		return longFromUint64(uint64(v))
+	case uint8:
+		return Long(int64(v))
+	case uint16:
+		return Long(int64(v))
+	case uint32:
+		return Long(int64(v))
+	case uint64:
+		return longFromUint64(v)
 	case float32:
 		return Double(float64(v))
 	case float64:
 		return Double(v)
-	case bool:
-		return Bool(v)
 	case time.Time:
-		// Format as datetime literal
-		return Lit(v.Format(time.RFC3339), "datetime")
+		// Datetime literal; formatting (UTC conversion, fractional seconds)
+		// happens in one place when the literal is compiled (issue #66).
+		return Lit(v, "datetime")
 	default:
-		// Fallback: format as string using the existing formatter
-		return Lit(FormatGoValue(val), "string")
+		return valueFromGoReflect(val)
 	}
+}
+
+// valueFromGoReflect is the reflection-based slow path of ValueFromGo,
+// handling pointers and named/unknown types.
+func valueFromGoReflect(val any) Value {
+	v := reflect.ValueOf(val)
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return errValuef("cannot convert nil %T to a TypeQL value", val)
+		}
+		v = v.Elem()
+	}
+
+	if t, ok := v.Interface().(time.Time); ok {
+		return Lit(t, "datetime")
+	}
+
+	switch v.Kind() {
+	case reflect.String:
+		return Str(v.String())
+	case reflect.Bool:
+		return Bool(v.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return Long(v.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return longFromUint64(v.Uint())
+	case reflect.Float32, reflect.Float64:
+		return Double(v.Float())
+	default:
+		// Fallback: single string formatting; quoting/escaping happens once
+		// when the literal is compiled.
+		return Str(fmt.Sprint(v.Interface()))
+	}
+}
+
+// longFromUint64 converts an unsigned value to a Long, guarding against
+// overflow of TypeQL's signed 64-bit integer range.
+func longFromUint64(v uint64) Value {
+	if v > math.MaxInt64 {
+		return errValuef("uint64 value %d overflows TypeQL's signed 64-bit integer range", v)
+	}
+	return Long(int64(v))
 }

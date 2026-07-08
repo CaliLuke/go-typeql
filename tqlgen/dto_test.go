@@ -2,14 +2,33 @@ package tqlgen
 
 import (
 	"bytes"
+	"go/format"
 	"strings"
 	"testing"
 )
 
+// TestBuildDTOData_EmptyPackage is a regression test for issue #108: a
+// missing PackageName used to silently produce empty data and an invalid
+// generated file starting with "package ". The builder now populates the
+// data regardless, and RenderDTO fails loudly.
 func TestBuildDTOData_EmptyPackage(t *testing.T) {
-	data := BuildDTOData(&ParsedSchema{}, DTOConfig{})
+	schema := &ParsedSchema{
+		Entities: []EntitySpec{{Name: "person"}},
+	}
+	data := BuildDTOData(schema, DTOConfig{})
 	if data.PackageName != "" {
 		t.Errorf("expected empty, got %q", data.PackageName)
+	}
+	if len(data.Entities) != 1 {
+		t.Errorf("expected data to be populated despite the missing package name, got %d entities", len(data.Entities))
+	}
+
+	err := RenderDTO(&bytes.Buffer{}, data)
+	if err == nil {
+		t.Fatal("RenderDTO succeeded with empty PackageName, want error")
+	}
+	if !strings.Contains(err.Error(), "PackageName") {
+		t.Errorf("error %q should mention PackageName", err)
 	}
 }
 
@@ -199,7 +218,9 @@ func TestBuildDTOData_BaseStructEmbed(t *testing.T) {
 			}},
 		},
 	}
-	schema.AccumulateInheritance()
+	if err := schema.AccumulateInheritance(); err != nil {
+		t.Fatalf("AccumulateInheritance failed: %v", err)
+	}
 
 	data := BuildDTOData(schema, DTOConfig{
 		PackageName:  "dto",
@@ -536,6 +557,150 @@ func TestRenderDTO_CompositeInOutput(t *testing.T) {
 	}
 	if !strings.Contains(out, `func (ArtifactDTOOut) TypeName()`) {
 		t.Error("expected TypeName method on composite")
+	}
+}
+
+// TestRenderDTO_BaseStructPatchSinglePointer is a regression test for issue
+// #79: the Patch template block used to prepend another "*" to the already
+// pointered base-struct Out fields, emitting **string.
+func TestRenderDTO_BaseStructPatchSinglePointer(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "name", ValueType: "string"},
+		},
+		Entities: []EntitySpec{
+			{Name: "artifact", Abstract: true, Owns: []OwnsSpec{{Attribute: "name", Key: true}}},
+			{Name: "task", Parent: "artifact", Owns: []OwnsSpec{{Attribute: "name", Key: true}}},
+		},
+	}
+	if err := schema.AccumulateInheritance(); err != nil {
+		t.Fatalf("AccumulateInheritance failed: %v", err)
+	}
+	data := BuildDTOData(schema, DTOConfig{
+		PackageName:  "dto",
+		SkipAbstract: true,
+		UseAcronyms:  true,
+		BaseStructs: []BaseStructConfig{
+			{
+				SourceEntity:   "artifact",
+				BaseName:       "BaseArtifact",
+				InheritedAttrs: []string{"name"},
+				ExtraFields:    map[string]string{"extra": "string", "note": "*string"},
+			},
+		},
+	})
+
+	var buf bytes.Buffer
+	if err := RenderDTO(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	if strings.Contains(out, "**") {
+		t.Errorf("generated DTOs contain a double pointer\n%s", out)
+	}
+	for _, want := range []string{
+		"type BaseArtifactPatch struct {",
+		"Name *string `json:\"name\"`",
+		"Extra *string `json:\"extra\"`", // extra field gains exactly one pointer
+		"Note *string `json:\"note\"`",   // already-pointer extra field stays single
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated DTOs\n%s", want, out)
+		}
+	}
+
+	compileGenerated(t, out)
+}
+
+// TestBuildDTOData_MultiValuedAttributes covers the DTO half of issue #75:
+// list ownerships (owns attr[]) and cardinalities allowing more than one
+// value must generate slice fields in Out/Create/Patch, not scalar pointers.
+func TestBuildDTOData_MultiValuedAttributes(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "tag", ValueType: "string"},
+			{Name: "alias", ValueType: "string"},
+			{Name: "nick", ValueType: "string"},
+			{Name: "score", ValueType: "integer"},
+		},
+		Entities: []EntitySpec{
+			{Name: "person", Owns: []OwnsSpec{
+				{Attribute: "tag", Card: "0..5"},
+				{Attribute: "alias", IsList: true},
+				{Attribute: "nick", Card: "0..1"},
+			}},
+		},
+		Relations: []RelationSpec{
+			{Name: "rated",
+				Relates: []RelatesSpec{{Role: "rater"}},
+				Owns:    []OwnsSpec{{Attribute: "score", Card: "1.."}},
+			},
+		},
+	}
+	data := BuildDTOData(schema, DTOConfig{PackageName: "dto", UseAcronyms: true})
+
+	e := data.Entities[0]
+	for _, variant := range []struct {
+		name   string
+		fields []dtoFieldCtx
+	}{
+		{"Out", e.OutFields}, {"Create", e.CreateFields}, {"Patch", e.PatchFields},
+	} {
+		if f := findField(variant.fields, "Tag"); f == nil || f.GoType != "[]string" {
+			t.Errorf("%s Tag: expected []string, got %+v", variant.name, f)
+		}
+		if f := findField(variant.fields, "Alias"); f == nil || f.GoType != "[]string" {
+			t.Errorf("%s Alias: expected []string, got %+v", variant.name, f)
+		}
+		if f := findField(variant.fields, "Nick"); f == nil || f.GoType != "*string" {
+			t.Errorf("%s Nick: expected *string, got %+v", variant.name, f)
+		}
+	}
+
+	r := data.Relations[0]
+	if f := findField(r.OutFields, "Score"); f == nil || f.GoType != "[]int64" {
+		t.Errorf("relation Out Score: expected []int64, got %+v", f)
+	}
+	if f := findField(r.CreateFields, "Score"); f == nil || f.GoType != "[]int64" {
+		t.Errorf("relation Create Score: expected []int64, got %+v", f)
+	}
+
+	var buf bytes.Buffer
+	if err := RenderDTO(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	compileGenerated(t, buf.String())
+}
+
+// TestRenderDTO_OutputIsGofmtFormatted is the DTO half of issue #107.
+func TestRenderDTO_OutputIsGofmtFormatted(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "name", ValueType: "string"},
+			{Name: "created-at", ValueType: "datetime"},
+		},
+		Entities: []EntitySpec{
+			{Name: "person", Owns: []OwnsSpec{{Attribute: "name", Key: true}, {Attribute: "created-at"}}},
+		},
+		Relations: []RelationSpec{
+			{Name: "knows", Relates: []RelatesSpec{{Role: "knower"}, {Role: "known"}}},
+		},
+	}
+	data := BuildDTOData(schema, DTOConfig{PackageName: "dto", UseAcronyms: true})
+
+	var buf bytes.Buffer
+	if err := RenderDTO(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		t.Fatalf("generated DTO code is not valid Go: %v\n%s", err, out)
+	}
+	if string(formatted) != out {
+		t.Errorf("RenderDTO output is not gofmt-formatted:\n--- got ---\n%s\n--- want ---\n%s", out, formatted)
 	}
 }
 

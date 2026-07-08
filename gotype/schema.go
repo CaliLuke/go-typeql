@@ -18,14 +18,15 @@ func GenerateSchema() string {
 	var parts []string
 	attrsSeen := make(map[string]bool)
 
-	// Collect all attribute definitions first
+	// Collect all attribute definitions first. Registration rejects models
+	// whose shared attribute names disagree on value type, so deduplicating
+	// by name alone cannot drop a conflicting declaration.
 	for _, info := range types {
 		for _, f := range info.Fields {
-			attrKey := f.Tag.Name + ":" + f.ValueType
-			if attrsSeen[attrKey] {
+			if attrsSeen[f.Tag.Name] {
 				continue
 			}
-			attrsSeen[attrKey] = true
+			attrsSeen[f.Tag.Name] = true
 			parts = append(parts, fmt.Sprintf("attribute %s, value %s;", f.Tag.Name, f.ValueType))
 		}
 	}
@@ -52,11 +53,10 @@ func GenerateSchemaFor(info *ModelInfo) string {
 	attrsSeen := make(map[string]bool)
 
 	for _, f := range info.Fields {
-		attrKey := f.Tag.Name + ":" + f.ValueType
-		if attrsSeen[attrKey] {
+		if attrsSeen[f.Tag.Name] {
 			continue
 		}
-		attrsSeen[attrKey] = true
+		attrsSeen[f.Tag.Name] = true
 		parts = append(parts, fmt.Sprintf("attribute %s, value %s;", f.Tag.Name, f.ValueType))
 	}
 
@@ -91,6 +91,9 @@ func generateTypeDef(info *ModelInfo, playsMap map[string][]string) string {
 		kindStr = "relation"
 	}
 
+	// Annotations attach to the type name; `sub <parent>` is emitted as a
+	// separate comma constraint. `entity x sub y @abstract` binds the
+	// annotation to the sub clause, which the server rejects (ANN9).
 	header := fmt.Sprintf("%s %s", kindStr, info.TypeName)
 	if info.IsAbstract {
 		header += " @abstract"
@@ -101,10 +104,10 @@ func generateTypeDef(info *ModelInfo, playsMap map[string][]string) string {
 	for _, meta := range info.Meta {
 		header += " " + metaAnnotation(meta.Key, meta.Value)
 	}
-	if info.Supertype != "" {
-		header += fmt.Sprintf(", sub %s", info.Supertype)
-	}
 	lines = append(lines, header)
+	if info.Supertype != "" {
+		lines = append(lines, "    sub "+info.Supertype)
+	}
 
 	// Roles (relation only)
 	for _, role := range info.Roles {

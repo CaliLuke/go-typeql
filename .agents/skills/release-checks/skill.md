@@ -26,7 +26,7 @@ If `$ARGUMENTS` is empty, ask the user what version to release.
 go test ./ast/... ./gotype/... ./tqlgen/...
 make build-rust
 docker compose up -d
-TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
 
 This step must prove both release surfaces still work:
@@ -45,13 +45,16 @@ go tool cover -func=coverage.out | tail -1
 
 Review any significant uncovered paths in new/changed code. No hard threshold, but don't ship untested public APIs.
 
-## 4. Run linters
+## 4. Run linters and quality gates
 
 ```bash
-go vet ./...
-golangci-lint run ./...
-~/go/bin/staticcheck ./...
+./check.sh
 ```
+
+`check.sh` runs the lint trio (`go vet`, `golangci-lint`, `staticcheck`) plus goimports,
+tidy drift, race-enabled unit tests, and the TypeQL syntax gates. The syntax gates need the
+official `typeql-check` binary (`make install-typeql-check`, one-time); when present the
+gates are enforced (`TYPEQL_CHECK_REQUIRED=1`) — a release must not ship with them skipped.
 
 ## 5. Verify go.mod is tidy
 

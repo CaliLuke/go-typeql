@@ -14,8 +14,9 @@ func (e *NotRegisteredError) Error() string {
 	return fmt.Sprintf("type %q is not registered", e.TypeName)
 }
 
-// KeyAttributeError is returned when a mandatory key attribute is missing
-// during an insert or update operation.
+// KeyAttributeError is returned by Manager.Insert, Manager.InsertMany,
+// Manager.Put, and Manager.PutMany when a mandatory key attribute is unset
+// (nil or the zero value) on the instance being written.
 type KeyAttributeError struct {
 	EntityType string
 	FieldName  string
@@ -100,8 +101,8 @@ func (e *MigrationError) Unwrap() error {
 	return e.Cause
 }
 
-// NotFoundError is returned when a query expected to return an instance
-// finds no matching results.
+// NotFoundError is returned by Manager.GetOne when a query expected to
+// return an instance finds no matching results.
 type NotFoundError struct {
 	TypeName string
 }
@@ -111,8 +112,8 @@ func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("%s: not found", e.TypeName)
 }
 
-// NotUniqueError is returned when a query expected to return a single
-// unique instance finds multiple matches.
+// NotUniqueError is returned by Manager.GetOne when a query expected to
+// return a single unique instance finds multiple matches.
 type NotUniqueError struct {
 	TypeName string
 	Count    int

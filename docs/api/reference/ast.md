@@ -167,7 +167,7 @@ It decouples query construction from string formatting, providing a structured w
 
 
 <a name="DeleteArtifact"></a>
-## func [DeleteArtifact](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L481>)
+## func [DeleteArtifact](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L499>)
 
 ```go
 func DeleteArtifact(identifier, typeName string) (string, error)
@@ -176,7 +176,7 @@ func DeleteArtifact(identifier, typeName string) (string, error)
 DeleteArtifact builds a delete query that matches by IID or fallback attribute.
 
 <a name="DeleteArtifactWithOptions"></a>
-## func [DeleteArtifactWithOptions](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L486>)
+## func [DeleteArtifactWithOptions](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L504>)
 
 ```go
 func DeleteArtifactWithOptions(identifier, typeName string, opts DeleteArtifactOptions) (string, error)
@@ -185,7 +185,7 @@ func DeleteArtifactWithOptions(identifier, typeName string, opts DeleteArtifactO
 DeleteArtifactWithOptions builds a delete query with custom identifier matching options.
 
 <a name="EscapeString"></a>
-## func [EscapeString](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L565>)
+## func [EscapeString](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L692>)
 
 ```go
 func EscapeString(s string) string
@@ -194,25 +194,27 @@ func EscapeString(s string) string
 EscapeString escapes special characters in a string for use in TypeQL string literals. It handles backslashes, quotes, newlines, carriage returns, and tabs.
 
 <a name="FormatGoValue"></a>
-## func [FormatGoValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L578>)
+## func [FormatGoValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L701>)
 
 ```go
 func FormatGoValue(value any) string
 ```
 
-FormatGoValue converts a Go value into its TypeQL literal string representation. It uses reflection to determine the type and handles basic types, pointers, and time.Time. This is the canonical formatting function for Go values; other packages should use this instead of implementing their own formatting logic.
+FormatGoValue converts a Go value into its TypeQL literal string representation. It handles basic types, pointers, and time.Time; common concrete types take a fast path, and reflection is used only for pointers and named/unknown types. This is the canonical formatting function for Go values; other packages should use this instead of implementing their own formatting logic.
 
 <a name="FormatLiteral"></a>
-## func [FormatLiteral](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L528>)
+## func [FormatLiteral](<https://github.com/CaliLuke/go-typeql/blob/main/ast/compiler.go#L603>)
 
 ```go
 func FormatLiteral(val any, valueType string) string
 ```
 
-FormatLiteral formats a Go value as a TypeQL literal string.
+FormatLiteral formats a Go value as a TypeQL literal string. When val does not match valueType \(e.g. an int passed as a "string" literal\), it falls back to FormatGoValue instead of silently emitting a zero value. The compiler itself reports such mismatches as errors.
+
+A time.Time with valueType "datetime" is stored as UTC: the instant is converted to UTC and emitted as a naive \(zone\-less\) datetime literal with up to nanosecond precision, and hydration parses it back as UTC, so the instant survives round trips. Use "datetime\-tz" to keep the value's own offset, or "date" for a date\-only literal.
 
 <a name="PaginatedSearch"></a>
-## func [PaginatedSearch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L507>)
+## func [PaginatedSearch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L525>)
 
 ```go
 func PaginatedSearch(types []string, opts PaginatedSearchOptions) (string, error)
@@ -221,7 +223,7 @@ func PaginatedSearch(types []string, opts PaginatedSearchOptions) (string, error
 PaginatedSearch builds a standard typed search with sorting and pagination/fetch options.
 
 <a name="UpdateAttribute"></a>
-## func [UpdateAttribute](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L474>)
+## func [UpdateAttribute](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L492>)
 
 ```go
 func UpdateAttribute(varName, typeName, attrName string, value any) (string, error)
@@ -230,7 +232,7 @@ func UpdateAttribute(varName, typeName, attrName string, value any) (string, err
 UpdateAttribute builds the standard Match\-Delete\-Insert sequence for one attribute update.
 
 <a name="AggregateExpr"></a>
-## type [AggregateExpr](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L543-L550>)
+## type [AggregateExpr](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L548-L557>)
 
 AggregateExpr represents an aggregate expression like count\($var\) or sum\($attr\).
 
@@ -240,29 +242,33 @@ type AggregateExpr struct {
     FuncName string
     // Var is the variable being aggregated.
     Var string
-    // AttrName is the optional attribute name to aggregate on if the variable is a thing.
+    // AttrName is unsupported: TypeQL 3.x reduce aggregates variables only,
+    // so setting it produces a compile error. Bind the attribute to a
+    // variable in the match clause and aggregate that variable instead.
     AttrName string
 }
 ```
 
 <a name="ArithmeticValue"></a>
-## type [ArithmeticValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L44-L51>)
+## type [ArithmeticValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L45-L54>)
 
 ArithmeticValue represents a binary arithmetic operation between two values. It supports TypeQL infix operators like \+, \-, \*, /, %, and ^.
 
 ```go
 type ArithmeticValue struct {
-    // Left is the left operand (Value or variable string).
+    // Left is the left operand: a Value node, a "$"-prefixed variable
+    // string, or a plain Go value (converted via ValueFromGo).
     Left any
     // Operator is the infix operator (+, -, *, /, %, ^).
     Operator string
-    // Right is the right operand (Value or variable string).
+    // Right is the right operand: a Value node, a "$"-prefixed variable
+    // string, or a plain Go value (converted via ValueFromGo).
     Right any
 }
 ```
 
 <a name="AttributePattern"></a>
-## type [AttributePattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L159-L166>)
+## type [AttributePattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L163-L170>)
 
 AttributePattern matches an attribute of a specific type and optionally its value.
 
@@ -278,7 +284,7 @@ type AttributePattern struct {
 ```
 
 <a name="Clause"></a>
-## type [Clause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L318-L321>)
+## type [Clause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L323-L326>)
 
 Clause is the marker interface for top\-level TypeQL clauses.
 
@@ -317,7 +323,7 @@ func (c *Compiler) CompileBatch(nodes []QueryNode, separator string) (string, er
 CompileBatch compiles a list of AST nodes into a single query string. The separator controls how compiled nodes are joined; empty means newline.
 
 <a name="Constraint"></a>
-## type [Constraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L71-L74>)
+## type [Constraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L74-L77>)
 
 Constraint is the marker interface for constraints applied to variables in a pattern.
 
@@ -342,7 +348,7 @@ type DeleteArtifactOptions struct {
 ```
 
 <a name="DeleteClause"></a>
-## type [DeleteClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L365-L368>)
+## type [DeleteClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L370-L373>)
 
 DeleteClause represents a 'delete' clause containing one or more statements.
 
@@ -354,7 +360,7 @@ type DeleteClause struct {
 ```
 
 <a name="Delete"></a>
-### func [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L25>)
+### func [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L28>)
 
 ```go
 func Delete(statements ...Statement) DeleteClause
@@ -363,7 +369,7 @@ func Delete(statements ...Statement) DeleteClause
 Delete creates a DeleteClause with the given statements.
 
 <a name="DeleteHasStatement"></a>
-## type [DeleteHasStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L305-L310>)
+## type [DeleteHasStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L310-L315>)
 
 DeleteHasStatement represents a statement to delete an attribute from its owner. Compiles to: $attrVar of $ownerVar
 
@@ -377,7 +383,7 @@ type DeleteHasStatement struct {
 ```
 
 <a name="DeleteHas"></a>
-### func [DeleteHas](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L185>)
+### func [DeleteHas](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L192>)
 
 ```go
 func DeleteHas(attrVar, ownerVar string) DeleteHasStatement
@@ -386,7 +392,7 @@ func DeleteHas(attrVar, ownerVar string) DeleteHasStatement
 DeleteHas creates a DeleteHasStatement for deleting an attribute from its owner. Compiles to: $attrVar of $ownerVar
 
 <a name="DeleteThingStatement"></a>
-## type [DeleteThingStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L295-L298>)
+## type [DeleteThingStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L300-L303>)
 
 DeleteThingStatement represents a statement to delete a thing instance identified by a variable.
 
@@ -398,7 +404,7 @@ type DeleteThingStatement struct {
 ```
 
 <a name="EntityPattern"></a>
-## type [EntityPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L116-L125>)
+## type [EntityPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L120-L129>)
 
 EntityPattern matches an entity with an optional type and constraints.
 
@@ -416,7 +422,7 @@ type EntityPattern struct {
 ```
 
 <a name="Entity"></a>
-### func [Entity](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L64>)
+### func [Entity](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L67>)
 
 ```go
 func Entity(varName, typeName string, constraints ...Constraint) EntityPattern
@@ -425,7 +431,7 @@ func Entity(varName, typeName string, constraints ...Constraint) EntityPattern
 Entity creates an EntityPattern with the given variable, type, and constraints.
 
 <a name="FetchAttribute"></a>
-## type [FetchAttribute](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L442-L449>)
+## type [FetchAttribute](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L447-L454>)
 
 FetchAttribute fetches a single attribute value of a variable.
 
@@ -441,7 +447,7 @@ type FetchAttribute struct {
 ```
 
 <a name="FetchAttr"></a>
-### func [FetchAttr](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L159>)
+### func [FetchAttr](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L165>)
 
 ```go
 func FetchAttr(key, varName, attrName string) FetchAttribute
@@ -450,16 +456,16 @@ func FetchAttr(key, varName, attrName string) FetchAttribute
 FetchAttr creates a FetchAttribute for fetching an attribute value. The attrPath should be like "$var.attrname".
 
 <a name="FetchAttrPath"></a>
-### func [FetchAttrPath](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L164>)
+### func [FetchAttrPath](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L172>)
 
 ```go
 func FetchAttrPath(key, attrPath string) FetchAttribute
 ```
 
-FetchAttrPath is a convenience for creating FetchAttribute from a dotted path like "$p.name".
+FetchAttrPath is a convenience for creating FetchAttribute from a dotted path like "$p.name". The path is split at the first dot. A path without a dot \(e.g. "$p"\) is treated as a bare variable and compiles to a plain variable fetch.
 
 <a name="FetchAttribute.FetchKey"></a>
-### func \(FetchAttribute\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L455>)
+### func \(FetchAttribute\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L460>)
 
 ```go
 func (f FetchAttribute) FetchKey() string
@@ -468,7 +474,7 @@ func (f FetchAttribute) FetchKey() string
 FetchKey returns the output key for the attribute.
 
 <a name="FetchAttributeList"></a>
-## type [FetchAttributeList](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L472-L479>)
+## type [FetchAttributeList](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L477-L484>)
 
 FetchAttributeList fetches all values of a multi\-value attribute as a list.
 
@@ -484,7 +490,7 @@ type FetchAttributeList struct {
 ```
 
 <a name="FetchAttributeList.FetchKey"></a>
-### func \(FetchAttributeList\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L485>)
+### func \(FetchAttributeList\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L490>)
 
 ```go
 func (f FetchAttributeList) FetchKey() string
@@ -493,7 +499,7 @@ func (f FetchAttributeList) FetchKey() string
 FetchKey returns the output key for the attribute list.
 
 <a name="FetchClause"></a>
-## type [FetchClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L532-L535>)
+## type [FetchClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L537-L540>)
 
 FetchClause defines the output structure of a query.
 
@@ -505,7 +511,7 @@ type FetchClause struct {
 ```
 
 <a name="Fetch"></a>
-### func [Fetch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L35>)
+### func [Fetch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L38>)
 
 ```go
 func Fetch(items ...FetchItem) FetchClause
@@ -514,7 +520,7 @@ func Fetch(items ...FetchItem) FetchClause
 Fetch creates a FetchClause with the given items.
 
 <a name="FetchFunction"></a>
-## type [FetchFunction](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L488-L495>)
+## type [FetchFunction](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L493-L500>)
 
 FetchFunction fetches the result of a function applied to a variable.
 
@@ -530,7 +536,7 @@ type FetchFunction struct {
 ```
 
 <a name="FetchFunc"></a>
-### func [FetchFunc](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L179>)
+### func [FetchFunc](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L186>)
 
 ```go
 func FetchFunc(key, funcName, varName string) FetchFunction
@@ -539,7 +545,7 @@ func FetchFunc(key, funcName, varName string) FetchFunction
 FetchFunc creates a FetchFunction for fetching the result of a function.
 
 <a name="FetchFunction.FetchKey"></a>
-### func \(FetchFunction\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L501>)
+### func \(FetchFunction\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L506>)
 
 ```go
 func (f FetchFunction) FetchKey() string
@@ -548,7 +554,7 @@ func (f FetchFunction) FetchKey() string
 FetchKey returns the output key for the function result.
 
 <a name="FetchItem"></a>
-## type [FetchItem](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L434-L439>)
+## type [FetchItem](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L439-L444>)
 
 FetchItem is the marker interface for items in a 'fetch' clause.
 
@@ -563,7 +569,7 @@ type FetchItem interface {
 ```
 
 <a name="FetchNestedWildcard"></a>
-## type [FetchNestedWildcard](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L518-L523>)
+## type [FetchNestedWildcard](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L523-L528>)
 
 FetchNestedWildcard retrieves all attributes and their values recursively in a nested structure.
 
@@ -577,7 +583,7 @@ type FetchNestedWildcard struct {
 ```
 
 <a name="FetchNestedWildcard.FetchKey"></a>
-### func \(FetchNestedWildcard\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L529>)
+### func \(FetchNestedWildcard\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L534>)
 
 ```go
 func (f FetchNestedWildcard) FetchKey() string
@@ -586,7 +592,7 @@ func (f FetchNestedWildcard) FetchKey() string
 FetchKey returns the output key for the nested wildcard.
 
 <a name="FetchVariable"></a>
-## type [FetchVariable](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L458-L463>)
+## type [FetchVariable](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L463-L468>)
 
 FetchVariable fetches a variable directly.
 
@@ -600,7 +606,7 @@ type FetchVariable struct {
 ```
 
 <a name="FetchVar"></a>
-### func [FetchVar](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L174>)
+### func [FetchVar](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L181>)
 
 ```go
 func FetchVar(key, varName string) FetchVariable
@@ -609,7 +615,7 @@ func FetchVar(key, varName string) FetchVariable
 FetchVar creates a FetchVariable for fetching a variable directly.
 
 <a name="FetchVariable.FetchKey"></a>
-### func \(FetchVariable\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L469>)
+### func \(FetchVariable\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L474>)
 
 ```go
 func (f FetchVariable) FetchKey() string
@@ -618,7 +624,7 @@ func (f FetchVariable) FetchKey() string
 FetchKey returns the output key for the variable.
 
 <a name="FetchWildcard"></a>
-## type [FetchWildcard](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L504-L509>)
+## type [FetchWildcard](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L509-L514>)
 
 FetchWildcard fetches all attributes of a variable.
 
@@ -632,7 +638,7 @@ type FetchWildcard struct {
 ```
 
 <a name="FetchWildcard.FetchKey"></a>
-### func \(FetchWildcard\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L515>)
+### func \(FetchWildcard\) [FetchKey](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L520>)
 
 ```go
 func (f FetchWildcard) FetchKey() string
@@ -641,7 +647,7 @@ func (f FetchWildcard) FetchKey() string
 FetchKey returns the output key for the wildcard.
 
 <a name="FunctionBuilder"></a>
-## type [FunctionBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L183-L185>)
+## type [FunctionBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L191-L193>)
 
 FunctionBuilder is the concrete immutable pre\-output builder for function queries.
 
@@ -652,7 +658,7 @@ type FunctionBuilder struct {
 ```
 
 <a name="FunctionBuilder.Select"></a>
-### func \(FunctionBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L417>)
+### func \(FunctionBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L435>)
 
 ```go
 func (b FunctionBuilder) Select(vars ...string) FunctionResultStage
@@ -661,7 +667,7 @@ func (b FunctionBuilder) Select(vars ...string) FunctionResultStage
 Select transitions function query to output stage.
 
 <a name="FunctionCallValue"></a>
-## type [FunctionCallValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L21-L26>)
+## type [FunctionCallValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L21-L27>)
 
 FunctionCallValue represents a function call in TypeQL, such as iid\($x\).
 
@@ -669,13 +675,14 @@ FunctionCallValue represents a function call in TypeQL, such as iid\($x\).
 type FunctionCallValue struct {
     // Function is the name of the function to call.
     Function string
-    // Args contains the arguments for the function, which can be Value nodes or variable strings.
+    // Args contains the arguments for the function: Value nodes, "$"-prefixed
+    // variable strings, or plain Go values (converted via ValueFromGo).
     Args []any
 }
 ```
 
 <a name="FuncCall"></a>
-### func [FuncCall](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L134>)
+### func [FuncCall](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L140>)
 
 ```go
 func FuncCall(funcName string, args ...any) FunctionCallValue
@@ -684,7 +691,7 @@ func FuncCall(funcName string, args ...any) FunctionCallValue
 FuncCall creates a FunctionCallValue with the given function name and arguments.
 
 <a name="FunctionOutputBuilder"></a>
-## type [FunctionOutputBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L188-L190>)
+## type [FunctionOutputBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L196-L198>)
 
 FunctionOutputBuilder is the concrete immutable output\-stage builder for function queries.
 
@@ -695,7 +702,7 @@ type FunctionOutputBuilder struct {
 ```
 
 <a name="FunctionOutputBuilder.Build"></a>
-### func \(FunctionOutputBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L469>)
+### func \(FunctionOutputBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L487>)
 
 ```go
 func (b FunctionOutputBuilder) Build() (string, error)
@@ -704,7 +711,7 @@ func (b FunctionOutputBuilder) Build() (string, error)
 Build compiles the fluent query into TypeQL.
 
 <a name="FunctionOutputBuilder.BuildNodes"></a>
-### func \(FunctionOutputBuilder\) [BuildNodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L464>)
+### func \(FunctionOutputBuilder\) [BuildNodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L482>)
 
 ```go
 func (b FunctionOutputBuilder) BuildNodes() []QueryNode
@@ -713,7 +720,7 @@ func (b FunctionOutputBuilder) BuildNodes() []QueryNode
 BuildNodes returns the compiled AST node sequence before string compilation.
 
 <a name="FunctionOutputBuilder.Limit"></a>
-### func \(FunctionOutputBuilder\) [Limit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L443>)
+### func \(FunctionOutputBuilder\) [Limit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L461>)
 
 ```go
 func (b FunctionOutputBuilder) Limit(count int) FunctionResultStage
@@ -722,7 +729,7 @@ func (b FunctionOutputBuilder) Limit(count int) FunctionResultStage
 Limit configures a limit clause.
 
 <a name="FunctionOutputBuilder.Nodes"></a>
-### func \(FunctionOutputBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L459>)
+### func \(FunctionOutputBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L477>)
 
 ```go
 func (b FunctionOutputBuilder) Nodes() []QueryNode
@@ -731,7 +738,7 @@ func (b FunctionOutputBuilder) Nodes() []QueryNode
 Nodes returns the compiled AST node sequence before string compilation.
 
 <a name="FunctionOutputBuilder.Offset"></a>
-### func \(FunctionOutputBuilder\) [Offset](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L451>)
+### func \(FunctionOutputBuilder\) [Offset](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L469>)
 
 ```go
 func (b FunctionOutputBuilder) Offset(count int) FunctionResultStage
@@ -740,7 +747,7 @@ func (b FunctionOutputBuilder) Offset(count int) FunctionResultStage
 Offset configures an offset clause.
 
 <a name="FunctionOutputBuilder.Select"></a>
-### func \(FunctionOutputBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L426>)
+### func \(FunctionOutputBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L444>)
 
 ```go
 func (b FunctionOutputBuilder) Select(vars ...string) FunctionResultStage
@@ -749,7 +756,7 @@ func (b FunctionOutputBuilder) Select(vars ...string) FunctionResultStage
 Select adds additional selected variables in output stage.
 
 <a name="FunctionOutputBuilder.Sort"></a>
-### func \(FunctionOutputBuilder\) [Sort](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L435>)
+### func \(FunctionOutputBuilder\) [Sort](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L453>)
 
 ```go
 func (b FunctionOutputBuilder) Sort(variable, direction string) FunctionResultStage
@@ -758,7 +765,7 @@ func (b FunctionOutputBuilder) Sort(variable, direction string) FunctionResultSt
 Sort configures a sort clause.
 
 <a name="FunctionResultStage"></a>
-## type [FunctionResultStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L162-L170>)
+## type [FunctionResultStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L170-L178>)
 
 FunctionResultStage is the output stage for function queries.
 
@@ -775,7 +782,7 @@ type FunctionResultStage interface {
 ```
 
 <a name="FunctionStage"></a>
-## type [FunctionStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L157-L159>)
+## type [FunctionStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L165-L167>)
 
 FunctionStage is the pre\-output stage for function\-based match\-let queries.
 
@@ -786,7 +793,7 @@ type FunctionStage interface {
 ```
 
 <a name="MatchFunction"></a>
-### func [MatchFunction](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L210>)
+### func [MatchFunction](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L218>)
 
 ```go
 func MatchFunction(funcName string, args ...any) FunctionStage
@@ -795,7 +802,7 @@ func MatchFunction(funcName string, args ...any) FunctionStage
 MatchFunction starts a fluent function query compiled as match\-let.
 
 <a name="HasConstraint"></a>
-## type [HasConstraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L86-L91>)
+## type [HasConstraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L89-L95>)
 
 HasConstraint checks if a thing has a specific attribute with a given value.
 
@@ -803,22 +810,23 @@ HasConstraint checks if a thing has a specific attribute with a given value.
 type HasConstraint struct {
     // AttrName is the name of the attribute type.
     AttrName string
-    // Value is the value of the attribute (Value or variable string).
+    // Value is the value of the attribute: a Value node, a "$"-prefixed
+    // variable string, or a plain Go value (converted via ValueFromGo).
     Value any
 }
 ```
 
 <a name="Has"></a>
-### func [Has](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L89>)
+### func [Has](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L95>)
 
 ```go
 func Has(attrName string, value any) HasConstraint
 ```
 
-Has creates a HasConstraint for the given attribute name and value. The value can be any Go value that will be formatted via FormatGoValue.
+Has creates a HasConstraint for the given attribute name and value. The value can be a Value node \(Str, Long, ...\), a string beginning with "$" \(treated as a variable reference\), or any other Go value, which is converted via ValueFromGo and emitted as a quoted/escaped TypeQL literal. To match a literal string that begins with "$", wrap it in Str.
 
 <a name="HasPattern"></a>
-## type [HasPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L172-L179>)
+## type [HasPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L176-L183>)
 
 HasPattern represents a pattern where a thing has an attribute assignment \($x has Type $v\).
 
@@ -834,7 +842,7 @@ type HasPattern struct {
 ```
 
 <a name="HasStatement"></a>
-## type [HasStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L253-L260>)
+## type [HasStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L258-L265>)
 
 HasStatement assigns an attribute value to a subject variable.
 
@@ -850,7 +858,7 @@ type HasStatement struct {
 ```
 
 <a name="HasStmt"></a>
-### func [HasStmt](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L140>)
+### func [HasStmt](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L146>)
 
 ```go
 func HasStmt(subjectVar, attrName string, value Value) HasStatement
@@ -876,7 +884,7 @@ var DefaultIdentifierMatcher IdentifierMatcher = PrefixIdentifierMatcher{Prefix:
 ```
 
 <a name="IidConstraint"></a>
-## type [IidConstraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L77-L80>)
+## type [IidConstraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L80-L83>)
 
 IidConstraint matches a thing by its internal instance ID \(IID\).
 
@@ -888,7 +896,7 @@ type IidConstraint struct {
 ```
 
 <a name="Iid"></a>
-### func [Iid](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L104>)
+### func [Iid](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L110>)
 
 ```go
 func Iid(iid string) IidConstraint
@@ -897,7 +905,7 @@ func Iid(iid string) IidConstraint
 Iid creates an IidConstraint for the given IID value.
 
 <a name="IidPattern"></a>
-## type [IidPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L216-L221>)
+## type [IidPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L221-L226>)
 
 IidPattern represents a pattern matching a thing by its IID \($x iid 0x...\).
 
@@ -911,7 +919,7 @@ type IidPattern struct {
 ```
 
 <a name="InsertClause"></a>
-## type [InsertClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L356-L359>)
+## type [InsertClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L361-L364>)
 
 InsertClause represents an 'insert' clause containing one or more statements.
 
@@ -923,7 +931,7 @@ type InsertClause struct {
 ```
 
 <a name="Insert"></a>
-### func [Insert](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L15>)
+### func [Insert](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L18>)
 
 ```go
 func Insert(statements ...Statement) InsertClause
@@ -932,7 +940,7 @@ func Insert(statements ...Statement) InsertClause
 Insert creates an InsertClause with the given statements.
 
 <a name="IsaConstraint"></a>
-## type [IsaConstraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L97-L102>)
+## type [IsaConstraint](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L101-L106>)
 
 IsaConstraint checks if a thing is an instance of a specific type.
 
@@ -946,7 +954,7 @@ type IsaConstraint struct {
 ```
 
 <a name="Isa"></a>
-### func [Isa](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L94>)
+### func [Isa](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L100>)
 
 ```go
 func Isa(typeName string) IsaConstraint
@@ -955,7 +963,7 @@ func Isa(typeName string) IsaConstraint
 Isa creates an IsaConstraint for the given type name.
 
 <a name="IsaExact"></a>
-### func [IsaExact](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L99>)
+### func [IsaExact](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L105>)
 
 ```go
 func IsaExact(typeName string) IsaConstraint
@@ -964,7 +972,7 @@ func IsaExact(typeName string) IsaConstraint
 IsaExact creates a strict IsaConstraint \(isa\!\) for the given type name.
 
 <a name="IsaStatement"></a>
-## type [IsaStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L266-L271>)
+## type [IsaStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L271-L276>)
 
 IsaStatement defines the type of a variable in an insert statement.
 
@@ -978,7 +986,7 @@ type IsaStatement struct {
 ```
 
 <a name="IsaStmt"></a>
-### func [IsaStmt](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L145>)
+### func [IsaStmt](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L151>)
 
 ```go
 func IsaStmt(variable, typeName string) IsaStatement
@@ -987,7 +995,7 @@ func IsaStmt(variable, typeName string) IsaStatement
 IsaStmt creates an IsaStatement for the given variable and type name.
 
 <a name="LetAssignment"></a>
-## type [LetAssignment](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L333-L340>)
+## type [LetAssignment](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L338-L345>)
 
 LetAssignment represents an assignment in a 'match let' clause.
 
@@ -1003,7 +1011,7 @@ type LetAssignment struct {
 ```
 
 <a name="LimitClause"></a>
-## type [LimitClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L423-L426>)
+## type [LimitClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L428-L431>)
 
 LimitClause represents a 'limit' clause for restricting result count.
 
@@ -1015,7 +1023,7 @@ type LimitClause struct {
 ```
 
 <a name="Limit"></a>
-### func [Limit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L59>)
+### func [Limit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L62>)
 
 ```go
 func Limit(count int) LimitClause
@@ -1024,7 +1032,7 @@ func Limit(count int) LimitClause
 Limit creates a LimitClause with the given count.
 
 <a name="LiteralValue"></a>
-## type [LiteralValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L32-L37>)
+## type [LiteralValue](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L33-L38>)
 
 LiteralValue represents a literal value such as a string, number, or boolean.
 
@@ -1038,7 +1046,7 @@ type LiteralValue struct {
 ```
 
 <a name="Bool"></a>
-### func [Bool](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L129>)
+### func [Bool](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L135>)
 
 ```go
 func Bool(b bool) LiteralValue
@@ -1047,7 +1055,7 @@ func Bool(b bool) LiteralValue
 Bool creates a boolean LiteralValue.
 
 <a name="Double"></a>
-### func [Double](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L124>)
+### func [Double](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L130>)
 
 ```go
 func Double(f float64) LiteralValue
@@ -1056,7 +1064,7 @@ func Double(f float64) LiteralValue
 Double creates a double LiteralValue.
 
 <a name="Lit"></a>
-### func [Lit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L109>)
+### func [Lit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L115>)
 
 ```go
 func Lit(value any, valueType string) LiteralValue
@@ -1065,7 +1073,7 @@ func Lit(value any, valueType string) LiteralValue
 Lit creates a LiteralValue with the given value and type.
 
 <a name="Long"></a>
-### func [Long](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L119>)
+### func [Long](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L125>)
 
 ```go
 func Long(n int64) LiteralValue
@@ -1074,7 +1082,7 @@ func Long(n int64) LiteralValue
 Long creates an integer LiteralValue.
 
 <a name="Str"></a>
-### func [Str](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L114>)
+### func [Str](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L120>)
 
 ```go
 func Str(s string) LiteralValue
@@ -1083,7 +1091,7 @@ func Str(s string) LiteralValue
 Str creates a string LiteralValue.
 
 <a name="MatchBuilder"></a>
-## type [MatchBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L173-L175>)
+## type [MatchBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L181-L183>)
 
 MatchBuilder is the concrete immutable builder for entity\-first match queries.
 
@@ -1094,16 +1102,16 @@ type MatchBuilder struct {
 ```
 
 <a name="MatchBuilder.Build"></a>
-### func \(MatchBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L354>)
+### func \(MatchBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L371>)
 
 ```go
 func (b MatchBuilder) Build() (string, error)
 ```
 
-Build compiles the fluent query into TypeQL.
+Build compiles the fluent query into TypeQL. It returns any deferred builder error \(e.g. a constraint that could not be attached\) instead of silently dropping the offending clause.
 
 <a name="MatchBuilder.BuildNodes"></a>
-### func \(MatchBuilder\) [BuildNodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L349>)
+### func \(MatchBuilder\) [BuildNodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L364>)
 
 ```go
 func (b MatchBuilder) BuildNodes() []QueryNode
@@ -1112,7 +1120,7 @@ func (b MatchBuilder) BuildNodes() []QueryNode
 BuildNodes returns the compiled AST node sequence before string compilation.
 
 <a name="MatchBuilder.DeleteHas"></a>
-### func \(MatchBuilder\) [DeleteHas](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L292>)
+### func \(MatchBuilder\) [DeleteHas](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L307>)
 
 ```go
 func (b MatchBuilder) DeleteHas(attrVar, ownerVar string) MatchStage
@@ -1121,7 +1129,7 @@ func (b MatchBuilder) DeleteHas(attrVar, ownerVar string) MatchStage
 DeleteHas emits an explicit delete\-has statement.
 
 <a name="MatchBuilder.DeleteThing"></a>
-### func \(MatchBuilder\) [DeleteThing](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L318>)
+### func \(MatchBuilder\) [DeleteThing](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L333>)
 
 ```go
 func (b MatchBuilder) DeleteThing() MatchStage
@@ -1130,7 +1138,7 @@ func (b MatchBuilder) DeleteThing() MatchStage
 DeleteThing deletes the primary matched variable.
 
 <a name="MatchBuilder.Fetch"></a>
-### func \(MatchBuilder\) [Fetch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L325>)
+### func \(MatchBuilder\) [Fetch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L340>)
 
 ```go
 func (b MatchBuilder) Fetch(varName string, attrNames ...string) MatchResultStage
@@ -1139,25 +1147,25 @@ func (b MatchBuilder) Fetch(varName string, attrNames ...string) MatchResultStag
 Fetch fetches one or more attributes from a variable.
 
 <a name="MatchBuilder.Has"></a>
-### func \(MatchBuilder\) [Has](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L236>)
+### func \(MatchBuilder\) [Has](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L247>)
 
 ```go
 func (b MatchBuilder) Has(attrName string, value any) MatchStage
 ```
 
-Has adds a has constraint to the primary matched variable.
+Has adds a has constraint to the primary matched variable. It requires the first match pattern to be an EntityPattern \(as produced by FluentMatch or an entity\-first FluentPatterns\); otherwise a deferred error is recorded and returned by Build.
 
 <a name="MatchBuilder.Iid"></a>
-### func \(MatchBuilder\) [Iid](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L243>)
+### func \(MatchBuilder\) [Iid](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L256>)
 
 ```go
 func (b MatchBuilder) Iid(iid string) MatchStage
 ```
 
-Iid adds an iid constraint to the primary matched variable.
+Iid adds an iid constraint to the primary matched variable. Like Has, it requires an entity\-first builder; otherwise a deferred error is recorded and returned by Build.
 
 <a name="MatchBuilder.InsertHas"></a>
-### func \(MatchBuilder\) [InsertHas](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L307>)
+### func \(MatchBuilder\) [InsertHas](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L322>)
 
 ```go
 func (b MatchBuilder) InsertHas(ownerVar, attrName string, value any) MatchStage
@@ -1166,7 +1174,7 @@ func (b MatchBuilder) InsertHas(ownerVar, attrName string, value any) MatchStage
 InsertHas emits an explicit has insert statement.
 
 <a name="MatchBuilder.Let"></a>
-### func \(MatchBuilder\) [Let](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L275>)
+### func \(MatchBuilder\) [Let](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L290>)
 
 ```go
 func (b MatchBuilder) Let(assignments ...LetAssignment) MatchStage
@@ -1175,16 +1183,16 @@ func (b MatchBuilder) Let(assignments ...LetAssignment) MatchStage
 Let appends let assignments to the match clause.
 
 <a name="MatchBuilder.MatchByIdentifier"></a>
-### func \(MatchBuilder\) [MatchByIdentifier](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L250>)
+### func \(MatchBuilder\) [MatchByIdentifier](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L265>)
 
 ```go
 func (b MatchBuilder) MatchByIdentifier(identifier, attrName string, matcher IdentifierMatcher) MatchStage
 ```
 
-MatchByIdentifier matches by IID \(as determined by matcher\) or falls back to attribute matching.
+MatchByIdentifier matches by IID \(as determined by matcher\) or falls back to attribute matching. Like Has and Iid, it requires an entity\-first builder; otherwise a deferred error is recorded and returned by Build.
 
 <a name="MatchBuilder.Nodes"></a>
-### func \(MatchBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L344>)
+### func \(MatchBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L359>)
 
 ```go
 func (b MatchBuilder) Nodes() []QueryNode
@@ -1193,7 +1201,7 @@ func (b MatchBuilder) Nodes() []QueryNode
 Nodes returns the compiled AST node sequence before string compilation.
 
 <a name="MatchBuilder.Or"></a>
-### func \(MatchBuilder\) [Or](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L268>)
+### func \(MatchBuilder\) [Or](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L283>)
 
 ```go
 func (b MatchBuilder) Or(alternatives ...[]Pattern) MatchStage
@@ -1202,7 +1210,7 @@ func (b MatchBuilder) Or(alternatives ...[]Pattern) MatchStage
 Or appends an or\-pattern with alternatives to the match clause.
 
 <a name="MatchBuilder.Select"></a>
-### func \(MatchBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L335>)
+### func \(MatchBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L350>)
 
 ```go
 func (b MatchBuilder) Select(vars ...string) MatchResultStage
@@ -1211,7 +1219,7 @@ func (b MatchBuilder) Select(vars ...string) MatchResultStage
 Select adds a select clause with projected variables.
 
 <a name="MatchBuilder.Set"></a>
-### func \(MatchBuilder\) [Set](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L282>)
+### func \(MatchBuilder\) [Set](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L297>)
 
 ```go
 func (b MatchBuilder) Set(attrName string, value any) MatchStage
@@ -1220,7 +1228,7 @@ func (b MatchBuilder) Set(attrName string, value any) MatchStage
 Set emits a standard Match\-Delete\-Insert sequence for updating one attribute.
 
 <a name="MatchBuilder.Where"></a>
-### func \(MatchBuilder\) [Where](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L261>)
+### func \(MatchBuilder\) [Where](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L276>)
 
 ```go
 func (b MatchBuilder) Where(patterns ...Pattern) MatchStage
@@ -1229,7 +1237,7 @@ func (b MatchBuilder) Where(patterns ...Pattern) MatchStage
 Where appends arbitrary patterns to the match clause.
 
 <a name="MatchClause"></a>
-## type [MatchClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L324-L327>)
+## type [MatchClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L329-L332>)
 
 MatchClause represents a 'match' clause containing one or more patterns.
 
@@ -1241,7 +1249,7 @@ type MatchClause struct {
 ```
 
 <a name="Match"></a>
-### func [Match](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L10>)
+### func [Match](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L13>)
 
 ```go
 func Match(patterns ...Pattern) MatchClause
@@ -1250,7 +1258,7 @@ func Match(patterns ...Pattern) MatchClause
 Match creates a MatchClause with the given patterns.
 
 <a name="MatchLetClause"></a>
-## type [MatchLetClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L345-L350>)
+## type [MatchLetClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L350-L355>)
 
 MatchLetClause represents a 'match' clause using 'let' assignments.
 
@@ -1264,7 +1272,7 @@ type MatchLetClause struct {
 ```
 
 <a name="MatchOutputBuilder"></a>
-## type [MatchOutputBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L178-L180>)
+## type [MatchOutputBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L186-L188>)
 
 MatchOutputBuilder is the concrete immutable output\-stage builder for match queries.
 
@@ -1275,16 +1283,16 @@ type MatchOutputBuilder struct {
 ```
 
 <a name="MatchOutputBuilder.Build"></a>
-### func \(MatchOutputBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L412>)
+### func \(MatchOutputBuilder\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L430>)
 
 ```go
 func (b MatchOutputBuilder) Build() (string, error)
 ```
 
-Build compiles the fluent query into TypeQL.
+Build compiles the fluent query into TypeQL. It returns any deferred builder error carried over from earlier stages.
 
 <a name="MatchOutputBuilder.BuildNodes"></a>
-### func \(MatchOutputBuilder\) [BuildNodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L407>)
+### func \(MatchOutputBuilder\) [BuildNodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L424>)
 
 ```go
 func (b MatchOutputBuilder) BuildNodes() []QueryNode
@@ -1293,7 +1301,7 @@ func (b MatchOutputBuilder) BuildNodes() []QueryNode
 BuildNodes returns the compiled AST node sequence before string compilation.
 
 <a name="MatchOutputBuilder.Fetch"></a>
-### func \(MatchOutputBuilder\) [Fetch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L359>)
+### func \(MatchOutputBuilder\) [Fetch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L376>)
 
 ```go
 func (b MatchOutputBuilder) Fetch(varName string, attrNames ...string) MatchResultStage
@@ -1302,7 +1310,7 @@ func (b MatchOutputBuilder) Fetch(varName string, attrNames ...string) MatchResu
 Fetch adds fetch attributes in output stage.
 
 <a name="MatchOutputBuilder.Limit"></a>
-### func \(MatchOutputBuilder\) [Limit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L386>)
+### func \(MatchOutputBuilder\) [Limit](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L403>)
 
 ```go
 func (b MatchOutputBuilder) Limit(count int) MatchResultStage
@@ -1311,7 +1319,7 @@ func (b MatchOutputBuilder) Limit(count int) MatchResultStage
 Limit configures a limit clause in output stage.
 
 <a name="MatchOutputBuilder.Nodes"></a>
-### func \(MatchOutputBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L402>)
+### func \(MatchOutputBuilder\) [Nodes](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L419>)
 
 ```go
 func (b MatchOutputBuilder) Nodes() []QueryNode
@@ -1320,7 +1328,7 @@ func (b MatchOutputBuilder) Nodes() []QueryNode
 Nodes returns the compiled AST node sequence before string compilation.
 
 <a name="MatchOutputBuilder.Offset"></a>
-### func \(MatchOutputBuilder\) [Offset](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L394>)
+### func \(MatchOutputBuilder\) [Offset](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L411>)
 
 ```go
 func (b MatchOutputBuilder) Offset(count int) MatchResultStage
@@ -1329,7 +1337,7 @@ func (b MatchOutputBuilder) Offset(count int) MatchResultStage
 Offset configures an offset clause in output stage.
 
 <a name="MatchOutputBuilder.Select"></a>
-### func \(MatchOutputBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L369>)
+### func \(MatchOutputBuilder\) [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L386>)
 
 ```go
 func (b MatchOutputBuilder) Select(vars ...string) MatchResultStage
@@ -1338,7 +1346,7 @@ func (b MatchOutputBuilder) Select(vars ...string) MatchResultStage
 Select adds a select clause with projected variables in output stage.
 
 <a name="MatchOutputBuilder.Sort"></a>
-### func \(MatchOutputBuilder\) [Sort](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L378>)
+### func \(MatchOutputBuilder\) [Sort](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L395>)
 
 ```go
 func (b MatchOutputBuilder) Sort(variable, direction string) MatchResultStage
@@ -1347,7 +1355,7 @@ func (b MatchOutputBuilder) Sort(variable, direction string) MatchResultStage
 Sort configures a sort clause in output stage.
 
 <a name="MatchResultStage"></a>
-## type [MatchResultStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L145-L154>)
+## type [MatchResultStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L153-L162>)
 
 MatchResultStage is the output stage for match queries. It supports fetch/select output shaping and pagination/sorting.
 
@@ -1365,7 +1373,7 @@ type MatchResultStage interface {
 ```
 
 <a name="MatchStage"></a>
-## type [MatchStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L125-L141>)
+## type [MatchStage](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L133-L149>)
 
 MatchStage is the pre\-output stage for match queries. It supports matching/mutation operations and can transition to MatchResultStage.
 
@@ -1390,7 +1398,7 @@ type MatchStage interface {
 ```
 
 <a name="FluentMatch"></a>
-### func [FluentMatch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L193>)
+### func [FluentMatch](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L201>)
 
 ```go
 func FluentMatch(varName, typeName string) MatchStage
@@ -1399,7 +1407,7 @@ func FluentMatch(varName, typeName string) MatchStage
 FluentMatch starts a fluent query with a primary matched variable/type.
 
 <a name="FluentPatterns"></a>
-### func [FluentPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L202>)
+### func [FluentPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/ast/fluent.go#L210>)
 
 ```go
 func FluentPatterns(patterns ...Pattern) MatchStage
@@ -1408,7 +1416,7 @@ func FluentPatterns(patterns ...Pattern) MatchStage
 FluentPatterns starts a fluent query from arbitrary match patterns.
 
 <a name="NotPattern"></a>
-## type [NotPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L198-L201>)
+## type [NotPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L203-L206>)
 
 NotPattern represents a negation of one or more patterns \(not \{ ... \}\).
 
@@ -1420,7 +1428,7 @@ type NotPattern struct {
 ```
 
 <a name="OffsetClause"></a>
-## type [OffsetClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L414-L417>)
+## type [OffsetClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L419-L422>)
 
 OffsetClause represents an 'offset' clause for skipping results.
 
@@ -1432,7 +1440,7 @@ type OffsetClause struct {
 ```
 
 <a name="Offset"></a>
-### func [Offset](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L54>)
+### func [Offset](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L57>)
 
 ```go
 func Offset(count int) OffsetClause
@@ -1441,7 +1449,7 @@ func Offset(count int) OffsetClause
 Offset creates an OffsetClause with the given count.
 
 <a name="OrPattern"></a>
-## type [OrPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L207-L210>)
+## type [OrPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L212-L215>)
 
 OrPattern represents a disjunction of multiple pattern alternatives \(\{ ... \} or \{ ... \}\).
 
@@ -1453,7 +1461,7 @@ type OrPattern struct {
 ```
 
 <a name="Or"></a>
-### func [Or](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L196>)
+### func [Or](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L206>)
 
 ```go
 func Or(alternatives ...[]Pattern) OrPattern
@@ -1478,7 +1486,7 @@ type PaginatedSearchOptions struct {
 ```
 
 <a name="Pattern"></a>
-## type [Pattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L110-L113>)
+## type [Pattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L114-L117>)
 
 Pattern is the marker interface for patterns used in a match clause.
 
@@ -1510,7 +1518,7 @@ func (m PrefixIdentifierMatcher) IsIID(identifier string) bool
 IsIID reports whether identifier matches the configured IID prefix.
 
 <a name="PutClause"></a>
-## type [PutClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L384-L387>)
+## type [PutClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L389-L392>)
 
 PutClause represents a 'put' clause \(upsert\) containing one or more statements. Put inserts if not exists, or skips if already exists \(based on key attributes\).
 
@@ -1522,7 +1530,7 @@ type PutClause struct {
 ```
 
 <a name="Put"></a>
-### func [Put](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L20>)
+### func [Put](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L23>)
 
 ```go
 func Put(statements ...Statement) PutClause
@@ -1542,7 +1550,7 @@ type QueryNode interface {
 ```
 
 <a name="RawPattern"></a>
-## type [RawPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L227-L230>)
+## type [RawPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L232-L235>)
 
 RawPattern represents a raw TypeQL string pattern, typically for legacy support.
 
@@ -1554,7 +1562,7 @@ type RawPattern struct {
 ```
 
 <a name="RawStatement"></a>
-## type [RawStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L244-L247>)
+## type [RawStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L249-L252>)
 
 RawStatement represents a raw TypeQL string statement.
 
@@ -1566,7 +1574,7 @@ type RawStatement struct {
 ```
 
 <a name="ReduceAssignment"></a>
-## type [ReduceAssignment](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L555-L560>)
+## type [ReduceAssignment](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L562-L568>)
 
 ReduceAssignment represents an assignment in a 'reduce' clause.
 
@@ -1574,13 +1582,14 @@ ReduceAssignment represents an assignment in a 'reduce' clause.
 type ReduceAssignment struct {
     // Variable is the variable receiving the aggregated value.
     Variable string
-    // Expression is the aggregation expression (AggregateExpr or variable string).
+    // Expression is the aggregation expression: an AggregateExpr, a Value
+    // such as FunctionCallValue, or a raw expression string (e.g. "count($p)").
     Expression any
 }
 ```
 
 <a name="ReduceClause"></a>
-## type [ReduceClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L565-L570>)
+## type [ReduceClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L573-L578>)
 
 ReduceClause represents a 'reduce' clause for performing aggregations in TypeQL.
 
@@ -1594,7 +1603,7 @@ type ReduceClause struct {
 ```
 
 <a name="RelationPattern"></a>
-## type [RelationPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L131-L142>)
+## type [RelationPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L135-L146>)
 
 RelationPattern matches a relation with its role players and optional constraints.
 
@@ -1614,7 +1623,7 @@ type RelationPattern struct {
 ```
 
 <a name="Relation"></a>
-### func [Relation](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L73>)
+### func [Relation](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L76>)
 
 ```go
 func Relation(varName, typeName string, rolePlayers []RolePlayer, constraints ...Constraint) RelationPattern
@@ -1623,7 +1632,7 @@ func Relation(varName, typeName string, rolePlayers []RolePlayer, constraints ..
 Relation creates a RelationPattern with the given variable, type, role players, and constraints.
 
 <a name="RelationStatement"></a>
-## type [RelationStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L278-L289>)
+## type [RelationStatement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L283-L294>)
 
 RelationStatement defines a relation and its participants for an insert statement. In TypeDB 3.x, relations in insert statements often don't use a variable prefix.
 
@@ -1643,7 +1652,7 @@ type RelationStatement struct {
 ```
 
 <a name="RelationStmt"></a>
-### func [RelationStmt](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L150>)
+### func [RelationStmt](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L156>)
 
 ```go
 func RelationStmt(typeName string, rolePlayers ...RolePlayer) RelationStatement
@@ -1652,7 +1661,7 @@ func RelationStmt(typeName string, rolePlayers ...RolePlayer) RelationStatement
 RelationStmt creates a RelationStatement with the given relation type and role players.
 
 <a name="RolePlayer"></a>
-## type [RolePlayer](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L59-L64>)
+## type [RolePlayer](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L62-L67>)
 
 RolePlayer represents a role player in a relation, mapping a role name to a player variable.
 
@@ -1666,7 +1675,7 @@ type RolePlayer struct {
 ```
 
 <a name="Role"></a>
-### func [Role](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L83>)
+### func [Role](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L86>)
 
 ```go
 func Role(roleName, playerVar string) RolePlayer
@@ -1675,7 +1684,7 @@ func Role(roleName, playerVar string) RolePlayer
 Role creates a RolePlayer with the given role name and player variable.
 
 <a name="SelectClause"></a>
-## type [SelectClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L394-L397>)
+## type [SelectClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L399-L402>)
 
 SelectClause represents a 'select' clause for variable projection. Compiles to: select $var1, $var2, ...;
 
@@ -1687,7 +1696,7 @@ type SelectClause struct {
 ```
 
 <a name="Select"></a>
-### func [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L44>)
+### func [Select](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L47>)
 
 ```go
 func Select(variables ...string) SelectClause
@@ -1696,7 +1705,7 @@ func Select(variables ...string) SelectClause
 Select creates a SelectClause for variable projection.
 
 <a name="SortClause"></a>
-## type [SortClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L403-L408>)
+## type [SortClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L408-L413>)
 
 SortClause represents a 'sort' clause for ordering query results.
 
@@ -1710,7 +1719,7 @@ type SortClause struct {
 ```
 
 <a name="Sort"></a>
-### func [Sort](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L49>)
+### func [Sort](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L52>)
 
 ```go
 func Sort(variable, direction string) SortClause
@@ -1719,7 +1728,7 @@ func Sort(variable, direction string) SortClause
 Sort creates a SortClause for the given variable and direction.
 
 <a name="Statement"></a>
-## type [Statement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L238-L241>)
+## type [Statement](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L243-L246>)
 
 Statement is the marker interface for statements used in insert, delete, or update clauses.
 
@@ -1731,7 +1740,7 @@ type Statement interface {
 ```
 
 <a name="SubTypePattern"></a>
-## type [SubTypePattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L148-L153>)
+## type [SubTypePattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L152-L157>)
 
 SubTypePattern matches types that are subtypes of a parent type \($t sub type\).
 
@@ -1745,7 +1754,7 @@ type SubTypePattern struct {
 ```
 
 <a name="UpdateClause"></a>
-## type [UpdateClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L374-L377>)
+## type [UpdateClause](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L379-L382>)
 
 UpdateClause represents an 'update' clause containing one or more statements.
 
@@ -1757,7 +1766,7 @@ type UpdateClause struct {
 ```
 
 <a name="Update"></a>
-### func [Update](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L30>)
+### func [Update](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L33>)
 
 ```go
 func Update(statements ...Statement) UpdateClause
@@ -1778,16 +1787,18 @@ type Value interface {
 ```
 
 <a name="ValueFromGo"></a>
-### func [ValueFromGo](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L203>)
+### func [ValueFromGo](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L234>)
 
 ```go
 func ValueFromGo(val any) Value
 ```
 
-ValueFromGo converts a Go value to an AST Value node. Handles common types: string, int, int64, float64, bool, time.Time. Falls back to string representation for unknown types.
+ValueFromGo converts a Go value to an AST Value node. It handles strings, booleans, all integer and unsigned integer widths, floats, time.Time, and \(via reflection\) pointers and named types of those kinds; other types fall back to their string representation. A nil value \(or nil pointer\) yields a Value whose compilation fails with a descriptive error rather than silently becoming an empty string.
+
+A time.Time becomes a plain "datetime" value: the instant is stored as UTC and compiles to a naive \(zone\-less\) datetime literal. Use Lit\(t, "datetime\-tz"\) or Lit\(t, "date"\) for the other temporal literal kinds.
 
 <a name="ValueComparisonPattern"></a>
-## type [ValueComparisonPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L185-L192>)
+## type [ValueComparisonPattern](<https://github.com/CaliLuke/go-typeql/blob/main/ast/nodes.go#L189-L197>)
 
 ValueComparisonPattern represents a comparison between a variable and a value \($v \> 10\).
 
@@ -1797,18 +1808,19 @@ type ValueComparisonPattern struct {
     Var string
     // Operator is the comparison operator (e.g., >, <, ==).
     Operator string
-    // Value is the value to compare against (Value or variable string).
+    // Value is the value to compare against: a Value node, a "$"-prefixed
+    // variable string, or a plain Go value (converted via ValueFromGo).
     Value any
 }
 ```
 
 <a name="Cmp"></a>
-### func [Cmp](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L190>)
+### func [Cmp](<https://github.com/CaliLuke/go-typeql/blob/main/ast/builders.go#L200>)
 
 ```go
 func Cmp(variable, operator string, value any) ValueComparisonPattern
 ```
 
-Cmp creates a ValueComparisonPattern for comparing a variable to a value.
+Cmp creates a ValueComparisonPattern for comparing a variable to a value. The value can be a Value node, a string beginning with "$" \(treated as a variable reference\), or any other Go value, which is converted via ValueFromGo and emitted as a quoted/escaped TypeQL literal.
 
 Generated by [gomarkdoc](<https://github.com/princjef/gomarkdoc>)

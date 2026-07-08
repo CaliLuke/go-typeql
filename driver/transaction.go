@@ -380,8 +380,10 @@ func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, l
 	defer C.free(unsafe.Pointer(cQuery))
 
 	var cOpts unsafe.Pointer
+	registerConcepts := false
 	if opts != nil {
 		cOpts = opts.ptr
+		registerConcepts = opts.conceptHandles
 	}
 
 	incActiveTxQuery("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_op", queryOp, "query_fingerprint", queryFP, "reason", "start")
@@ -393,9 +395,9 @@ func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, l
 	if rows != nil {
 		cRows := C.CString(string(rowsJSON))
 		defer C.free(unsafe.Pointer(cRows))
-		buf = C.typedb_transaction_query_with_rows(t.ptr, cQuery, cOpts, cRows, &outLen, &queryErr)
+		buf = C.typedb_transaction_query_with_rows(t.ptr, cQuery, cOpts, cRows, C.bool(registerConcepts), &outLen, &queryErr)
 	} else {
-		buf = C.typedb_transaction_query(t.ptr, cQuery, cOpts, &outLen, &queryErr)
+		buf = C.typedb_transaction_query(t.ptr, cQuery, cOpts, C.bool(registerConcepts), &outLen, &queryErr)
 	}
 	if buf == nil {
 		if err := withQuery(getError(queryErr), query); err != nil {

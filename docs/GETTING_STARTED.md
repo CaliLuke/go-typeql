@@ -1,6 +1,6 @@
 # Getting Started
 
-This walkthrough connects to TypeDB, creates a database, defines a schema, and does basic CRUD. It assumes you have TypeDB running on port 1729. If you use the repo `docker-compose.yml` via `docker compose up -d`, connect to host port `1730` instead.
+This walkthrough connects to TypeDB, creates a database, defines a schema, and does basic CRUD. It assumes you have TypeDB running on port 1729. If you use the repo `docker-compose.yml` via `docker compose up -d`, the server is exposed on host port `1730` while it advertises its internal `127.0.0.1:1729` address, so connect with an explicit address translation as shown below.
 
 ```go
 package main
@@ -44,8 +44,13 @@ func main() {
     gotype.Register[Company]()
     gotype.Register[Employment]()
 
-    // 3. Connect to TypeDB.
-    conn, err := driver.Open("localhost:1730", "admin", "password")
+    // 3. Connect to TypeDB. For a native server on the default port this is
+    // simply driver.Open("localhost:1729", "admin", "password"). The repo
+    // compose setup maps host port 1730 to the container's 1729, so tell the
+    // driver about the mapping explicitly:
+    conn, err := driver.OpenWithOptions("localhost:1730", "admin", "password", driver.DriverOptions{
+        AddressTranslation: map[string]string{"localhost:1730": "127.0.0.1:1729"},
+    })
     if err != nil {
         log.Fatal(err)
     }

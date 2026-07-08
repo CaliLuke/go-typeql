@@ -1046,6 +1046,450 @@ func TestRunSequentialMigrations_ChecksumMismatch(t *testing.T) {
 	}
 }
 
+// --- #59: WithSeqTarget must not overshoot ---
+
+func TestRunSequentialMigrations_TargetNotFound(t *testing.T) {
+	var executed []string
+	makeMigration := func(name string) SequentialMigration {
+		n := name
+		return SequentialMigration{
+			Name: n,
+			Up: func(ctx context.Context, db *Database) error {
+				executed = append(executed, n)
+				return nil
+			},
+		}
+	}
+
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		makeMigration("001_first"),
+		makeMigration("002_add_email"),
+	}
+
+	// Typo'd target: must error instead of silently applying everything.
+	_, err := RunSequentialMigrations(context.Background(), db, migrations, WithSeqTarget("002_add_emial"))
+	if err == nil {
+		t.Fatal("expected error for unknown target")
+	}
+	if !strings.Contains(err.Error(), "002_add_emial") || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should name the missing target: %v", err)
+	}
+	if len(executed) != 0 {
+		t.Errorf("no migration should run for an unknown target, executed: %v", executed)
+	}
+}
+
+func TestRunSequentialMigrations_TargetNotFound_DryRun(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	noop := func(ctx context.Context, db *Database) error { return nil }
+	migrations := []SequentialMigration{{Name: "001_first", Up: noop}}
+
+	_, err := RunSequentialMigrations(context.Background(), db, migrations,
+		WithSeqDryRun(), WithSeqTarget("nope"))
+	if err == nil {
+		t.Fatal("expected error for unknown target in dry-run mode")
+	}
+}
+
+func TestRunSequentialMigrations_TargetAlreadyApplied(t *testing.T) {
+	var executed []string
+	makeMigration := func(name string) SequentialMigration {
+		n := name
+		return SequentialMigration{
+			Name: n,
+			Up: func(ctx context.Context, db *Database) error {
+				executed = append(executed, n)
+				return nil
+			},
+		}
+	}
+
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		// 002_second is already applied; 001_first and 003_third are not.
+		{{"name": map[string]any{"value": "002_second"}, "applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"}}},
+	}}
+	recordTx := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx, recordTx}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		makeMigration("001_first"),
+		makeMigration("002_second"),
+		makeMigration("003_third"),
+	}
+
+	// Targeting the already-applied 002_second must stop there: 001_first
+	// (pending, before the target) applies; 003_third must NOT.
+	applied, err := RunSequentialMigrations(context.Background(), db, migrations, WithSeqTarget("002_second"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(applied) != 1 || applied[0] != "001_first" {
+		t.Fatalf("expected [001_first], got %v", applied)
+	}
+	if len(executed) != 1 || executed[0] != "001_first" {
+		t.Errorf("expected only 001_first to run, got %v", executed)
+	}
+}
+
+func TestStampSequentialMigrations_TargetNotFound(t *testing.T) {
+	noop := func(ctx context.Context, db *Database) error { return nil }
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_first", Up: noop},
+		{Name: "002_second", Up: noop},
+	}
+
+	_, err := StampSequentialMigrations(context.Background(), db, migrations, WithSeqTarget("002_secnod"))
+	if err == nil {
+		t.Fatal("expected error for unknown stamp target")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestStampSequentialMigrations_TargetAlreadyApplied(t *testing.T) {
+	noop := func(ctx context.Context, db *Database) error { return nil }
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "002_second"}, "applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"}}},
+	}}
+	recordTx := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx, recordTx}}
+	db := NewDatabase(conn, "test")
+
+	migrations := []SequentialMigration{
+		{Name: "001_first", Up: noop},
+		{Name: "002_second", Up: noop},
+		{Name: "003_third", Up: noop},
+	}
+
+	stamped, err := StampSequentialMigrations(context.Background(), db, migrations, WithSeqTarget("002_second"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stamped) != 1 || stamped[0] != "001_first" {
+		t.Fatalf("expected [001_first], got %v", stamped)
+	}
+}
+
+// --- #60: statement-based migrations apply and record atomically ---
+
+// txTypeRecordingConn wraps mockConn and records the transaction type of
+// each Transaction call, so tests can assert schema vs write routing.
+type txTypeRecordingConn struct {
+	mockConn
+	txTypes []int
+}
+
+func (c *txTypeRecordingConn) Transaction(dbName string, txType int) (Tx, error) {
+	c.txTypes = append(c.txTypes, txType)
+	return c.mockConn.Transaction(dbName, txType)
+}
+
+func TestRunSequentialMigrations_StatementsApplyAndRecordInOneTx(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	migrationTx := &mockTx{}
+	conn := &txTypeRecordingConn{mockConn: mockConn{txs: []*mockTx{schemaTx, readTx, migrationTx}}}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001_seed", []string{
+		`insert $p isa person, has name "Alice";`,
+		`insert $p isa person, has name "Bob";`,
+	}, nil)
+
+	applied, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(applied) != 1 {
+		t.Fatalf("expected 1 applied, got %d", len(applied))
+	}
+	// Both statements AND the state record must be in the same transaction.
+	if len(migrationTx.queries) != 3 {
+		t.Fatalf("expected 3 queries in one tx (2 statements + record), got %d: %v",
+			len(migrationTx.queries), migrationTx.queries)
+	}
+	if !strings.Contains(migrationTx.queries[2], "seq-migration-record") {
+		t.Errorf("last query should insert the migration record, got: %s", migrationTx.queries[2])
+	}
+	if !migrationTx.committed {
+		t.Error("migration transaction should be committed")
+	}
+	// All statements are data writes: must use a write transaction.
+	if got := conn.txTypes[2]; got != int(WriteTransaction) {
+		t.Errorf("expected write transaction (%d), got %d", int(WriteTransaction), got)
+	}
+}
+
+func TestRunSequentialMigrations_MixedStatementsUseSchemaTx(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	migrationTx := &mockTx{}
+	conn := &txTypeRecordingConn{mockConn: mockConn{txs: []*mockTx{schemaTx, readTx, migrationTx}}}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001_schema_and_data", []string{
+		"define attribute name, value string;",
+		`insert $p isa person, has name "Alice";`,
+	}, nil)
+
+	if _, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(migrationTx.queries) != 3 {
+		t.Fatalf("expected 3 queries in one tx, got %d", len(migrationTx.queries))
+	}
+	// Any schema statement in the batch promotes the whole tx to schema type.
+	if got := conn.txTypes[2]; got != int(SchemaTransaction) {
+		t.Errorf("expected schema transaction (%d), got %d", int(SchemaTransaction), got)
+	}
+}
+
+func TestRunSequentialMigrations_StatementFailureRecordsNothing(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	failTx := &errMockTx{err: fmt.Errorf("statement boom")}
+	conn := &errTxAfterConn{good: []*mockTx{schemaTx, readTx}, bad: failTx}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001_seed", []string{`insert $p isa person, has name "Alice";`}, nil)
+
+	applied, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var seqErr *SeqMigrationError
+	if ok := errorAs(err, &seqErr); !ok {
+		t.Fatalf("expected SeqMigrationError, got %T: %v", err, err)
+	}
+	if len(applied) != 0 {
+		t.Errorf("expected 0 applied, got %v", applied)
+	}
+}
+
+// errTxAfterConn returns the preset good transactions first, then the bad one.
+type errTxAfterConn struct {
+	good []*mockTx
+	bad  Tx
+	idx  int
+}
+
+func (c *errTxAfterConn) Transaction(_ string, _ int) (Tx, error) {
+	if c.idx < len(c.good) {
+		tx := c.good[c.idx]
+		c.idx++
+		return tx, nil
+	}
+	return c.bad, nil
+}
+
+func (c *errTxAfterConn) Schema(string) (string, error)         { return "", nil }
+func (c *errTxAfterConn) DatabaseCreate(string) error           { return nil }
+func (c *errTxAfterConn) DatabaseDelete(string) error           { return nil }
+func (c *errTxAfterConn) DatabaseContains(string) (bool, error) { return true, nil }
+func (c *errTxAfterConn) DatabaseAll() ([]string, error)        { return nil, nil }
+func (c *errTxAfterConn) Close()                                {}
+func (c *errTxAfterConn) IsOpen() bool                          { return true }
+
+func TestRunSequentialMigrations_CustomUpStillRecordsSeparately(t *testing.T) {
+	// Custom Up functions cannot participate in the atomic path: the record
+	// insert happens in its own write transaction after Up succeeds.
+	upCalled := false
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	recordTx := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx, recordTx}}
+	db := NewDatabase(conn, "test")
+
+	m := SequentialMigration{
+		Name: "001_custom",
+		Up: func(ctx context.Context, db *Database) error {
+			upCalled = true
+			return nil
+		},
+	}
+
+	applied, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !upCalled {
+		t.Error("custom Up should have been called")
+	}
+	if len(applied) != 1 {
+		t.Fatalf("expected 1 applied, got %d", len(applied))
+	}
+	if len(recordTx.queries) != 1 || !strings.Contains(recordTx.queries[0], "seq-migration-record") {
+		t.Errorf("expected a standalone record insert, got: %v", recordTx.queries)
+	}
+}
+
+func TestRollbackSequentialMigration_StatementsDeleteRecordInOneTx(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "001_init"}, "applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"}}},
+	}}
+	rollbackTx := &mockTx{}
+	conn := &txTypeRecordingConn{mockConn: mockConn{txs: []*mockTx{schemaTx, readTx, rollbackTx}}}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001_init",
+		[]string{`insert $p isa person, has name "Alice";`},
+		[]string{`match $p isa person, has name "Alice"; delete $p;`})
+
+	rolledBack, err := RollbackSequentialMigration(context.Background(), db, []SequentialMigration{m}, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rolledBack) != 1 {
+		t.Fatalf("expected 1 rolled back, got %d", len(rolledBack))
+	}
+	// Down statement and the record deletion must share one transaction.
+	if len(rollbackTx.queries) != 2 {
+		t.Fatalf("expected 2 queries in one tx (down + delete record), got %d: %v",
+			len(rollbackTx.queries), rollbackTx.queries)
+	}
+	if !strings.Contains(rollbackTx.queries[1], "seq-migration-record") {
+		t.Errorf("last query should delete the migration record, got: %s", rollbackTx.queries[1])
+	}
+	if !rollbackTx.committed {
+		t.Error("rollback transaction should be committed")
+	}
+}
+
+// --- #98: ChecksumMismatchError must not panic on short checksums ---
+
+func TestChecksumMismatchError_ShortChecksum(t *testing.T) {
+	err := &ChecksumMismatchError{
+		Name:     "001_init",
+		Expected: "abc", // hand-stamped or corrupted DB record
+		Actual:   "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+	}
+	// Must not panic.
+	msg := err.Error()
+	if !strings.Contains(msg, "abc") {
+		t.Errorf("short checksum should be printed verbatim: %s", msg)
+	}
+	if !strings.Contains(msg, "1234567890ab...") {
+		t.Errorf("long checksum should be truncated to 12 chars: %s", msg)
+	}
+
+	// Both short, including empty.
+	err = &ChecksumMismatchError{Name: "001", Expected: "", Actual: "x"}
+	if msg = err.Error(); !strings.Contains(msg, "checksum mismatch") {
+		t.Errorf("unexpected message: %s", msg)
+	}
+}
+
+// --- #99: checksum must delimit statements ---
+
+func TestMigrationChecksum_StatementBoundaries(t *testing.T) {
+	// Same concatenated bytes, different statement boundaries.
+	m1 := TQLMigration("001", []string{"define a;", "define b;"}, nil)
+	m2 := TQLMigration("001", []string{"define a;define b;"}, nil)
+	if MigrationChecksum(m1) == MigrationChecksum(m2) {
+		t.Error("re-split Up statements must change the checksum")
+	}
+
+	// Text crossing the Up/Down group separator must not collide.
+	m3 := TQLMigration("001", []string{"x|"}, nil)
+	m4 := TQLMigration("001", []string{"x"}, []string{"|"})
+	if MigrationChecksum(m3) == MigrationChecksum(m4) {
+		t.Error("moving text between Up and Down must change the checksum")
+	}
+}
+
+func TestMigrationChecksum_LegacyCollisions(t *testing.T) {
+	// Demonstrate that the legacy format collided on these inputs — this is
+	// exactly why the algorithm changed. If this fails, the legacy
+	// reproduction has drifted from the historical format.
+	m1 := TQLMigration("001", []string{"define a;", "define b;"}, nil)
+	m2 := TQLMigration("001", []string{"define a;define b;"}, nil)
+	if legacyMigrationChecksum(m1) != legacyMigrationChecksum(m2) {
+		t.Error("legacy checksum reproduction changed; verification of old records would break")
+	}
+}
+
+func TestVerifySeqChecksums_AcceptsLegacyChecksum(t *testing.T) {
+	m := TQLMigration("001_init", []string{"define attribute name, value string;"}, nil)
+	legacy := legacyMigrationChecksum(m)
+	if legacy == MigrationChecksum(m) {
+		t.Fatal("test premise broken: legacy and current formats should differ")
+	}
+
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "001_init"},
+			"applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"},
+			"checksum":   map[string]any{"value": legacy}}},
+	}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	// A record stamped by go-typeql <= v1.12.x must still verify cleanly.
+	applied, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m})
+	if err != nil {
+		t.Fatalf("legacy checksum should be accepted, got: %v", err)
+	}
+	if len(applied) != 0 {
+		t.Errorf("expected 0 applied (already recorded), got %v", applied)
+	}
+}
+
+func TestVerifySeqChecksums_NewFormatAccepted(t *testing.T) {
+	m := TQLMigration("001_init", []string{"define attribute name, value string;"}, nil)
+
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{
+		{{"name": map[string]any{"value": "001_init"},
+			"applied-at": map[string]any{"value": "2024-01-01T00:00:00Z"},
+			"checksum":   map[string]any{"value": MigrationChecksum(m)}}},
+	}}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx}}
+	db := NewDatabase(conn, "test")
+
+	if _, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m}); err != nil {
+		t.Fatalf("current checksum should be accepted, got: %v", err)
+	}
+}
+
+func TestRunSequentialMigrations_RecordsNewChecksumFormat(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	migrationTx := &mockTx{}
+	conn := &mockConn{txs: []*mockTx{schemaTx, readTx, migrationTx}}
+	db := NewDatabase(conn, "test")
+
+	m := TQLMigration("001_init", []string{`insert $p isa person, has name "A";`}, nil)
+	if _, err := RunSequentialMigrations(context.Background(), db, []SequentialMigration{m}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	recordQuery := migrationTx.queries[len(migrationTx.queries)-1]
+	if !strings.Contains(recordQuery, MigrationChecksum(m)) {
+		t.Errorf("record should carry the new checksum format: %s", recordQuery)
+	}
+	if legacy := legacyMigrationChecksum(m); strings.Contains(recordQuery, legacy) {
+		t.Errorf("record should not carry the legacy checksum: %s", recordQuery)
+	}
+}
+
 // errorAs is a helper that wraps errors.As to work with generics in tests.
 func errorAs(err error, target any) bool {
 	// Use type assertion approach since we can't import errors in a simple way

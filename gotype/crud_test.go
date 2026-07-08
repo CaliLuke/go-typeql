@@ -698,14 +698,17 @@ func TestManager_Put_SetsIID(t *testing.T) {
 
 func TestManager_PutMany(t *testing.T) {
 	registerTestTypes(t)
-	writeTx := &mockTx{}
-	readTx := &mockTx{
+	// All queries — puts AND IID fetches — run in the single write tx (#90):
+	// no per-instance read transactions are opened afterwards.
+	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"_iid": "0xP1"}},
-			{{"_iid": "0xP2"}},
+			nil,                // put p1
+			{{"_iid": "0xP1"}}, // iid fetch p1
+			nil,                // put p2
+			{{"_iid": "0xP2"}}, // iid fetch p2
 		},
 	}
-	conn := &mockConn{txs: []*mockTx{writeTx, readTx, readTx}}
+	conn := &mockConn{txs: []*mockTx{writeTx}}
 	db := NewDatabase(conn, "test_db")
 	mgr := MustNewManager[testPerson](db)
 
@@ -717,13 +720,45 @@ func TestManager_PutMany(t *testing.T) {
 		t.Fatalf("PutMany failed: %v", err)
 	}
 
-	if len(writeTx.queries) != 2 {
-		t.Fatalf("expected 2 put queries, got %d", len(writeTx.queries))
+	if len(writeTx.queries) != 4 {
+		t.Fatalf("expected 4 queries (2 puts + 2 iid fetches) in the write tx, got %d", len(writeTx.queries))
 	}
 	assertContains(t, writeTx.queries[0], "put")
-	assertContains(t, writeTx.queries[1], "put")
+	assertContains(t, writeTx.queries[1], "iid($e)")
+	assertContains(t, writeTx.queries[2], "put")
+	assertContains(t, writeTx.queries[3], "iid($e)")
 	if !writeTx.committed {
 		t.Error("transaction was not committed")
+	}
+	if p1.GetIID() != "0xP1" || p2.GetIID() != "0xP2" {
+		t.Errorf("expected IIDs 0xP1/0xP2, got %q/%q", p1.GetIID(), p2.GetIID())
+	}
+	// Only the single write transaction may be consumed.
+	if conn.idx != 1 {
+		t.Errorf("expected exactly 1 transaction to be opened, got %d", conn.idx)
+	}
+}
+
+func TestManager_PutMany_CommitFailureDoesNotSetIIDs(t *testing.T) {
+	registerTestTypes(t)
+	writeTx := &mockTx{
+		responses: [][]map[string]any{
+			nil,
+			{{"_iid": "0xP1"}},
+		},
+		commitErr: fmt.Errorf("commit failed"),
+	}
+	conn := &mockConn{txs: []*mockTx{writeTx}}
+	db := NewDatabase(conn, "test_db")
+	mgr := MustNewManager[testPerson](db)
+
+	p := &testPerson{Name: "Alice", Email: "a@example.com"}
+	err := mgr.PutMany(context.Background(), []*testPerson{p})
+	if err == nil {
+		t.Fatal("expected PutMany to fail on commit error")
+	}
+	if p.GetIID() != "" {
+		t.Errorf("expected IID to remain unset after failed commit, got %q", p.GetIID())
 	}
 }
 

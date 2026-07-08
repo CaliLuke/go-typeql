@@ -128,8 +128,15 @@ type IsSimilarTo struct {
 | `typedb:"tag,card=0.."`  | `owns tag @card(0..)`  | Zero or more                       |
 | `typedb:"role:employee"` | `relates employee`     | Role player in a relation          |
 | `typedb:"type:my-type"`  | N/A                    | Override the TypeDB type name      |
+| `typedb:"sub:parent"`    | `sub parent`           | Explicit supertype declaration     |
 | `typedb:"abstract"`      | `@abstract`            | Abstract type                      |
 | `typedb:"-"`             | N/A                    | Skip field                         |
+
+Type-level options (`abstract`, `type:`, `sub:`) may sit on the embedded base field
+(``gotype.BaseEntity `typedb:"abstract"` ``) or a blank `_ byte` field. Registration
+validates tags strictly: options without an attribute name, unsupported field types,
+duplicate/conflicting attribute value types, bad role names, and inverted `card=`
+ranges all return an error from `Register` instead of emitting broken TypeQL later.
 
 ### Naming Convention
 
@@ -137,8 +144,10 @@ Go struct names are automatically converted to kebab-case for TypeDB type names:
 
 - `UserAccount` becomes `user-account`
 - `MigratedPerson` becomes `migrated-person`
+- Acronyms stay together: `IAMUser` becomes `iam-user`, `HTTPServer` becomes `http-server`
 
 Any hand-written TypeQL must use the kebab-case form, not the Go name.
+Go type names that differ only by case (`ABTest` vs `AbTest`) conflict and fail registration.
 
 ---
 
@@ -215,6 +224,9 @@ all, err := persons.All(ctx)
 // Get with attribute filters
 results, err := persons.Get(ctx, map[string]any{"name": "Alice"})
 
+// Get exactly one match (*NotFoundError / *NotUniqueError otherwise)
+person, err := persons.GetOne(ctx, map[string]any{"name": "Alice"})
+
 // Get by internal ID
 person, err := persons.GetByIID(ctx, "0x1e00000000000000000123")
 
@@ -282,12 +294,12 @@ q.Filter(gotype.Lte("age", 65))
 q.Filter(gotype.Neq("status", "inactive"))
 
 // String operations
-q.Filter(gotype.Contains("name", "Ali"))
-q.Filter(gotype.Like("name", "^A.*"))
-q.Filter(gotype.Startswith("name", "Al"))
+q.Filter(gotype.Contains("name", "Ali"))       // literal substring
+q.Filter(gotype.Like("name", "^A.*"))          // regex
+q.Filter(gotype.Startswith("name", "Al"))      // literal prefix (regex metacharacters escaped)
 q.Filter(gotype.Regex("email", ".*@example\\.com"))
 
-// Set membership
+// Set membership (empty In matches nothing; empty NotIn matches everything)
 q.Filter(gotype.In("status", []any{"active", "pending"}))
 q.Filter(gotype.NotIn("role", []any{"admin", "superuser"}))
 
@@ -346,10 +358,10 @@ q.Offset(20)
 // Get all results
 results, err := q.Execute(ctx)  // or q.All(ctx)
 
-// Get first result
+// Get first result (does not mutate the builder)
 first, err := q.First(ctx)
 
-// Count matches
+// Count distinct matching entities (multi-valued attributes don't inflate the count)
 count, err := q.Count(ctx)
 
 // Check existence
@@ -521,15 +533,28 @@ err = gotype.MigrateFromEmpty(ctx, db)
 
 The `SchemaDiff` struct contains:
 
-- `AddAttributes` -- new attribute types
-- `AddEntities` -- new entity types
-- `AddRelations` -- new relation types
-- `AddOwns` -- new attribute ownerships
-- `AddRelates` -- new role declarations
-- `RemoveOwns` -- ownerships in DB but not in code (warnings)
-- `RemoveTypes` -- types in DB but not in code (warnings)
+- `AddAttributes` / `AddEntities` / `AddRelations` -- new types
+- `AddOwns` / `AddRelates` / `AddPlays` -- new capabilities on existing types
+- `ModifyOwns` -- in-place `redefine`s (explicit `@card` changes)
+- `RemoveOwns` / `RemoveTypes` / `RemoveAttributes` -- destructive (need `WithForce`)
+- `Unsupported` -- detected but not automatable (value-type changes, `@key`/`@unique`
+  toggles, supertype/abstractness changes); check `HasBreakingChanges()`
 
-Only additive changes are applied automatically. Removals are flagged as warnings.
+Only additive changes are applied automatically; destructive changes need
+`SyncSchema(ctx, db, WithForce())`. All migration paths execute in a single schema
+transaction (atomic — no partial schema states), and the internal migration-tracking
+types are protected from removal. TypeDB refuses to undefine types that still have
+instances — delete data first.
+
+Preview before applying:
+
+```go
+plan, err := gotype.PlanSchema(ctx, db, gotype.WithForce())
+// plan.Statements (review), plan.Queries (what would execute atomically)
+```
+
+`WithSkipIfExists()` is a bootstrap guard: it skips the sync entirely when the
+database already contains user-defined types.
 
 ---
 
@@ -635,7 +660,12 @@ import "github.com/CaliLuke/go-typeql/tqlgen"
 
 // Parse a TypeQL schema file
 schema, err := tqlgen.ParseSchemaFile("schema.tql")
-schema.AccumulateInheritance() // propagate parent owns/plays to children
+
+// Propagate parent owns/plays to children. Returns an error on cyclic
+// `sub` declarations (e.g. "inheritance cycle: a -> b -> a").
+if err := schema.AccumulateInheritance(); err != nil {
+    return err
+}
 
 // --- Option A: Generate Go structs ---
 cfg := tqlgen.RenderConfig{PackageName: "models", UseAcronyms: true, Enums: true}
@@ -692,13 +722,35 @@ The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstrac
 ### Features
 
 - Generates Go structs with `BaseEntity`/`BaseRelation` embedding and `typedb:"..."` tags
+- Multi-valued attributes (list syntax `owns tag[]` or `@card` allowing >1) become slice
+  fields (`[]string`), not scalars
+- Full 3.x value-type mapping (`date`/`datetime-tz` → `time.Time`, `duration` →
+  `time.Duration`, `decimal` → `float64`); unknown value types warn (stderr /
+  `RenderConfig.WarnWriter`) before defaulting to string
+- `Render` errors when two schema labels map to the same Go name; roles nobody plays are
+  emitted as `// TODO` comments instead of undefined Go types
+- All output is gofmt-formatted; invalid generated Go is a hard error. `PackageName` is
+  required for DTO/registry/leaf-constant rendering
+- TypeQL `struct` definitions become plain Go value structs; `@values` enum names are
+  sanitized (`"n/a"` → `GradeNA`); `@regex`/`@range` surface as field comments and as
+  registry `AttributeRegex`/`AttributeRange` maps
 - Generates string constants from `@values` constraints (`-enums`, on by default)
 - Decodes escaped TypeQL string literals in schema annotations, including `\uXXXX` and `\u{...}` forms in `@regex` and `@values`
 - Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas, abstract tracking, key attributes, schema hash
 - DTO mode (`-dto`) outputs Out/Create/Patch struct variants for HTTP APIs
 - N-role relation support (not limited to binary relations)
 - Comment annotations: `# @key value`, `# @key(value)`, `# @key` above type definitions
-- Inheritance propagation: parent `owns`/`plays` merged into children
+  (blank lines and plain comments between annotation and definition are allowed)
+- Inheritance propagation: parent `owns`/`plays` merged into children; cyclic `sub`
+  declarations are rejected with a clear error instead of crashing
+- Attribute subtyping: `attribute email sub name;` and abstract attributes parse; subtypes
+  inherit the parent's value type when they omit a `value` clause
+- List syntax: `owns nicknames[]` / `relates members[]` parse and surface as
+  `OwnsSpec.IsList` / `RelatesSpec.IsList` in the parsed model
+- `@range` accepts all operand forms (integer, decimal, string, date/datetime, half-open
+  like `@range(0..)`), captured verbatim in `AttributeSpec.RangeOp`
+- TypeQL functions (`fun ...`) are parsed by the grammar; definitions after a function
+  block are retained (bodies are captured as token lists for signature extraction)
 - Configurable constant prefixes (`TypePrefix`, `RelPrefix`)
 
 ---
@@ -714,6 +766,9 @@ For each non-abstract entity `Foo`:
 - `FooOut` — response struct: `ID string`, `Type string`, all attribute fields
 - `FooCreate` — create request: required fields non-pointer (`@key`, `@unique`, `@card(1+)`), optional as `*T`
 - `FooPatch` — partial update: all fields as `*T` (nil = don't update)
+
+Multi-valued attributes (list syntax or `@card` max > 1) are slices (`[]T`, never
+`*[]T` or `**T`) in all DTO variants, including base-struct Patch fields.
 
 For each non-abstract relation `Bar`:
 
@@ -841,17 +896,19 @@ func TestSomething(t *testing.T) {
 
 3. **IID required for Update/Delete**: Instances must have their IID set (from Insert, Get, or GetByIID) before calling Update or Delete.
 
-4. **Role player matching**: When inserting relations, role player entities are identified by:
+4. **Key attributes must be non-zero on Insert/Put**: a zero-value key (`""`, `0`, nil pointer) returns `*KeyAttributeError`. Relation inserts error when no role players resolve (no more silent `links ()` output).
+
+5. **Role player matching**: When inserting relations, role player entities are identified by:
    - **IID (preferred)**: If the entity was fetched from DB and has IID set.
    - **Key attributes (fallback)**: Uses `key` tagged fields to match.
 
-5. **Transaction types**:
+6. **Transaction types**:
    - `gotype.ReadTransaction` (0): For queries
    - `gotype.WriteTransaction` (1): For insert/update/delete
    - `gotype.SchemaTransaction` (2): For schema changes
 
-6. **TypeDB uses `mean` not `avg`**: The ORM handles this mapping internally.
+7. **TypeDB uses `mean` not `avg`**: The ORM handles this mapping internally.
 
-7. **Result unwrapping**: TypeDB wraps values as `{"value": X}`. The ORM unwraps these automatically via `unwrapResult`/`unwrapValue`.
+8. **Result unwrapping**: TypeDB wraps values as `{"value": X}`. The ORM unwraps these automatically via `unwrapResult`/`unwrapValue`.
 
-8. **Reserved words**: TypeQL has 111 reserved keywords. The registry validates type names, attribute names, and role names against these and returns `ReservedWordError` if a conflict is found.
+9. **Reserved words**: TypeQL has 111 reserved keywords. The registry validates type names, attribute names, and role names against these and returns `ReservedWordError` if a conflict is found.

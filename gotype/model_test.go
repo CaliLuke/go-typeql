@@ -187,9 +187,30 @@ func TestGoTypeToTypeDB(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.goType.String(), func(t *testing.T) {
-			got := goTypeToTypeDB(tt.goType)
+			got, err := goTypeToTypeDB(tt.goType)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Issue #30: unsupported field types must fail conversion instead of
+// silently mapping to "string".
+func TestGoTypeToTypeDB_Unsupported(t *testing.T) {
+	unsupported := []reflect.Type{
+		reflect.TypeOf(map[string]string{}),
+		reflect.TypeOf(struct{ X int }{}),
+		reflect.TypeOf(make(chan int)),
+		reflect.TypeOf(complex128(0)),
+	}
+	for _, ty := range unsupported {
+		t.Run(ty.String(), func(t *testing.T) {
+			if _, err := goTypeToTypeDB(ty); err == nil {
+				t.Fatalf("expected error for %s, got nil", ty)
 			}
 		})
 	}
@@ -325,8 +346,11 @@ func TestToKebabCase(t *testing.T) {
 		{"Person", "person"},
 		{"UserAccount", "user-account"},
 		{"TestPerson", "test-person"},
-		{"HTTPServer", "h-t-t-p-server"}, // consecutive uppercase are split individually
-		{"ABC", "a-b-c"},
+		{"HTTPServer", "http-server"}, // consecutive uppercase runs are initialisms (#92)
+		{"APIKey", "api-key"},
+		{"User2FA", "user2-fa"},
+		{"IAMUser", "iam-user"},
+		{"ABC", "abc"},
 		{"simple", "simple"},
 		{"", ""},
 	}
@@ -346,4 +370,170 @@ type testPersonModel struct {
 	Name  string `typedb:"name,key"`
 	Email string `typedb:"email"`
 	Age   *int   `typedb:"age"`
+}
+
+// Issue #28: option-only tags must not create phantom empty-name attributes.
+
+type optionOnlyKeyModel struct {
+	BaseEntity
+	Code string `typedb:"key"`
+}
+
+type optionOnlyCardModel struct {
+	BaseEntity
+	Tags []string `typedb:"card=0..5"`
+}
+
+func TestExtractModelInfo_OptionOnlyTagErrors(t *testing.T) {
+	if _, err := ExtractModelInfo(reflect.TypeOf(optionOnlyKeyModel{})); err == nil {
+		t.Fatal("expected error for option-only tag typedb:\"key\", got nil")
+	} else if !strings.Contains(err.Error(), "Code") {
+		t.Errorf("error should name the field, got: %v", err)
+	}
+	if _, err := ExtractModelInfo(reflect.TypeOf(optionOnlyCardModel{})); err == nil {
+		t.Fatal("expected error for option-only tag typedb:\"card=0..5\", got nil")
+	}
+}
+
+// Standalone type-level tags on a regular field stay legal (documented) and
+// must not create a phantom attribute.
+type standaloneAbstractModel struct {
+	BaseEntity
+	Marker string `typedb:"abstract"`
+	Name   string `typedb:"name,key"`
+}
+
+func TestExtractModelInfo_StandaloneAbstractCreatesNoAttribute(t *testing.T) {
+	info, err := ExtractModelInfo(reflect.TypeOf(standaloneAbstractModel{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !info.IsAbstract {
+		t.Error("expected IsAbstract to be true")
+	}
+	if len(info.Fields) != 1 || info.Fields[0].Tag.Name != "name" {
+		t.Fatalf("expected only the name attribute, got %#v", info.Fields)
+	}
+}
+
+// Issue #30: unsupported field types fail registration instead of mapping to
+// string and panicking during hydration.
+type unsupportedFieldModel struct {
+	BaseEntity
+	Name string            `typedb:"name,key"`
+	Data map[string]string `typedb:"mf-data"`
+}
+
+func TestExtractModelInfo_UnsupportedFieldTypeErrors(t *testing.T) {
+	_, err := ExtractModelInfo(reflect.TypeOf(unsupportedFieldModel{}))
+	if err == nil {
+		t.Fatal("expected error for map field, got nil")
+	}
+	if !strings.Contains(err.Error(), "Data") || !strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("error should name the field and mention unsupported type, got: %v", err)
+	}
+}
+
+func TestRegister_UnsupportedFieldTypeErrors(t *testing.T) {
+	ClearRegistry()
+	if err := Register[unsupportedFieldModel](); err == nil {
+		t.Fatal("expected Register to fail for unsupported field type")
+	}
+}
+
+// Issue #51: tags on the embedded base field are honored for type-level options.
+
+type embeddedAbstractModel struct {
+	BaseEntity `typedb:"abstract"`
+	Name       string `typedb:"name,key"`
+}
+
+type embeddedTypeNameModel struct {
+	BaseEntity `typedb:"type:custom-thing,abstract"`
+	Name       string `typedb:"name,key"`
+}
+
+type embeddedBadTagModel struct {
+	BaseEntity `typedb:"name,key"`
+	Name       string `typedb:"name,key"`
+}
+
+func TestExtractModelInfo_EmbeddedBaseTagHonored(t *testing.T) {
+	info, err := ExtractModelInfo(reflect.TypeOf(embeddedAbstractModel{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !info.IsAbstract {
+		t.Error("expected abstract tag on embedded BaseEntity to set IsAbstract")
+	}
+
+	info, err = ExtractModelInfo(reflect.TypeOf(embeddedTypeNameModel{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.TypeName != "custom-thing" {
+		t.Errorf("TypeName: got %q, want %q", info.TypeName, "custom-thing")
+	}
+	if !info.IsAbstract {
+		t.Error("expected abstract on embedded field to be honored")
+	}
+}
+
+func TestExtractModelInfo_EmbeddedBaseTagWithFieldOptionsErrors(t *testing.T) {
+	if _, err := ExtractModelInfo(reflect.TypeOf(embeddedBadTagModel{})); err == nil {
+		t.Fatal("expected error for attribute tag on embedded base field")
+	}
+}
+
+// The documented `_ byte` pattern for type-level options keeps working and
+// now honors abstract too.
+type blankFieldOptionsModel struct {
+	BaseEntity
+	_    byte   `typedb:"type:artifact-x,abstract"`
+	Name string `typedb:"name,key"`
+}
+
+func TestExtractModelInfo_BlankFieldTypeLevelOptions(t *testing.T) {
+	info, err := ExtractModelInfo(reflect.TypeOf(blankFieldOptionsModel{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.TypeName != "artifact-x" {
+		t.Errorf("TypeName: got %q, want %q", info.TypeName, "artifact-x")
+	}
+	if !info.IsAbstract {
+		t.Error("expected abstract on blank field to be honored")
+	}
+	if len(info.Fields) != 1 {
+		t.Fatalf("expected 1 attribute field, got %d", len(info.Fields))
+	}
+}
+
+// Issue #91: the sub: tag option sets ModelInfo.Supertype.
+
+type subChildModel struct {
+	BaseEntity `typedb:"sub:sub-parent-model"`
+	Nickname   string `typedb:"nickname"`
+}
+
+func TestExtractModelInfo_SubTagSetsSupertype(t *testing.T) {
+	info, err := ExtractModelInfo(reflect.TypeOf(subChildModel{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Supertype != "sub-parent-model" {
+		t.Errorf("Supertype: got %q, want %q", info.Supertype, "sub-parent-model")
+	}
+}
+
+// A tag that declares both a role and an attribute name is ambiguous.
+type roleWithNameModel struct {
+	BaseRelation
+	Player *TestPerson `typedb:"player,role:player"`
+}
+
+func TestExtractModelInfo_RoleWithAttributeNameErrors(t *testing.T) {
+	if _, err := ExtractModelInfo(reflect.TypeOf(roleWithNameModel{})); err == nil {
+		t.Fatal("expected error for tag declaring both attribute name and role")
+	}
 }

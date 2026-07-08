@@ -40,9 +40,31 @@ Given a TypeQL schema, tqlgen produces:
 
 - Go structs embedding `gotype.BaseEntity` or `gotype.BaseRelation`
 - `typedb:"..."` tags with attribute names, `key`, `unique`, and `card=` options
-- Role player fields with `role:name` tags
+- Role player fields with `role:name` tags, resolved through the relation's ancestor
+  chain and `as` role overrides; a role no entity or relation plays is emitted as a
+  `// TODO` comment (with a warning on `RenderConfig.WarnWriter`, default stderr)
+  instead of inventing an undefined Go type
 - Pointer types for optional fields (non-key attributes without explicit cardinality)
-- `time.Time` imports when datetime attributes are present
+- Slice fields (`[]T`) for multi-valued attributes — list syntax (`owns tag[]`) or a
+  cardinality allowing more than one value (`@card(0..5)`, `@card(1..)`)
+- Full TypeDB 3.x value-type mapping: `date`/`datetime`/`datetime-tz` → `time.Time`,
+  `duration` → `time.Duration`, `decimal` → `float64` (lossy), `long`/`integer` → `int64`;
+  unknown value types and `owns` of undefined attributes warn before defaulting to string
+- An error from `Render` when two schema labels map to the same Go name
+  (e.g. `user-name` and `user_name` both becoming `UserName`)
+- `time` imports when emitted field types require them; the `gotype` import only
+  when entities or relations exist
+- Plain Go value structs from TypeQL `struct` definitions (optional fields →
+  pointers, struct-typed fields reference the generated structs); functions have
+  no codegen and are skipped with a warning
+- `// @regex(...)` / `// @range(...)` comments on owning fields; in registry mode,
+  `AttributeRegex` and `AttributeRange` maps
+- Enum constant names sanitized to valid Go (`"n/a"` → `GradeNA`), values emitted
+  as quoted string literals
+
+All output is gofmt-formatted; generation that would produce invalid Go fails with
+an error instead of writing a broken file. `PackageName` is required — `RenderDTO`,
+`RenderRegistry`, and `RenderLeafConstants` error when it is empty.
 - String constants from `@values` constraints (when `-enums=true`)
 - Go comments, `typedb_doc` tags, and `SchemaDoc()` methods from TypeDB `@doc`
   annotations
@@ -236,6 +258,10 @@ For each non-abstract relation `Bar`:
 
 Plus Go interfaces (`EntityOut`, `EntityCreate`, `EntityPatch`, `RelationOut`, `RelationCreate`) with `TypeName() string` methods.
 
+Multi-valued attributes (list syntax `owns x[]` or `@card` allowing more than one)
+are slice fields (`[]T`) in every DTO variant; base-struct Patch fields carry a
+single pointer level, never `**T`.
+
 ### DTO Configuration
 
 ```go
@@ -322,4 +348,4 @@ The recognized acronyms are: ID, URL, UUID, API, HTTP, IID, NF.
 - `struct` definitions (parsed for field extraction)
 - Comment annotations (`# @key value`, `# @key(value)`, `# @key` above type definitions)
 
-The parser uses [participle/v2](https://github.com/alecthomas/participle). TypeQL functions are stripped via pre-processing (truncate at first `fun`) rather than being parsed by the grammar.
+The parser uses [participle/v2](https://github.com/alecthomas/participle). TypeQL functions are parsed by the grammar: each `fun` body is captured as a flat token list for signature extraction and ends at the next top-level definition keyword (`entity`, `relation`, `attribute`, `struct`, `fun`), so definitions after a function are parsed normally.

@@ -27,7 +27,7 @@ func (op AddAttribute) ToTypeQL() string {
 func (op AddAttribute) IsReversible() bool  { return true }
 func (op AddAttribute) IsDestructive() bool { return false }
 func (op AddAttribute) RollbackTypeQL() string {
-	return fmt.Sprintf("undefine attribute %s;", op.Name)
+	return fmt.Sprintf("undefine %s;", op.Name)
 }
 
 // AddEntity represents the creation of a new entity type in the schema.
@@ -46,14 +46,16 @@ func (op AddEntity) ToTypeQL() string {
 	if op.Abstract {
 		s += " @abstract"
 	}
+	// `sub` is a separate constraint: TypeDB 3.x rejects annotations placed
+	// after it, so it must follow the annotated type name (issue #32).
 	if op.Parent != "" {
-		s += " sub " + op.Parent
+		s += ", sub " + op.Parent
 	}
 	return s + ";"
 }
 func (op AddEntity) IsReversible() bool     { return true }
 func (op AddEntity) IsDestructive() bool    { return false }
-func (op AddEntity) RollbackTypeQL() string { return fmt.Sprintf("undefine entity %s;", op.Name) }
+func (op AddEntity) RollbackTypeQL() string { return fmt.Sprintf("undefine %s;", op.Name) }
 
 // AddRelation represents the creation of a new relation type in the schema.
 type AddRelation struct {
@@ -71,14 +73,16 @@ func (op AddRelation) ToTypeQL() string {
 	if op.Abstract {
 		s += " @abstract"
 	}
+	// `sub` is a separate constraint: TypeDB 3.x rejects annotations placed
+	// after it, so it must follow the annotated type name (issue #32).
 	if op.Parent != "" {
-		s += " sub " + op.Parent
+		s += ", sub " + op.Parent
 	}
 	return s + ";"
 }
 func (op AddRelation) IsReversible() bool     { return true }
 func (op AddRelation) IsDestructive() bool    { return false }
-func (op AddRelation) RollbackTypeQL() string { return fmt.Sprintf("undefine relation %s;", op.Name) }
+func (op AddRelation) RollbackTypeQL() string { return fmt.Sprintf("undefine %s;", op.Name) }
 
 // AddOwnership represents the assignment of an attribute ownership to a type.
 type AddOwnership struct {
@@ -97,7 +101,7 @@ func (op AddOwnership) ToTypeQL() string {
 func (op AddOwnership) IsReversible() bool  { return true }
 func (op AddOwnership) IsDestructive() bool { return false }
 func (op AddOwnership) RollbackTypeQL() string {
-	return fmt.Sprintf("undefine %s owns %s;", op.Owner, op.Attribute)
+	return fmt.Sprintf("undefine owns %s from %s;", op.Attribute, op.Owner)
 }
 
 // AddRole represents the addition of a role to a relation type.
@@ -117,7 +121,7 @@ func (op AddRole) ToTypeQL() string {
 func (op AddRole) IsReversible() bool  { return true }
 func (op AddRole) IsDestructive() bool { return false }
 func (op AddRole) RollbackTypeQL() string {
-	return fmt.Sprintf("undefine %s relates %s;", op.Relation, op.Role)
+	return fmt.Sprintf("undefine relates %s from %s;", op.Role, op.Relation)
 }
 
 // --- Destructive operations ---
@@ -127,7 +131,7 @@ type RemoveAttribute struct {
 	Name string
 }
 
-func (op RemoveAttribute) ToTypeQL() string       { return fmt.Sprintf("undefine attribute %s;", op.Name) }
+func (op RemoveAttribute) ToTypeQL() string       { return fmt.Sprintf("undefine %s;", op.Name) }
 func (op RemoveAttribute) IsReversible() bool     { return false }
 func (op RemoveAttribute) IsDestructive() bool    { return true }
 func (op RemoveAttribute) RollbackTypeQL() string { return "" }
@@ -137,7 +141,7 @@ type RemoveEntity struct {
 	Name string
 }
 
-func (op RemoveEntity) ToTypeQL() string       { return fmt.Sprintf("undefine entity %s;", op.Name) }
+func (op RemoveEntity) ToTypeQL() string       { return fmt.Sprintf("undefine %s;", op.Name) }
 func (op RemoveEntity) IsReversible() bool     { return false }
 func (op RemoveEntity) IsDestructive() bool    { return true }
 func (op RemoveEntity) RollbackTypeQL() string { return "" }
@@ -147,7 +151,7 @@ type RemoveRelation struct {
 	Name string
 }
 
-func (op RemoveRelation) ToTypeQL() string       { return fmt.Sprintf("undefine relation %s;", op.Name) }
+func (op RemoveRelation) ToTypeQL() string       { return fmt.Sprintf("undefine %s;", op.Name) }
 func (op RemoveRelation) IsReversible() bool     { return false }
 func (op RemoveRelation) IsDestructive() bool    { return true }
 func (op RemoveRelation) RollbackTypeQL() string { return "" }
@@ -159,7 +163,7 @@ type RemoveOwnership struct {
 }
 
 func (op RemoveOwnership) ToTypeQL() string {
-	return fmt.Sprintf("undefine %s owns %s;", op.Owner, op.Attribute)
+	return fmt.Sprintf("undefine owns %s from %s;", op.Attribute, op.Owner)
 }
 func (op RemoveOwnership) IsReversible() bool     { return false }
 func (op RemoveOwnership) IsDestructive() bool    { return true }
@@ -172,7 +176,7 @@ type RemoveRole struct {
 }
 
 func (op RemoveRole) ToTypeQL() string {
-	return fmt.Sprintf("undefine %s relates %s;", op.Relation, op.Role)
+	return fmt.Sprintf("undefine relates %s from %s;", op.Role, op.Relation)
 }
 func (op RemoveRole) IsReversible() bool     { return false }
 func (op RemoveRole) IsDestructive() bool    { return true }
@@ -193,7 +197,7 @@ func (op AddRolePlayer) ToTypeQL() string {
 func (op AddRolePlayer) IsReversible() bool  { return true }
 func (op AddRolePlayer) IsDestructive() bool { return false }
 func (op AddRolePlayer) RollbackTypeQL() string {
-	return fmt.Sprintf("undefine %s plays %s:%s;", op.Entity, op.Relation, op.Role)
+	return fmt.Sprintf("undefine plays %s:%s from %s;", op.Relation, op.Role, op.Entity)
 }
 
 // RemoveRolePlayer removes a plays clause from an entity type.
@@ -204,7 +208,7 @@ type RemoveRolePlayer struct {
 }
 
 func (op RemoveRolePlayer) ToTypeQL() string {
-	return fmt.Sprintf("undefine %s plays %s:%s;", op.Entity, op.Relation, op.Role)
+	return fmt.Sprintf("undefine plays %s:%s from %s;", op.Relation, op.Role, op.Entity)
 }
 func (op RemoveRolePlayer) IsReversible() bool     { return false }
 func (op RemoveRolePlayer) IsDestructive() bool    { return true }
@@ -272,12 +276,14 @@ func (op RunTypeQL) RollbackTypeQL() string { return op.Down }
 
 // BreakingChange describes a change that could cause data loss or schema errors.
 type BreakingChange struct {
-	Type   string // "removal", "type_change", "cardinality_change"
+	Type   string // "removal", "type_change", "cardinality_change", "annotation_change"
 	Entity string // affected type name
 	Detail string // human-readable description
 }
 
-// BreakingChanges analyzes the diff for changes that could cause data loss.
+// BreakingChanges analyzes the diff for changes that could cause data loss,
+// including detected changes that cannot be applied automatically (see
+// SchemaDiff.Unsupported).
 func (d *SchemaDiff) BreakingChanges() []BreakingChange {
 	var changes []BreakingChange
 
@@ -289,6 +295,14 @@ func (d *SchemaDiff) BreakingChanges() []BreakingChange {
 		})
 	}
 
+	for _, name := range d.RemoveAttributes {
+		changes = append(changes, BreakingChange{
+			Type:   "removal",
+			Entity: name,
+			Detail: fmt.Sprintf("attribute %q exists in DB but not in Go structs — removing would delete all its values", name),
+		})
+	}
+
 	for _, o := range d.RemoveOwns {
 		changes = append(changes, BreakingChange{
 			Type:   "removal",
@@ -297,12 +311,17 @@ func (d *SchemaDiff) BreakingChanges() []BreakingChange {
 		})
 	}
 
+	changes = append(changes, d.Unsupported...)
+
 	return changes
 }
 
 // HasBreakingChanges returns true if the diff contains any breaking changes.
 func (d *SchemaDiff) HasBreakingChanges() bool {
-	return len(d.RemoveTypes) > 0 || len(d.RemoveOwns) > 0
+	return len(d.RemoveTypes) > 0 ||
+		len(d.RemoveOwns) > 0 ||
+		len(d.RemoveAttributes) > 0 ||
+		len(d.Unsupported) > 0
 }
 
 // Operations converts the diff into a list of discrete, ordered operations.
@@ -332,6 +351,18 @@ func (d *SchemaDiff) Operations() []Operation {
 		ops = append(ops, AddRole{Relation: r.TypeName, Role: r.Role, Card: r.Card})
 	}
 
+	// Role-player additions (issue #34)
+	for _, p := range d.AddPlays {
+		ops = append(ops, AddRolePlayer{Entity: p.TypeName, Relation: p.Relation, Role: p.Role})
+	}
+
+	// In-place ownership annotation changes, applied via redefine (issue #56).
+	// Kept last: redefine statements execute as standalone queries after the
+	// batched define block.
+	for _, m := range d.ModifyOwns {
+		ops = append(ops, ModifyOwnership{Owner: m.TypeName, Attribute: m.Attribute, OldAnnots: m.OldAnnots, NewAnnots: m.NewAnnots})
+	}
+
 	return ops
 }
 
@@ -345,11 +376,16 @@ func (d *SchemaDiff) DestructiveOperations() []Operation {
 		ops = append(ops, RemoveOwnership{Owner: o.TypeName, Attribute: o.Attribute})
 	}
 
-	// Remove types
+	// Remove types. The bare TypeDB 3.x form `undefine <name>;` works for
+	// entities and relations alike, so RemoveEntity covers both.
 	for _, name := range d.RemoveTypes {
-		// We don't know if it's an entity or relation from just the name,
-		// but undefine works on the type name regardless
 		ops = append(ops, RemoveEntity{Name: name})
+	}
+
+	// Remove stale attribute types last, after every type that owned them is
+	// gone (issue #57).
+	for _, name := range d.RemoveAttributes {
+		ops = append(ops, RemoveAttribute{Name: name})
 	}
 
 	return ops

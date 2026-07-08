@@ -66,8 +66,8 @@ func TestSeqMigrate_Fresh(t *testing.T) {
 			"define attribute name, value string; attribute email, value string;",
 			"define entity person, owns name @key, owns email;",
 		}, []string{
-			"undefine entity person;",
-			"undefine attribute name; attribute email;",
+			"undefine person;",
+			"undefine name; email;",
 		}),
 	}
 
@@ -314,6 +314,146 @@ func TestSeqMigrate_MixedOps(t *testing.T) {
 	}
 	if len(applied) != 1 {
 		t.Errorf("expected 1 applied, got %d", len(applied))
+	}
+}
+
+// TestSeqMigrate_AtomicFailureLeavesNoPartialData verifies issue #60: a
+// statement-based migration that fails partway must roll back entirely —
+// no partial data commits and no migration record is written — and a
+// corrected version must then apply cleanly without duplicating rows.
+func TestSeqMigrate_AtomicFailureLeavesNoPartialData(t *testing.T) {
+	db := setupSeqMigrateDB(t)
+	ctx := context.Background()
+
+	setup := []gotype.SequentialMigration{
+		gotype.TQLMigration("001_schema", []string{
+			"define attribute name, value string;",
+			"define entity person, owns name @key;",
+		}, nil),
+	}
+	if _, err := gotype.RunSequentialMigrations(ctx, db, setup); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	// Second statement fails: the first insert must not persist.
+	bad := append(setup[:1:1], gotype.TQLMigration("002_seed", []string{
+		`insert $p isa person, has name "Alice";`,
+		"insert this is not valid typeql!!!;",
+	}, nil))
+	if _, err := gotype.RunSequentialMigrations(ctx, db, bad); err == nil {
+		t.Fatal("expected failure from invalid statement")
+	}
+
+	results, err := db.ExecuteRead(ctx, `match $p isa person; fetch { "name": $p.name };`)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("failed migration must not commit partial data, found %d persons", len(results))
+	}
+
+	infos, err := gotype.SeqMigrationStatus(ctx, db, bad)
+	if err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	for _, info := range infos {
+		if info.Name == "002_seed" && info.Applied {
+			t.Error("failed migration must not be recorded as applied")
+		}
+	}
+
+	// Corrected migration applies without duplicating anything.
+	fixed := append(setup[:1:1], gotype.TQLMigration("002_seed", []string{
+		`insert $p isa person, has name "Alice";`,
+		`insert $p isa person, has name "Bob";`,
+	}, nil))
+	applied, err := gotype.RunSequentialMigrations(ctx, db, fixed)
+	if err != nil {
+		t.Fatalf("fixed run failed: %v", err)
+	}
+	if len(applied) != 1 || applied[0] != "002_seed" {
+		t.Errorf("expected [002_seed], got %v", applied)
+	}
+	results, err = db.ExecuteRead(ctx, `match $p isa person; fetch { "name": $p.name };`)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected exactly 2 persons after fixed run, got %d", len(results))
+	}
+}
+
+// TestSeqMigrate_TargetNotFound verifies issue #59: an unknown target is an
+// error and applies nothing, instead of silently applying every migration.
+func TestSeqMigrate_TargetNotFound(t *testing.T) {
+	db := setupSeqMigrateDB(t)
+	ctx := context.Background()
+
+	migrations := []gotype.SequentialMigration{
+		gotype.TQLMigration("001_create_person", []string{
+			"define attribute name, value string;",
+			"define entity person, owns name @key;",
+		}, nil),
+	}
+
+	if _, err := gotype.RunSequentialMigrations(ctx, db, migrations, gotype.WithSeqTarget("001_create_persno")); err == nil {
+		t.Fatal("expected error for typo'd target")
+	}
+
+	infos, err := gotype.SeqMigrationStatus(ctx, db, migrations)
+	if err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	if infos[0].Applied {
+		t.Error("nothing should be applied when the target does not exist")
+	}
+}
+
+// TestSeqMigrate_RollbackAtomic verifies that rolling back a statement-based
+// migration removes its record in the same transaction as the Down statements.
+func TestSeqMigrate_RollbackAtomic(t *testing.T) {
+	db := setupSeqMigrateDB(t)
+	ctx := context.Background()
+
+	migrations := []gotype.SequentialMigration{
+		gotype.TQLMigration("001_schema", []string{
+			"define attribute name, value string;",
+			"define entity person, owns name @key;",
+		}, nil),
+		gotype.TQLMigration("002_seed", []string{
+			`insert $p isa person, has name "Alice";`,
+		}, []string{
+			`match $p isa person, has name "Alice"; delete $p;`,
+		}),
+	}
+
+	if _, err := gotype.RunSequentialMigrations(ctx, db, migrations); err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	rolledBack, err := gotype.RollbackSequentialMigration(ctx, db, migrations, 1)
+	if err != nil {
+		t.Fatalf("rollback failed: %v", err)
+	}
+	if len(rolledBack) != 1 || rolledBack[0] != "002_seed" {
+		t.Fatalf("expected [002_seed], got %v", rolledBack)
+	}
+
+	results, err := db.ExecuteRead(ctx, `match $p isa person; fetch { "name": $p.name };`)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 persons after rollback, got %d", len(results))
+	}
+	infos, err := gotype.SeqMigrationStatus(ctx, db, migrations)
+	if err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	for _, info := range infos {
+		if info.Name == "002_seed" && info.Applied {
+			t.Error("rolled-back migration should not show as applied")
+		}
 	}
 }
 

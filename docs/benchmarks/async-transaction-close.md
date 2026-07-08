@@ -6,7 +6,7 @@ darwin/arm64 with an Apple M4 Pro against TypeDB on `localhost:1730`.
 Benchmark command:
 
 ```bash
-TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./gotype \
+TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./gotype \
   -run '^$' \
   -bench '^(BenchmarkLiveRead_GetByIID|BenchmarkLiveRead_Get|BenchmarkLiveRead_All|BenchmarkLiveRead_GetWithRoles|BenchmarkLiveRead_CloseOnly|BenchmarkLiveRead_CloseCheckedOnly|BenchmarkLiveRead_GetByIIDBreakdown|BenchmarkLiveClose_ChannelEnqueue|BenchmarkLiveClose_GoroutinePerClose)$' \
   -benchtime=20x -count=1 -benchmem
