@@ -43,13 +43,20 @@ Given a TypeQL schema, tqlgen produces:
 - Role player fields with `role:name` tags, resolved through the relation's ancestor
   chain and `as` role overrides; a role no entity or relation plays is emitted as a
   `// TODO` comment (with a warning on `RenderConfig.WarnWriter`, default stderr)
-  instead of inventing an undefined Go type
+  instead of inventing an undefined Go type. List roles (`relates member[]`) and
+  roles whose cardinality allows more than one player (`@card(0..)`) become slice
+  fields (`[]*Player`) — the ORM inserts one links entry per element
 - Pointer types for optional fields (non-key attributes without explicit cardinality)
 - Slice fields (`[]T`) for multi-valued attributes — list syntax (`owns tag[]`) or a
   cardinality allowing more than one value (`@card(0..5)`, `@card(1..)`)
 - Full TypeDB 3.x value-type mapping: `date`/`datetime`/`datetime-tz` → `time.Time`,
-  `duration` → `time.Duration`, `decimal` → `float64` (lossy), `long`/`integer` → `int64`;
-  unknown value types and `owns` of undefined attributes warn before defaulting to string
+  `duration` → `time.Duration`, `long`/`integer` → `int64`; unknown value types and
+  `owns` of undefined attributes warn before defaulting to string
+- `decimal` attributes as `float64` fields carrying `value:decimal` in the tag
+  (after `key`/`unique`, before `card=`), e.g. `typedb:"price,key,value:decimal"` —
+  gotype registers the attribute as TypeDB `decimal`, writes `<number>dec` literals,
+  and hydrates the driver's decimal strings, so precision is preserved on the wire
+  even though the Go field is float64 (a field comment notes this)
 - An error from `Render` when two schema labels map to the same Go name
   (e.g. `user-name` and `user_name` both becoming `UserName`)
 - `time` imports when emitted field types require them; the `gotype` import only
@@ -222,6 +229,9 @@ The registry file contains:
 - **Relation parents** — `RelationParents` map for relation inheritance
 - **Sorted type lists** — `AllEntityTypes` and `AllRelationTypes` slices
 - **Schema hash** — `SchemaHash` constant (SHA256 prefix) when schema text is provided
+- **JSON schema fragments** (with `RegistryConfig.JSONSchema`) — `EntityTypeJSONSchema`
+  property maps per entity, plus `StructTypeJSONSchema` per TypeQL `struct` definition;
+  struct-valued attributes and struct fields map to the JSON type `"object"`
 - **Convenience functions** — `GetEntityKeys()`, `IsAbstractEntity()`, `IsAbstractRelation()`, `GetRolePlayers()`, `GetEntityAttributes()`, `GetRelationAttributes()`
 
 Programmatic usage:
@@ -260,7 +270,15 @@ Plus Go interfaces (`EntityOut`, `EntityCreate`, `EntityPatch`, `RelationOut`, `
 
 Multi-valued attributes (list syntax `owns x[]` or `@card` allowing more than one)
 are slice fields (`[]T`) in every DTO variant; base-struct Patch fields carry a
-single pointer level, never `**T`.
+single pointer level, never `**T`. List roles (`relates member[]`) and roles whose
+cardinality allows more than one player carry `[]string` IID/ID fields in the
+relation Out/Create DTOs instead of the scalar `*string`/`string`.
+
+TypeQL `struct` definitions are emitted as plain Go value structs (one per struct,
+sorted by name — no Out/Create/Patch triple, since they are value types): optional
+fields (`value string?`) become pointers, struct-typed fields reference the
+generated structs, and attributes whose value type is a struct reference the
+generated struct type instead of defaulting to string.
 
 ### DTO Configuration
 
@@ -345,7 +363,8 @@ The recognized acronyms are: ID, URL, UUID, API, HTTP, IID, NF.
   rendered as comments)
 - Escaped TypeQL string literals in annotations, including unicode escape forms `\uXXXX` and `\u{...}`
 - `fun` definitions (parsed for signature extraction, not emitted as Go code)
-- `struct` definitions (parsed for field extraction)
+- `struct` definitions (emitted as plain Go value structs in models and DTO modes,
+  and as `StructTypeJSONSchema` property maps in registry JSON-schema mode)
 - Comment annotations (`# @key value`, `# @key(value)`, `# @key` above type definitions)
 
 The parser uses [participle/v2](https://github.com/alecthomas/participle). TypeQL functions are parsed by the grammar: each `fun` body is captured as a flat token list for signature extraction and ends at the next top-level definition keyword (`entity`, `relation`, `attribute`, `struct`, `fun`), so definitions after a function are parsed normally.

@@ -200,6 +200,66 @@ entity person, owns tag @card(0..5), owns score @card(1..), owns alias[], owns n
 	compileGenerated(t, out)
 }
 
+// TestRenderCompile_ListRoles covers the relation half of the multi-valued
+// treatment: list roles (relates role[]) and roles whose cardinality allows
+// more than one player must generate slice fields ([]*Player), matching the
+// slice role players the ORM supports, while plain roles stay scalar
+// pointers.
+func TestRenderCompile_ListRoles(t *testing.T) {
+	src := `define
+attribute name, value string;
+entity person, owns name, plays team:member, plays team:leader, plays guild:participant;
+relation team, relates member[], relates leader;
+relation guild, relates participant @card(0..);
+`
+	out, warnings := renderSchema(t, src, DefaultConfig())
+
+	for _, want := range []string{
+		"Member []*Person `typedb:\"role:member\"`",           // list role (relates member[])
+		"Leader *Person `typedb:\"role:leader\"`",             // plain role stays scalar
+		"Participant []*Person `typedb:\"role:participant\"`", // many-cardinality role
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated code\n%s", want, out)
+		}
+	}
+	if warnings != "" {
+		t.Errorf("unexpected warnings: %q", warnings)
+	}
+
+	compileGenerated(t, out)
+}
+
+// TestRenderCompile_DecimalValueTag covers the decimal contract with gotype:
+// decimal attributes keep float64 Go fields but carry value:decimal in the
+// generated tag (after key/unique, before card), so gotype registers the
+// attribute as TypeDB decimal and preserves precision on the wire.
+func TestRenderCompile_DecimalValueTag(t *testing.T) {
+	src := `define
+attribute price, value decimal;
+attribute discount-rate, value decimal;
+attribute cost, value decimal;
+entity product, owns price @key, owns cost, owns discount-rate @card(0..);
+`
+	out, warnings := renderSchema(t, src, DefaultConfig())
+
+	for _, want := range []string{
+		"Price float64 `typedb:\"price,key,value:decimal\"`",                       // key decimal, tag order key < value:decimal
+		"Cost *float64 `typedb:\"cost,value:decimal\"`",                            // optional decimal
+		"DiscountRate []float64 `typedb:\"discount-rate,value:decimal,card=0..\"`", // value:decimal before card
+		"// decimal: precision is preserved on the wire; the Go field is float64",
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated code\n%s", want, out)
+		}
+	}
+	if warnings != "" {
+		t.Errorf("unexpected warnings: %q", warnings)
+	}
+
+	compileGenerated(t, out)
+}
+
 // TestRenderCompile_EnumValueSanitization is a regression test for issue #72:
 // @values strings containing '/', '+', spaces, or quotes used to be spliced
 // into constant names and values verbatim, producing invalid Go.

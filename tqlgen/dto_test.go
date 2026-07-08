@@ -722,3 +722,106 @@ func fieldNames(fields []dtoFieldCtx) []string {
 	}
 	return names
 }
+
+// TestBuildDTOData_Structs covers the DTO half of TypeQL struct support:
+// parsed struct definitions are emitted as plain Go value structs (no
+// Out/Create/Patch triple), optional fields become pointers, and attributes
+// whose value type is a struct reference the generated struct type instead of
+// defaulting to string.
+func TestBuildDTOData_Structs(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "name", ValueType: "string"},
+			{Name: "home-address", ValueType: "address"},
+		},
+		Entities: []EntitySpec{
+			{Name: "person", Owns: []OwnsSpec{
+				{Attribute: "name", Key: true},
+				{Attribute: "home-address"},
+			}},
+		},
+		Structs: []StructSpec{
+			{Name: "contact", Fields: []StructFieldSpec{
+				{Name: "home", ValueType: "address", Optional: true},
+			}},
+			{Name: "address", Fields: []StructFieldSpec{
+				{Name: "street", ValueType: "string"},
+				{Name: "zip", ValueType: "integer", Optional: true},
+				{Name: "since", ValueType: "datetime", Optional: true},
+			}},
+		},
+	}
+	data := BuildDTOData(schema, DTOConfig{PackageName: "dto", UseAcronyms: true})
+
+	if len(data.Structs) != 2 {
+		t.Fatalf("expected 2 structs, got %d", len(data.Structs))
+	}
+	// Sorted by name: address before contact.
+	if data.Structs[0].GoName != "Address" || data.Structs[1].GoName != "Contact" {
+		t.Errorf("structs not sorted by name: %q, %q", data.Structs[0].GoName, data.Structs[1].GoName)
+	}
+	if !data.NeedsTime {
+		t.Error("expected NeedsTime for the datetime struct field")
+	}
+
+	var buf bytes.Buffer
+	if err := RenderDTO(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`// Address is generated from TypeQL struct "address".`,
+		"type Address struct {",
+		"Street string `json:\"street\"`",
+		"Zip *int64 `json:\"zip\"`",
+		"Since *time.Time `json:\"since\"`",
+		"type Contact struct {",
+		"Home *Address `json:\"home\"`",                // struct-typed field references the generated struct
+		"HomeAddress *Address `json:\"home-address\"`", // struct-valued attribute on the entity
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated DTOs\n%s", want, out)
+		}
+	}
+
+	compileGenerated(t, out)
+}
+
+// TestBuildDTOData_ListRoles covers the DTO half of list-role support: list
+// roles (relates role[]) and roles whose cardinality allows more than one
+// player carry a slice of IIDs/IDs in the relation Out/Create DTOs, while
+// plain roles keep the scalar treatment.
+func TestBuildDTOData_ListRoles(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{{Name: "name", ValueType: "string"}},
+		Entities: []EntitySpec{
+			{Name: "person", Owns: []OwnsSpec{{Attribute: "name", Key: true}}},
+		},
+		Relations: []RelationSpec{
+			{Name: "team", Relates: []RelatesSpec{
+				{Role: "member", IsList: true},
+				{Role: "leader"},
+				{Role: "participant", Card: "0.."},
+			}},
+		},
+	}
+	data := BuildDTOData(schema, DTOConfig{PackageName: "dto", UseAcronyms: true})
+
+	var buf bytes.Buffer
+	if err := RenderDTO(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"MemberID []string `json:\"member_id\"`",           // list role, both Out and Create
+		"LeaderID *string `json:\"leader_id\"`",            // plain role in Out
+		"LeaderID string `json:\"leader_id\"`",             // plain role in Create
+		"ParticipantID []string `json:\"participant_id\"`", // many-cardinality role
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated DTOs\n%s", want, out)
+		}
+	}
+
+	compileGenerated(t, out)
+}

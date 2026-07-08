@@ -68,6 +68,19 @@ entity company, plays team:member;
 `,
 		},
 		{
+			name: "decimal, struct-valued attributes, and role cardinality",
+			schema: `define
+attribute price, value decimal;
+attribute home-address, value address;
+entity product, owns price @key;
+entity person, plays guild:participant, plays guild:founder, owns home-address;
+relation guild, relates participant @card(0..), relates founder;
+struct address:
+    street value string,
+    zip value integer?;
+`,
+		},
+		{
 			name: "range annotations beyond integers",
 			schema: `define
 attribute score, value double @range(0.5..9.5);

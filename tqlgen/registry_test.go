@@ -1009,3 +1009,72 @@ func TestToRegistryConst_Hyphens(t *testing.T) {
 		t.Errorf("expected RelHasID, got %s", got2)
 	}
 }
+
+// TestBuildRegistryData_StructJSONSchema covers the registry half of TypeQL
+// struct support: struct-valued attributes map to the JSON type "object" in
+// EntityTypeJSONSchema, and each struct definition gets its own property map
+// in StructTypeJSONSchema (non-optional fields required).
+func TestBuildRegistryData_StructJSONSchema(t *testing.T) {
+	schema := &ParsedSchema{
+		Attributes: []AttributeSpec{
+			{Name: "name", ValueType: "string"},
+			{Name: "home-address", ValueType: "address"},
+		},
+		Entities: []EntitySpec{
+			{Name: "person", Owns: []OwnsSpec{
+				{Attribute: "name", Key: true},
+				{Attribute: "home-address"},
+			}},
+		},
+		Structs: []StructSpec{
+			{Name: "address", Fields: []StructFieldSpec{
+				{Name: "street", ValueType: "string"},
+				{Name: "zip", ValueType: "integer", Optional: true},
+				{Name: "region", ValueType: "geo", Optional: true}, // nested struct
+			}},
+			{Name: "geo", Fields: []StructFieldSpec{
+				{Name: "lat", ValueType: "double"},
+				{Name: "lng", ValueType: "double"},
+			}},
+		},
+	}
+	data := BuildRegistryData(schema, RegistryConfig{PackageName: "reg", JSONSchema: true})
+
+	if len(data.StructJSONSchema) != 2 {
+		t.Fatalf("expected 2 struct JSON schemas, got %d", len(data.StructJSONSchema))
+	}
+	addr := data.StructJSONSchema[0]
+	if addr.TypeName != "address" {
+		t.Fatalf("expected address first (sorted), got %q", addr.TypeName)
+	}
+	propTypes := map[string]string{}
+	for _, p := range addr.Properties {
+		propTypes[p.Name] = p.JSONType
+	}
+	if propTypes["street"] != "string" || propTypes["zip"] != "integer" {
+		t.Errorf("unexpected address property types: %v", propTypes)
+	}
+	if propTypes["region"] != "object" {
+		t.Errorf("nested struct field should map to object, got %q", propTypes["region"])
+	}
+	if len(addr.Required) != 1 || addr.Required[0] != "street" {
+		t.Errorf("expected required [street], got %v", addr.Required)
+	}
+
+	var buf bytes.Buffer
+	if err := RenderRegistry(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"var StructTypeJSONSchema = map[string]map[string]any{",
+		`"home-address": map[string]any{"type": "object"},`, // struct-valued attribute on the entity
+		`"lat": map[string]any{"type": "number"},`,
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated registry\n%s", want, out)
+		}
+	}
+
+	compileGenerated(t, out)
+}
