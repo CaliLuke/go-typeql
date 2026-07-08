@@ -115,6 +115,20 @@ gotype.Not(filter)            // not { ... } block
 
 Multiple calls to `Filter()` on the same query are ANDed together.
 
+Variables inside `Or`/`Not` blocks are locally scoped in TypeDB 3.x, so the
+builder renames them with a per-block suffix (`$e_o1__name`, `$e_n1__age`).
+Suffix numbering is deterministic: it restarts at 1 for every built query
+(and for every standalone `ToPatterns` call), so the same logical query always
+produces byte-identical TypeQL. Within one query, all `or`/`not` blocks —
+including sibling filters and nested combinators — share one numbering
+sequence, so no two blocks ever reuse a scoped variable name.
+
+One caveat: a custom `Filter` implementation that internally builds an
+`OrFilter`/`NotFilter` starts a fresh numbering sequence inside its own
+`ToPatterns`, so its block suffixes can collide with a sibling block in the
+same query when both bind the same attribute. Prefer composing the built-in
+combinators directly.
+
 ## Sorting, Pagination
 
 ```go

@@ -226,6 +226,20 @@ func TestTypeQLSyntax_FilterEmissions(t *testing.T) {
 		runFiltered(t, "not-empty-in query", Not(In("name", nil)))
 	})
 
+	t.Run("sibling or filters over the same attribute", func(t *testing.T) {
+		// Sibling or blocks share one per-query scope, so the branches of
+		// both blocks bind distinct deterministic variables (_o1.._o4).
+		runFiltered(t, "sibling-or query",
+			Or(Eq("name", "Alice"), Eq("name", "Bob")),
+			Or(Eq("name", "Carol"), Eq("name", "Dave")),
+		)
+	})
+
+	t.Run("or nested inside not", func(t *testing.T) {
+		runFiltered(t, "or-inside-not query",
+			Not(Or(Eq("name", "Alice"), Eq("name", "Bob"))))
+	})
+
 	t.Run("or of role players", func(t *testing.T) {
 		registerMultiValueTypes(t)
 		readTx := &mockTx{}
