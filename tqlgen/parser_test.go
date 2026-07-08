@@ -843,6 +843,52 @@ func TestRender_BasicOutput(t *testing.T) {
 // TestParseSchema_ListSyntax is a regression test for issue #80: TypeQL 3.x
 // ordered-list syntax (owns name[], relates member[]) must parse and surface
 // IsList on the resulting specs.
+// The comma-constraint sub form is how generators emit annotated subtypes
+// (annotations after an inline `sub` bind to the sub clause — server ANN9).
+func TestParseSchema_SubAsCommaConstraint(t *testing.T) {
+	schema, err := ParseSchema(`define
+attribute name, value string;
+entity artifact @abstract, owns name;
+entity document @abstract,
+    sub artifact,
+    owns name;
+relation grouping, relates member;
+relation team @abstract,
+    sub grouping,
+    relates captain;
+`)
+	if err != nil {
+		t.Fatalf("ParseSchema failed: %v", err)
+	}
+	var doc *EntitySpec
+	for i := range schema.Entities {
+		if schema.Entities[i].Name == "document" {
+			doc = &schema.Entities[i]
+		}
+	}
+	if doc == nil {
+		t.Fatal("document entity not parsed")
+	}
+	if doc.Parent != "artifact" {
+		t.Errorf("document Parent = %q, want artifact", doc.Parent)
+	}
+	if !doc.Abstract {
+		t.Error("document should be abstract")
+	}
+	var team *RelationSpec
+	for i := range schema.Relations {
+		if schema.Relations[i].Name == "team" {
+			team = &schema.Relations[i]
+		}
+	}
+	if team == nil {
+		t.Fatal("team relation not parsed")
+	}
+	if team.Parent != "grouping" {
+		t.Errorf("team Parent = %q, want grouping", team.Parent)
+	}
+}
+
 func TestParseSchema_ListSyntax(t *testing.T) {
 	schema, err := ParseSchema(`define
 attribute name, value string;

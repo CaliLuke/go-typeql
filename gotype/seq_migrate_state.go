@@ -74,9 +74,11 @@ fetch {
 		case time.Time:
 			rec.AppliedAt = v
 		case string:
-			if parsed, parseErr := time.Parse(time.RFC3339, v); parseErr == nil {
-				rec.AppliedAt = parsed
+			parsed, parseErr := parseAppliedAt(v)
+			if parseErr != nil {
+				return nil, fmt.Errorf("seq migration state: migration %q: %w", name, parseErr)
 			}
+			rec.AppliedAt = parsed
 		}
 		if cs, ok := flat["checksum"].(string); ok {
 			rec.Checksum = cs

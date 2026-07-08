@@ -44,10 +44,13 @@ type SubClause struct {
 	Annots []Annotation `parser:"@@*"`
 }
 
-// EntityClause is one of: owns or plays.
+// EntityClause is one of: owns, plays, or sub. The comma-constraint sub form
+// (`entity x @abstract, sub y`) is how generators emit annotated subtypes,
+// since annotations after an inline `sub` bind to the sub clause (ANN9).
 type EntityClause struct {
-	Owns  *OwnsDef  `parser:"  @@"`
-	Plays *PlaysDef `parser:"| @@"`
+	Owns  *OwnsDef   `parser:"  @@"`
+	Plays *PlaysDef  `parser:"| @@"`
+	Sub   *SubClause `parser:"| @@"`
 }
 
 // OwnsDef parses: owns attr-name[[]] [@key] [@unique] [@card(...)]
@@ -74,11 +77,13 @@ type RelationDef struct {
 	Clauses []RelationClause `parser:"( @@ ( ',' @@ )* )? ';'"`
 }
 
-// RelationClause is one of: relates, owns, or plays.
+// RelationClause is one of: relates, owns, plays, or sub (comma-constraint
+// form; see EntityClause).
 type RelationClause struct {
 	Relates *RelatesDef `parser:"  @@"`
 	Owns    *OwnsDef    `parser:"| @@"`
 	Plays   *PlaysDef   `parser:"| @@"`
+	Sub     *SubClause  `parser:"| @@"`
 }
 
 // RelatesDef parses: relates role-name[[]] [as parent-role] [@card(...)]
@@ -488,6 +493,9 @@ func convertEntity(e *EntityDef) EntitySpec {
 			applyDocMeta(c.Plays.Annots, &plays.Doc, &plays.Meta)
 			spec.Plays = append(spec.Plays, plays)
 		}
+		if c.Sub != nil && spec.Parent == "" {
+			spec.Parent = c.Sub.Parent
+		}
 	}
 	return spec
 }
@@ -525,6 +533,9 @@ func convertRelation(r *RelationDef) RelationSpec {
 			}
 			applyDocMeta(c.Plays.Annots, &plays.Doc, &plays.Meta)
 			spec.Plays = append(spec.Plays, plays)
+		}
+		if c.Sub != nil && spec.Parent == "" {
+			spec.Parent = c.Sub.Parent
 		}
 	}
 	return spec

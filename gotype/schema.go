@@ -91,10 +91,10 @@ func generateTypeDef(info *ModelInfo, playsMap map[string][]string) string {
 		kindStr = "relation"
 	}
 
+	// Annotations attach to the type name; `sub <parent>` is emitted as a
+	// separate comma constraint. `entity x sub y @abstract` binds the
+	// annotation to the sub clause, which the server rejects (ANN9).
 	header := fmt.Sprintf("%s %s", kindStr, info.TypeName)
-	if info.Supertype != "" {
-		header += " sub " + info.Supertype
-	}
 	if info.IsAbstract {
 		header += " @abstract"
 	}
@@ -105,6 +105,9 @@ func generateTypeDef(info *ModelInfo, playsMap map[string][]string) string {
 		header += " " + metaAnnotation(meta.Key, meta.Value)
 	}
 	lines = append(lines, header)
+	if info.Supertype != "" {
+		lines = append(lines, "    sub "+info.Supertype)
+	}
 
 	// Roles (relation only)
 	for _, role := range info.Roles {

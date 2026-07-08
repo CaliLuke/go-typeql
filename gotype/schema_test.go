@@ -191,8 +191,10 @@ func TestGenerateSchema_Supertype(t *testing.T) {
 	if !strings.Contains(schema, "entity zzz-parent-model @abstract") {
 		t.Errorf("missing abstract parent definition\n%s", schema)
 	}
-	if !strings.Contains(schema, "entity aaa-child-model sub zzz-parent-model") {
-		t.Errorf("missing sub clause on child definition\n%s", schema)
+	// sub is a comma constraint so annotations bind to the type name, not
+	// the sub clause (ANN9 on the live server).
+	if !strings.Contains(schema, "entity aaa-child-model,\n    sub zzz-parent-model") {
+		t.Errorf("missing sub constraint on child definition\n%s", schema)
 	}
 	// Parent must be defined before the child.
 	if strings.Index(schema, "entity zzz-parent-model") > strings.Index(schema, "entity aaa-child-model") {
