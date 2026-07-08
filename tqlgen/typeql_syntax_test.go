@@ -58,6 +58,26 @@ return count($p);
 entity person, owns name;
 `,
 		},
+		{
+			name: "ordered list ownership and roles",
+			schema: `define
+attribute name, value string;
+entity person, owns name[] @card(1..10);
+relation team, relates member[] @card(2..), relates leader, owns name[];
+entity company, plays team:member;
+`,
+		},
+		{
+			name: "range annotations beyond integers",
+			schema: `define
+attribute score, value double @range(0.5..9.5);
+attribute initial, value string @range("a".."z");
+attribute joined, value date @range(2020-01-01..2030-12-31);
+attribute born, value datetime @range(1900-01-01T00:00:00..2100-01-01T00:00:00);
+attribute level, value integer @range(..10);
+entity person, owns score, owns initial, owns joined, owns born, owns level;
+`,
+		},
 	}
 
 	for _, tc := range cases {

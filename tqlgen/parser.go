@@ -50,9 +50,11 @@ type EntityClause struct {
 	Plays *PlaysDef `parser:"| @@"`
 }
 
-// OwnsDef parses: owns attr-name [@key] [@unique] [@card(...)]
+// OwnsDef parses: owns attr-name[[]] [@key] [@unique] [@card(...)]
+// The optional '[]' suffix marks a TypeQL 3.x ordered-list ownership.
 type OwnsDef struct {
 	Attribute string       `parser:"'owns' @Ident"`
+	IsList    bool         `parser:"( @'[' ']' )?"`
 	Annots    []Annotation `parser:"@@*"`
 }
 
@@ -79,9 +81,11 @@ type RelationClause struct {
 	Plays   *PlaysDef   `parser:"| @@"`
 }
 
-// RelatesDef parses: relates role-name [as parent-role] [@card(...)]
+// RelatesDef parses: relates role-name[[]] [as parent-role] [@card(...)]
+// The optional '[]' suffix marks a TypeQL 3.x ordered-list role.
 type RelatesDef struct {
 	Role     string       `parser:"'relates' @Ident"`
+	IsList   bool         `parser:"( @'[' ']' )?"`
 	AsParent *AsClause    `parser:"@@?"`
 	Annots   []Annotation `parser:"@@*"`
 }
@@ -125,9 +129,30 @@ type ValuesAnnot struct {
 	Values []string `parser:"'@values' '(' @String ( ',' @String )* ')'"`
 }
 
-// RangeAnnot parses: @range(expr)
+// RangeAnnot parses: @range(operand), where the operand is any TypeQL range
+// expression — integer (1..5), decimal (0.5..9.5), date/datetime, or string
+// ("a".."z") bounds, including half-open forms. The operand is captured as a
+// flat token list up to the closing parenthesis and reassembled verbatim by
+// Expr.
 type RangeAnnot struct {
-	Expr string `parser:"'@range' '(' @CardExpr ')'"`
+	Toks []RangeTok `parser:"'@range' '(' @@+ ')'"`
+}
+
+// RangeTok matches a single token of a @range operand: anything except the
+// closing parenthesis that ends the annotation.
+type RangeTok struct {
+	Tok string `parser:"(?! ')' ) @(Ident | Punct | String | CardExpr | Var | Operator)"`
+}
+
+// Expr returns the range operand reassembled from its tokens. TypeQL range
+// operands contain no significant whitespace, so plain concatenation
+// reconstructs the source text (e.g. "0.5..9.5", `"a".."z"`).
+func (r *RangeAnnot) Expr() string {
+	var b strings.Builder
+	for _, t := range r.Toks {
+		b.WriteString(t.Tok)
+	}
+	return b.String()
 }
 
 // SubkeyAnnot parses: @subkey(identifier)
@@ -436,7 +461,7 @@ func convertAttr(a *AttrDef) AttributeSpec {
 			}
 		}
 		if ann.Range != nil {
-			spec.RangeOp = ann.Range.Expr
+			spec.RangeOp = ann.Range.Expr()
 		}
 	}
 	return spec
@@ -478,7 +503,7 @@ func convertRelation(r *RelationDef) RelationSpec {
 	}
 	for _, c := range r.Clauses {
 		if c.Relates != nil {
-			rs := RelatesSpec{Role: c.Relates.Role}
+			rs := RelatesSpec{Role: c.Relates.Role, IsList: c.Relates.IsList}
 			if c.Relates.AsParent != nil {
 				rs.AsParent = c.Relates.AsParent.Parent
 			}
@@ -529,7 +554,7 @@ func hasAbstract(annots []Annotation) bool {
 }
 
 func convertOwns(o *OwnsDef) OwnsSpec {
-	spec := OwnsSpec{Attribute: o.Attribute}
+	spec := OwnsSpec{Attribute: o.Attribute, IsList: o.IsList}
 	applyDocMeta(o.Annots, &spec.Doc, &spec.Meta)
 	for _, ann := range o.Annots {
 		if ann.Key {
@@ -671,7 +696,14 @@ func ExtractAnnotations(input string) map[string]map[string]string {
 			continue
 		}
 
-		// Check if this line defines a type
+		// Blank lines and plain (non-annotation) comments between the
+		// annotations and the definition do not clear pending annotations.
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// A code line: attach pending annotations if it defines a type,
+		// then clear them either way.
 		if len(pendingAnnots) > 0 {
 			if m := typeRe.FindStringSubmatch(trimmed); m != nil {
 				annots := make(map[string]string)
@@ -680,8 +712,6 @@ func ExtractAnnotations(input string) map[string]map[string]string {
 				}
 				result[m[2]] = annots
 			}
-			pendingAnnots = nil
-		} else if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
 			pendingAnnots = nil
 		}
 	}

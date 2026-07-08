@@ -199,7 +199,9 @@ func TestBuildDTOData_BaseStructEmbed(t *testing.T) {
 			}},
 		},
 	}
-	schema.AccumulateInheritance()
+	if err := schema.AccumulateInheritance(); err != nil {
+		t.Fatalf("AccumulateInheritance failed: %v", err)
+	}
 
 	data := BuildDTOData(schema, DTOConfig{
 		PackageName:  "dto",
