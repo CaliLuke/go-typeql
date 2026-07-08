@@ -41,9 +41,14 @@ clean-rust:
 test-unit:
 	go test ./ast/... ./gotype/...
 
-# Run integration tests (requires TypeDB + built Rust library)
+# Run integration tests (requires TypeDB + built Rust library).
+# The repo compose maps host port 1730 -> container port 1729;
+# TYPEDB_GO_COMPOSE_PORT_MAP=1 opts into the localhost address translation
+# that makes driver.Open("localhost:1730") reach the compose server.
 test-integration:
-	go test -tags integration ./driver/... ./gotype/...
+	TEST_DB_ADDRESS=$${TEST_DB_ADDRESS:-localhost:1730} \
+	TYPEDB_GO_COMPOSE_PORT_MAP=$${TYPEDB_GO_COMPOSE_PORT_MAP:-1} \
+	go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 # Run all tests
 test: test-unit

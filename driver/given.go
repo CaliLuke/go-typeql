@@ -2,9 +2,12 @@
 
 package driver
 
+// #include "typedb_ffi.h"
+import "C"
 import (
 	"encoding/json"
 	"fmt"
+	"unsafe"
 )
 
 // GivenRows contains typed input rows for a TypeQL query with a given stage.
@@ -43,11 +46,37 @@ const (
 //
 // Handle is only meaningful to this process and can be passed back with
 // ConceptGiven. Kind, Type, and IID are exposed for diagnostics and filtering.
+//
+// Handles are only produced when a query is executed with
+// QueryOptions.SetConceptHandles(true). Each handle pins a concept in a
+// process-global registry until it is released: call Release when the handle
+// is no longer needed (or ReleaseAllConcepts to drop every handle) to avoid
+// unbounded memory growth in long-running processes. A handle stays valid
+// across transactions until released.
 type Concept struct {
 	Handle string
 	Kind   string
 	Type   string
 	IID    string
+}
+
+// Release frees the registry entry backing this concept handle. After
+// Release, passing the handle to ConceptGiven yields an "unknown concept
+// handle" error. Releasing an empty or already-released handle is a no-op.
+func (c Concept) Release() {
+	if c.Handle == "" {
+		return
+	}
+	cHandle := C.CString(c.Handle)
+	defer C.free(unsafe.Pointer(cHandle))
+	C.typedb_concept_drop(cHandle)
+}
+
+// ReleaseAllConcepts frees every concept handle registered by this process,
+// across all drivers and transactions. Handles obtained before this call
+// become invalid.
+func ReleaseAllConcepts() {
+	C.typedb_concepts_drop_all()
 }
 
 // NewGivenRows creates a GivenRows value with the given variable names.
@@ -170,6 +199,9 @@ func DurationGiven(v string) GivenValue {
 }
 
 // AsConcept extracts an opaque TypeDB concept from a query result value.
+//
+// It only succeeds for entity/relation values returned by a query executed
+// with QueryOptions.SetConceptHandles(true); other results carry no handle.
 func AsConcept(value any) (Concept, bool) {
 	fields, ok := value.(map[string]any)
 	if !ok {

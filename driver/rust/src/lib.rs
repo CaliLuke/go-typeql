@@ -4,14 +4,27 @@
 // out-parameters (*mut *mut c_char) that receive error message strings.
 // Query results are returned as a single MessagePack-encoded byte buffer
 // via typedb_transaction_query().
+//
+// Safety: every exported function wraps its body in catch_unwind (see
+// ffi_call / ffi_call_unit). A Rust panic never unwinds across the C
+// boundary; it is converted into an err_out message plus the function's
+// null/false/no-op default return.
+//
+// Concept handles: entity/relation concepts are only registered in the
+// process-global registry when a query explicitly requests it
+// (register_concepts = true). Registered handles stay valid across
+// transactions until released with typedb_concept_drop /
+// typedb_concepts_drop_all.
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::ffi::{c_char, CStr, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr::null_mut;
 use std::str::FromStr;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Mutex, Once, OnceLock,
+    Mutex, MutexGuard, Once, OnceLock,
 };
 use std::time::{Duration, Instant};
 
@@ -34,7 +47,12 @@ static NEXT_CONCEPT_HANDLE: AtomicU64 = AtomicU64::new(1);
 static CONCEPT_REGISTRY: OnceLock<Mutex<HashMap<String, Concept>>> = OnceLock::new();
 
 /// Convert a TypeDB Concept to a clean JSON value instead of Rust Debug strings.
-fn concept_to_json(concept: &Concept) -> serde_json::Value {
+///
+/// When register_handle is true, entity/relation instances are registered in
+/// the process-global concept registry and the resulting object carries a
+/// "_concept_handle" key. The caller owns that handle and must release it via
+/// typedb_concept_drop / typedb_concepts_drop_all.
+fn concept_to_json(concept: &Concept, register_handle: bool) -> serde_json::Value {
     // Attributes & Values → extract the actual typed value
     if let Some(value) = concept.try_get_value() {
         return match value.get_type() {
@@ -59,7 +77,9 @@ fn concept_to_json(concept: &Concept) -> serde_json::Value {
         );
         obj.insert("_type".into(), json!(concept.get_label()));
         obj.insert("_iid".into(), json!(format!("{}", iid)));
-        obj.insert("_concept_handle".into(), json!(register_concept(concept)));
+        if register_handle {
+            obj.insert("_concept_handle".into(), json!(register_concept(concept)));
+        }
         return serde_json::Value::Object(obj);
     }
     // Types (EntityType, RelationType, etc.)
@@ -76,27 +96,46 @@ fn concept_to_json(concept: &Concept) -> serde_json::Value {
     json!(format!("{:?}", concept))
 }
 
-fn concept_registry() -> &'static Mutex<HashMap<String, Concept>> {
-    CONCEPT_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+/// Lock the concept registry, recovering from poisoning instead of panicking.
+/// The registry contains only plain data, so a panic while the lock was held
+/// cannot leave it in a logically corrupt state.
+fn registry_lock() -> MutexGuard<'static, HashMap<String, Concept>> {
+    CONCEPT_REGISTRY
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn register_concept(concept: &Concept) -> String {
     let id = NEXT_CONCEPT_HANDLE.fetch_add(1, Ordering::Relaxed);
     let handle = format!("concept-{}", id);
-    concept_registry()
-        .lock()
-        .expect("concept registry poisoned")
-        .insert(handle.clone(), concept.clone());
+    registry_lock().insert(handle.clone(), concept.clone());
     handle
 }
 
 fn get_registered_concept(handle: &str) -> Result<Concept, String> {
-    concept_registry()
-        .lock()
-        .expect("concept registry poisoned")
+    registry_lock()
         .get(handle)
         .cloned()
         .ok_or_else(|| format!("unknown concept handle: {}", handle))
+}
+
+/// Release a single registered concept handle. Unknown handles are ignored.
+#[no_mangle]
+pub extern "C" fn typedb_concept_drop(handle: *const c_char) {
+    ffi_call_unit(|| {
+        if let Ok(handle) = c_str(handle) {
+            registry_lock().remove(handle);
+        }
+    });
+}
+
+/// Release every concept handle registered by this process.
+#[no_mangle]
+pub extern "C" fn typedb_concepts_drop_all() {
+    ffi_call_unit(|| {
+        registry_lock().clear();
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -105,14 +144,51 @@ fn get_registered_concept(handle: &str) -> Result<Concept, String> {
 
 /// Sets error message via out-parameter.
 /// If err_out is null, the error is silently dropped.
+/// Interior NUL bytes are escaped so the message is never swallowed.
 fn set_error(err_out: *mut *mut c_char, err: impl std::fmt::Display) {
     if err_out.is_null() {
         return;
     }
-    let msg = err.to_string();
-    match CString::new(msg) {
-        Ok(cstr) => unsafe { *err_out = cstr.into_raw() },
-        Err(_) => unsafe { *err_out = null_mut() },
+    unsafe { *err_out = to_c_string(err.to_string()) }
+}
+
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        format!("panic in typedb-go-ffi: {}", s)
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        format!("panic in typedb-go-ffi: {}", s)
+    } else {
+        "panic in typedb-go-ffi".to_string()
+    }
+}
+
+/// Run an exported function body, containing Rust panics at the FFI boundary.
+/// Err results and panics become an err_out message plus the default value.
+fn ffi_call<T>(
+    err_out: *mut *mut c_char,
+    default: impl FnOnce() -> T,
+    body: impl FnOnce() -> Result<T, String>,
+) -> T {
+    match catch_unwind(AssertUnwindSafe(body)) {
+        Ok(Ok(value)) => value,
+        Ok(Err(message)) => {
+            set_error(err_out, message);
+            default()
+        }
+        Err(payload) => {
+            set_error(err_out, panic_message(payload));
+            default()
+        }
+    }
+}
+
+/// Contain panics in exported functions that have no error out-parameter.
+/// The panic is reported to stderr (best effort) and otherwise swallowed.
+fn ffi_call_unit(body: impl FnOnce()) {
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(body)) {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            eprintln!("typedb_go_rust.panic {}", panic_message(payload));
+        }));
     }
 }
 
@@ -120,32 +196,56 @@ fn set_error(err_out: *mut *mut c_char, err: impl std::fmt::Display) {
 // String helpers
 // ---------------------------------------------------------------------------
 
-fn c_str(ptr: *const c_char) -> &'static str {
-    assert!(!ptr.is_null());
-    unsafe { CStr::from_ptr(ptr).to_str().unwrap_or("") }
-}
-
-fn to_c_string(s: String) -> *mut c_char {
-    CString::new(s).unwrap_or_default().into_raw()
-}
-
-fn addresses_for_open(address: &str) -> typedb_driver::Result<Addresses> {
-    if let Some((host, port)) = address.rsplit_once(':') {
-        if matches!(host, "localhost" | "127.0.0.1") && port != "1729" {
-            // TypeDB CE advertises its in-container address. Preserve mapped
-            // localhost ports such as the repo's localhost:1730 compose setup.
-            return Addresses::try_from_translation_str(HashMap::from([(
-                address,
-                "127.0.0.1:1729",
-            )]));
-        }
+/// Borrow a NUL-terminated C string as a &str.
+///
+/// The returned borrow is tied to the caller-chosen lifetime 'a; the caller
+/// must ensure ptr stays valid (and unmodified) for that lifetime. Null
+/// pointers and invalid UTF-8 are reported as errors instead of panicking or
+/// silently substituting an empty string.
+fn c_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {
+    if ptr.is_null() {
+        return Err("null string pointer passed to typedb-go-ffi".to_string());
     }
-    Addresses::try_from_address_str(address)
+    unsafe { CStr::from_ptr(ptr) }
+        .to_str()
+        .map_err(|e| format!("invalid UTF-8 in string passed to typedb-go-ffi: {}", e))
 }
 
-fn c_string_slice<'a>(ptr: *const *const c_char, count: usize) -> Vec<&'a str> {
+/// Convert a Rust string into a heap-allocated C string for the Go side.
+/// Interior NUL bytes are escaped as "\0" so content is never silently
+/// replaced with an empty string. Caller frees with typedb_free_string.
+fn to_c_string(s: String) -> *mut c_char {
+    let sanitized = if s.contains('\0') {
+        s.replace('\0', "\\0")
+    } else {
+        s
+    };
+    // Infallible: sanitized contains no NUL bytes.
+    match CString::new(sanitized) {
+        Ok(cstr) => cstr.into_raw(),
+        Err(_) => unreachable!("NUL bytes were escaped above"),
+    }
+}
+
+/// Dereference an opaque pointer received over the FFI, rejecting null.
+fn deref<'a, T>(ptr: *const T, what: &str) -> Result<&'a T, String> {
+    if ptr.is_null() {
+        return Err(format!("null {} pointer passed to typedb-go-ffi", what));
+    }
+    Ok(unsafe { &*ptr })
+}
+
+/// Mutably dereference an opaque pointer received over the FFI, rejecting null.
+fn deref_mut<'a, T>(ptr: *mut T, what: &str) -> Result<&'a mut T, String> {
+    if ptr.is_null() {
+        return Err(format!("null {} pointer passed to typedb-go-ffi", what));
+    }
+    Ok(unsafe { &mut *ptr })
+}
+
+fn c_string_slice<'a>(ptr: *const *const c_char, count: usize) -> Result<Vec<&'a str>, String> {
     if ptr.is_null() || count == 0 {
-        return vec![];
+        return Ok(vec![]);
     }
     unsafe { std::slice::from_raw_parts(ptr, count) }
         .iter()
@@ -157,37 +257,41 @@ fn addresses_from_ffi(
     public_addresses: *const *const c_char,
     private_addresses: *const *const c_char,
     count: usize,
-) -> typedb_driver::Result<Addresses> {
-    let public = c_string_slice(public_addresses, count);
+) -> Result<Addresses, String> {
+    let public = c_string_slice(public_addresses, count)?;
     if private_addresses.is_null() {
-        return Addresses::try_from_addresses_str(public);
+        return Addresses::try_from_addresses_str(public).map_err(|e| e.to_string());
     }
 
-    let private = c_string_slice(private_addresses, count);
+    let private = c_string_slice(private_addresses, count)?;
     let mut translation = HashMap::with_capacity(count);
     for (public, private) in public.into_iter().zip(private.into_iter()) {
         translation.insert(public, private);
     }
-    Addresses::try_from_translation_str(translation)
+    Addresses::try_from_translation_str(translation).map_err(|e| e.to_string())
 }
 
 /// Free a string returned by this library.
 #[no_mangle]
 pub extern "C" fn typedb_free_string(s: *mut c_char) {
-    if !s.is_null() {
-        unsafe { drop(CString::from_raw(s)) }
-    }
+    ffi_call_unit(|| {
+        if !s.is_null() {
+            unsafe { drop(CString::from_raw(s)) }
+        }
+    });
 }
 
 /// Free a byte buffer returned by query functions.
 /// The caller must pass both the pointer and the length that were returned.
 #[no_mangle]
 pub extern "C" fn typedb_free_bytes(ptr: *mut u8, len: usize) {
-    if !ptr.is_null() && len > 0 {
-        unsafe {
-            drop(Vec::from_raw_parts(ptr, len, len));
+    ffi_call_unit(|| {
+        if !ptr.is_null() && len > 0 {
+            unsafe {
+                drop(Vec::from_raw_parts(ptr, len, len));
+            }
         }
-    }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -195,10 +299,27 @@ pub extern "C" fn typedb_free_bytes(ptr: *mut u8, len: usize) {
 // ---------------------------------------------------------------------------
 
 /// Initialize TypeDB driver logging. Call once at startup.
+///
+/// Installs a tracing subscriber (writing to stderr) so log events emitted by
+/// the underlying typedb-driver crate become visible. The filter is read from
+/// the TYPEDB_GO_RUST_LOG environment variable, falling back to RUST_LOG.
+/// When neither is set, logging stays off.
 #[no_mangle]
 pub extern "C" fn typedb_init_logging() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {});
+    ffi_call_unit(|| {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let directives = std::env::var("TYPEDB_GO_RUST_LOG")
+                .or_else(|_| std::env::var("RUST_LOG"))
+                .unwrap_or_else(|_| "off".to_string());
+            let filter = tracing_subscriber::EnvFilter::try_new(&directives)
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("off"));
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_writer(std::io::stderr)
+                .try_init();
+        });
+    });
 }
 
 fn rust_debug_enabled() -> bool {
@@ -263,21 +384,31 @@ fn query_fingerprint(query: &str) -> String {
 // Credentials
 // ---------------------------------------------------------------------------
 
-/// Create credentials. Caller must free with typedb_credentials_drop.
+/// Create credentials. Returns null and sets err_out on invalid input.
+/// Caller must free with typedb_credentials_drop.
 #[no_mangle]
 pub extern "C" fn typedb_credentials_new(
     username: *const c_char,
     password: *const c_char,
+    err_out: *mut *mut c_char,
 ) -> *mut Credentials {
-    Box::into_raw(Box::new(Credentials::new(c_str(username), c_str(password))))
+    ffi_call(err_out, null_mut, || {
+        let username = c_str(username)?;
+        let password = c_str(password)?;
+        Ok(Box::into_raw(Box::new(Credentials::new(
+            username, password,
+        ))))
+    })
 }
 
 /// Free credentials.
 #[no_mangle]
 pub extern "C" fn typedb_credentials_drop(creds: *mut Credentials) {
-    if !creds.is_null() {
-        unsafe { drop(Box::from_raw(creds)) }
-    }
+    ffi_call_unit(|| {
+        if !creds.is_null() {
+            unsafe { drop(Box::from_raw(creds)) }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -291,21 +422,17 @@ pub extern "C" fn typedb_driver_options_new(
     tls_root_ca: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut DriverOptions {
-    let tls_config = if !is_tls_enabled {
-        DriverTlsConfig::disabled()
-    } else if tls_root_ca.is_null() {
-        DriverTlsConfig::enabled_with_native_root_ca()
-    } else {
-        match DriverTlsConfig::enabled_with_root_ca(std::path::Path::new(c_str(tls_root_ca))) {
-            Ok(config) => config,
-            Err(e) => {
-                set_error(err_out, e);
-                return null_mut();
-            }
-        }
-    };
-
-    Box::into_raw(Box::new(DriverOptions::new(tls_config)))
+    ffi_call(err_out, null_mut, || {
+        let tls_config = if !is_tls_enabled {
+            DriverTlsConfig::disabled()
+        } else if tls_root_ca.is_null() {
+            DriverTlsConfig::enabled_with_native_root_ca()
+        } else {
+            DriverTlsConfig::enabled_with_root_ca(std::path::Path::new(c_str(tls_root_ca)?))
+                .map_err(|e| e.to_string())?
+        };
+        Ok(Box::into_raw(Box::new(DriverOptions::new(tls_config))))
+    })
 }
 
 /// Set driver request timeout in milliseconds.
@@ -314,8 +441,11 @@ pub extern "C" fn typedb_driver_options_set_request_timeout(
     opts: *mut DriverOptions,
     timeout_millis: i64,
 ) {
-    let o = unsafe { &mut *opts };
-    o.request_timeout = Duration::from_millis(timeout_millis as u64);
+    ffi_call_unit(|| {
+        if let Ok(o) = deref_mut(opts, "driver options") {
+            o.request_timeout = Duration::from_millis(timeout_millis.max(0) as u64);
+        }
+    });
 }
 
 /// Set primary failover retry count.
@@ -324,23 +454,46 @@ pub extern "C" fn typedb_driver_options_set_primary_failover_retries(
     opts: *mut DriverOptions,
     retries: usize,
 ) {
-    let o = unsafe { &mut *opts };
-    o.primary_failover_retries = retries;
+    ffi_call_unit(|| {
+        if let Ok(o) = deref_mut(opts, "driver options") {
+            o.primary_failover_retries = retries;
+        }
+    });
 }
 
 /// Free driver options.
 #[no_mangle]
 pub extern "C" fn typedb_driver_options_drop(opts: *mut DriverOptions) {
-    if !opts.is_null() {
-        unsafe { drop(Box::from_raw(opts)) }
-    }
+    ffi_call_unit(|| {
+        if !opts.is_null() {
+            unsafe { drop(Box::from_raw(opts)) }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
 // Driver (connection)
 // ---------------------------------------------------------------------------
 
+fn open_driver(
+    addresses: Addresses,
+    credentials: *const Credentials,
+    options: *const DriverOptions,
+) -> Result<*mut TypeDBDriver, String> {
+    let creds = deref(credentials, "credentials")?;
+    let opts = deref(options, "driver options")?;
+    match TypeDBDriver::new_with_description(addresses, creds.clone(), opts.clone(), "go") {
+        Ok(driver) => Ok(Box::into_raw(Box::new(driver))),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// Open a connection to TypeDB. Returns null on error.
+///
+/// The address is used exactly as given; no localhost port rewriting is
+/// applied. Use typedb_driver_open_addresses with a translation map when the
+/// server advertises an address that differs from the one clients dial.
+///
 /// Caller must free with typedb_driver_close.
 #[no_mangle]
 pub extern "C" fn typedb_driver_open(
@@ -349,55 +502,38 @@ pub extern "C" fn typedb_driver_open(
     options: *const DriverOptions,
     err_out: *mut *mut c_char,
 ) -> *mut TypeDBDriver {
-    let start = Instant::now();
-    let address_value = c_str(address).to_string();
-    rust_debug_log(
-        "ffi.typedb_driver_open.enter",
-        vec![("address", address_value.clone())],
-    );
+    ffi_call(err_out, null_mut, || {
+        let start = Instant::now();
+        let address = c_str(address)?;
+        rust_debug_log(
+            "ffi.typedb_driver_open.enter",
+            vec![("address", address.to_string())],
+        );
 
-    let creds = unsafe { &*credentials };
-    let opts = unsafe { &*options };
-    let addresses = match addresses_for_open(c_str(address)) {
-        Ok(addresses) => addresses,
-        Err(e) => {
-            rust_debug_log_timed(
+        let result = Addresses::try_from_address_str(address)
+            .map_err(|e| e.to_string())
+            .and_then(|addresses| open_driver(addresses, credentials, options));
+        match &result {
+            Ok(_) => rust_debug_log_timed(
                 "ffi.typedb_driver_open.exit",
                 start,
                 vec![
-                    ("address", address_value),
-                    ("result", "error".to_string()),
-                    ("error", e.to_string()),
+                    ("address", address.to_string()),
+                    ("result", "ok".to_string()),
                 ],
-            );
-            set_error(err_out, e);
-            return null_mut();
-        }
-    };
-
-    match TypeDBDriver::new_with_description(addresses, creds.clone(), opts.clone(), "go") {
-        Ok(driver) => {
-            rust_debug_log_timed(
-                "ffi.typedb_driver_open.exit",
-                start,
-                vec![("address", address_value), ("result", "ok".to_string())],
-            );
-            Box::into_raw(Box::new(driver))
-        }
-        Err(e) => {
-            rust_debug_log_timed(
+            ),
+            Err(e) => rust_debug_log_timed(
                 "ffi.typedb_driver_open.exit",
                 start,
                 vec![
-                    ("address", address_value),
+                    ("address", address.to_string()),
                     ("result", "error".to_string()),
-                    ("error", e.to_string()),
+                    ("error", e.clone()),
                 ],
-            );
-            set_error(err_out, e);
-            null_mut()
+            ),
         }
-    }
+        result
+    })
 }
 
 /// Open a connection to TypeDB with one or more addresses.
@@ -412,66 +548,46 @@ pub extern "C" fn typedb_driver_open_addresses(
     options: *const DriverOptions,
     err_out: *mut *mut c_char,
 ) -> *mut TypeDBDriver {
-    let start = Instant::now();
-    rust_debug_log(
-        "ffi.typedb_driver_open_addresses.enter",
-        vec![("address_count", address_count.to_string())],
-    );
+    ffi_call(err_out, null_mut, || {
+        let start = Instant::now();
+        rust_debug_log(
+            "ffi.typedb_driver_open_addresses.enter",
+            vec![("address_count", address_count.to_string())],
+        );
 
-    let addresses = match addresses_from_ffi(public_addresses, private_addresses, address_count) {
-        Ok(addresses) => addresses,
-        Err(e) => {
-            rust_debug_log_timed(
-                "ffi.typedb_driver_open_addresses.exit",
-                start,
-                vec![
-                    ("address_count", address_count.to_string()),
-                    ("result", "error".to_string()),
-                    ("error", e.to_string()),
-                ],
-            );
-            set_error(err_out, e);
-            return null_mut();
-        }
-    };
-
-    let creds = unsafe { &*credentials };
-    let opts = unsafe { &*options };
-    match TypeDBDriver::new_with_description(addresses, creds.clone(), opts.clone(), "go") {
-        Ok(driver) => {
-            rust_debug_log_timed(
+        let result = addresses_from_ffi(public_addresses, private_addresses, address_count)
+            .and_then(|addresses| open_driver(addresses, credentials, options));
+        match &result {
+            Ok(_) => rust_debug_log_timed(
                 "ffi.typedb_driver_open_addresses.exit",
                 start,
                 vec![
                     ("address_count", address_count.to_string()),
                     ("result", "ok".to_string()),
                 ],
-            );
-            Box::into_raw(Box::new(driver))
-        }
-        Err(e) => {
-            rust_debug_log_timed(
+            ),
+            Err(e) => rust_debug_log_timed(
                 "ffi.typedb_driver_open_addresses.exit",
                 start,
                 vec![
                     ("address_count", address_count.to_string()),
                     ("result", "error".to_string()),
-                    ("error", e.to_string()),
+                    ("error", e.clone()),
                 ],
-            );
-            set_error(err_out, e);
-            null_mut()
+            ),
         }
-    }
+        result
+    })
 }
 
 /// Check if driver is open.
 #[no_mangle]
 pub extern "C" fn typedb_driver_is_open(driver: *const TypeDBDriver) -> bool {
-    if driver.is_null() {
-        return false;
-    }
-    unsafe { &*driver }.is_open()
+    ffi_call(
+        null_mut(),
+        || false,
+        || Ok(deref(driver, "driver")?.is_open()),
+    )
 }
 
 /// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.12.0"}.
@@ -481,29 +597,28 @@ pub extern "C" fn typedb_driver_server_version(
     driver: *mut TypeDBDriver,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
-    let d = unsafe { &*driver };
-    match d.server_version() {
-        Ok(version) => to_c_string(
+    ffi_call(err_out, null_mut, || {
+        let d = deref(driver, "driver")?;
+        let version = d.server_version().map_err(|e| e.to_string())?;
+        Ok(to_c_string(
             serde_json::to_string(&json!({
                 "distribution": version.distribution(),
                 "version": version.version(),
             }))
             .unwrap_or_else(|_| "{}".to_string()),
-        ),
-        Err(e) => {
-            set_error(err_out, e);
-            null_mut()
-        }
-    }
+        ))
+    })
 }
 
 /// Close and free the driver.
 #[no_mangle]
 pub extern "C" fn typedb_driver_close(driver: *mut TypeDBDriver) {
-    if !driver.is_null() {
-        let d = unsafe { Box::from_raw(driver) };
-        let _ = d.force_close();
-    }
+    ffi_call_unit(|| {
+        if !driver.is_null() {
+            let d = unsafe { Box::from_raw(driver) };
+            let _ = d.force_close();
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -517,17 +632,14 @@ pub extern "C" fn typedb_databases_all(
     driver: *mut TypeDBDriver,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
-    let d = unsafe { &*driver };
-    match d.databases().all() {
-        Ok(dbs) => {
-            let names: Vec<String> = dbs.iter().map(|db| db.name().to_owned()).collect();
-            to_c_string(serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string()))
-        }
-        Err(e) => {
-            set_error(err_out, e);
-            null_mut()
-        }
-    }
+    ffi_call(err_out, null_mut, || {
+        let d = deref(driver, "driver")?;
+        let dbs = d.databases().all().map_err(|e| e.to_string())?;
+        let names: Vec<String> = dbs.iter().map(|db| db.name().to_owned()).collect();
+        Ok(to_c_string(
+            serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string()),
+        ))
+    })
 }
 
 /// Create a database.
@@ -537,10 +649,16 @@ pub extern "C" fn typedb_databases_create(
     name: *const c_char,
     err_out: *mut *mut c_char,
 ) {
-    let d = unsafe { &*driver };
-    if let Err(e) = d.databases().create(c_str(name)) {
-        set_error(err_out, e);
-    }
+    ffi_call(
+        err_out,
+        || (),
+        || {
+            let d = deref(driver, "driver")?;
+            d.databases()
+                .create(c_str(name)?)
+                .map_err(|e| e.to_string())
+        },
+    )
 }
 
 /// Check if a database exists.
@@ -550,14 +668,16 @@ pub extern "C" fn typedb_databases_contains(
     name: *const c_char,
     err_out: *mut *mut c_char,
 ) -> bool {
-    let d = unsafe { &*driver };
-    match d.databases().contains(c_str(name)) {
-        Ok(v) => v,
-        Err(e) => {
-            set_error(err_out, e);
-            false
-        }
-    }
+    ffi_call(
+        err_out,
+        || false,
+        || {
+            let d = deref(driver, "driver")?;
+            d.databases()
+                .contains(c_str(name)?)
+                .map_err(|e| e.to_string())
+        },
+    )
 }
 
 /// Get database schema. Returns a TypeQL define query string.
@@ -568,20 +688,12 @@ pub extern "C" fn typedb_database_schema(
     name: *const c_char,
     err_out: *mut *mut c_char,
 ) -> *mut c_char {
-    let d = unsafe { &*driver };
-    match d.databases().get(c_str(name)) {
-        Ok(db) => match db.schema() {
-            Ok(schema) => to_c_string(schema),
-            Err(e) => {
-                set_error(err_out, e);
-                null_mut()
-            }
-        },
-        Err(e) => {
-            set_error(err_out, e);
-            null_mut()
-        }
-    }
+    ffi_call(err_out, null_mut, || {
+        let d = deref(driver, "driver")?;
+        let db = d.databases().get(c_str(name)?).map_err(|e| e.to_string())?;
+        let schema = db.schema().map_err(|e| e.to_string())?;
+        Ok(to_c_string(schema))
+    })
 }
 
 /// Delete a database.
@@ -591,17 +703,15 @@ pub extern "C" fn typedb_database_delete(
     name: *const c_char,
     err_out: *mut *mut c_char,
 ) {
-    let d = unsafe { &*driver };
-    match d.databases().get(c_str(name)) {
-        Ok(db) => {
-            if let Err(e) = db.delete() {
-                set_error(err_out, e);
-            }
-        }
-        Err(e) => {
-            set_error(err_out, e);
-        }
-    }
+    ffi_call(
+        err_out,
+        || (),
+        || {
+            let d = deref(driver, "driver")?;
+            let db = d.databases().get(c_str(name)?).map_err(|e| e.to_string())?;
+            db.delete().map_err(|e| e.to_string())
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -611,7 +721,9 @@ pub extern "C" fn typedb_database_delete(
 /// Create default transaction options. Caller must free with typedb_transaction_options_drop.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_options_new() -> *mut TransactionOptions {
-    Box::into_raw(Box::new(TransactionOptions::new()))
+    ffi_call(null_mut(), null_mut, || {
+        Ok(Box::into_raw(Box::new(TransactionOptions::new())))
+    })
 }
 
 /// Set transaction timeout in milliseconds.
@@ -620,8 +732,11 @@ pub extern "C" fn typedb_transaction_options_set_timeout(
     opts: *mut TransactionOptions,
     timeout_millis: i64,
 ) {
-    let o = unsafe { &mut *opts };
-    o.transaction_timeout = Some(Duration::from_millis(timeout_millis as u64));
+    ffi_call_unit(|| {
+        if let Ok(o) = deref_mut(opts, "transaction options") {
+            o.transaction_timeout = Some(Duration::from_millis(timeout_millis.max(0) as u64));
+        }
+    });
 }
 
 /// Set schema lock acquire timeout in milliseconds.
@@ -630,26 +745,34 @@ pub extern "C" fn typedb_transaction_options_set_schema_lock_timeout(
     opts: *mut TransactionOptions,
     timeout_millis: i64,
 ) {
-    let o = unsafe { &mut *opts };
-    o.schema_lock_acquire_timeout = Some(Duration::from_millis(timeout_millis as u64));
+    ffi_call_unit(|| {
+        if let Ok(o) = deref_mut(opts, "transaction options") {
+            o.schema_lock_acquire_timeout =
+                Some(Duration::from_millis(timeout_millis.max(0) as u64));
+        }
+    });
 }
 
 /// Free transaction options.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_options_drop(opts: *mut TransactionOptions) {
-    if !opts.is_null() {
-        unsafe { drop(Box::from_raw(opts)) }
-    }
+    ffi_call_unit(|| {
+        if !opts.is_null() {
+            unsafe { drop(Box::from_raw(opts)) }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
 // QueryOptions
 // ---------------------------------------------------------------------------
 
-/// Create default query options. Caller must free with typedb_query_options_new.
+/// Create default query options. Caller must free with typedb_query_options_drop.
 #[no_mangle]
 pub extern "C" fn typedb_query_options_new() -> *mut QueryOptions {
-    Box::into_raw(Box::new(QueryOptions::new()))
+    ffi_call(null_mut(), null_mut, || {
+        Ok(Box::into_raw(Box::new(QueryOptions::new())))
+    })
 }
 
 /// Set include_instance_types option.
@@ -658,23 +781,31 @@ pub extern "C" fn typedb_query_options_set_include_instance_types(
     opts: *mut QueryOptions,
     include: bool,
 ) {
-    let o = unsafe { &mut *opts };
-    o.include_instance_types = Some(include);
+    ffi_call_unit(|| {
+        if let Ok(o) = deref_mut(opts, "query options") {
+            o.include_instance_types = Some(include);
+        }
+    });
 }
 
 /// Set prefetch_size option.
 #[no_mangle]
 pub extern "C" fn typedb_query_options_set_prefetch_size(opts: *mut QueryOptions, size: i64) {
-    let o = unsafe { &mut *opts };
-    o.prefetch_size = Some(size as u64);
+    ffi_call_unit(|| {
+        if let Ok(o) = deref_mut(opts, "query options") {
+            o.prefetch_size = Some(size.max(0) as u64);
+        }
+    });
 }
 
 /// Free query options.
 #[no_mangle]
 pub extern "C" fn typedb_query_options_drop(opts: *mut QueryOptions) {
-    if !opts.is_null() {
-        unsafe { drop(Box::from_raw(opts)) }
-    }
+    ffi_call_unit(|| {
+        if !opts.is_null() {
+            unsafe { drop(Box::from_raw(opts)) }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -701,65 +832,68 @@ pub extern "C" fn typedb_transaction_open(
     options: *const TransactionOptions,
     err_out: *mut *mut c_char,
 ) -> *mut Transaction {
-    let start = Instant::now();
-    let db_name = c_str(database_name).to_string();
-    rust_debug_log(
-        "ffi.typedb_transaction_open.enter",
-        vec![
-            ("db", db_name.clone()),
-            ("tx_type", transaction_type.to_string()),
-        ],
-    );
+    ffi_call(err_out, null_mut, || {
+        let start = Instant::now();
+        let db_name = c_str(database_name)?;
+        rust_debug_log(
+            "ffi.typedb_transaction_open.enter",
+            vec![
+                ("db", db_name.to_string()),
+                ("tx_type", transaction_type.to_string()),
+            ],
+        );
 
-    let d = unsafe { &*driver };
-    let tt = to_transaction_type(transaction_type);
-    let opts = if options.is_null() {
-        TransactionOptions::new()
-    } else {
-        unsafe { *(&*options) }
-    };
-    match d.transaction_with_options(c_str(database_name), tt, opts) {
-        Ok(txn) => {
-            rust_debug_log_timed(
+        let d = deref(driver, "driver")?;
+        let tt = to_transaction_type(transaction_type);
+        let opts = if options.is_null() {
+            TransactionOptions::new()
+        } else {
+            *deref(options, "transaction options")?
+        };
+        let result = d
+            .transaction_with_options(db_name, tt, opts)
+            .map(|txn| Box::into_raw(Box::new(txn)))
+            .map_err(|e| e.to_string());
+        match &result {
+            Ok(_) => rust_debug_log_timed(
                 "ffi.typedb_transaction_open.exit",
                 start,
                 vec![
-                    ("db", db_name),
+                    ("db", db_name.to_string()),
                     ("tx_type", transaction_type.to_string()),
                     ("result", "ok".to_string()),
                 ],
-            );
-            Box::into_raw(Box::new(txn))
-        }
-        Err(e) => {
-            rust_debug_log_timed(
+            ),
+            Err(e) => rust_debug_log_timed(
                 "ffi.typedb_transaction_open.exit",
                 start,
                 vec![
-                    ("db", db_name),
+                    ("db", db_name.to_string()),
                     ("tx_type", transaction_type.to_string()),
                     ("result", "error".to_string()),
-                    ("error", e.to_string()),
+                    ("error", e.clone()),
                 ],
-            );
-            set_error(err_out, e);
-            null_mut()
+            ),
         }
-    }
+        result
+    })
 }
 
 /// Check if transaction is open.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_is_open(txn: *const Transaction) -> bool {
-    if txn.is_null() {
-        return false;
-    }
-    unsafe { &*txn }.is_open()
+    ffi_call(
+        null_mut(),
+        || false,
+        || Ok(deref(txn, "transaction")?.is_open()),
+    )
 }
 
 /// Execute a query and return results as a MessagePack-encoded byte buffer.
 /// The buffer contains a msgpack array of maps (one per result row/document).
-/// out_len receives the byte length of the buffer.
+/// register_concepts controls whether entity/relation concepts in row results
+/// are registered as reusable opaque handles (see the concept handle contract
+/// in typedb_ffi.h). out_len receives the byte length of the buffer.
 /// Returns null on error or for OK answers (out_len set to 0).
 /// Caller must free with typedb_free_bytes.
 #[no_mangle]
@@ -767,73 +901,22 @@ pub extern "C" fn typedb_transaction_query(
     txn: *mut Transaction,
     query: *const c_char,
     options: *const QueryOptions,
+    register_concepts: bool,
     out_len: *mut usize,
     err_out: *mut *mut c_char,
 ) -> *mut u8 {
-    let start = Instant::now();
-    let query_text = c_str(query);
-    let op = query_op(query_text);
-    let fingerprint = query_fingerprint(query_text);
-    rust_debug_log(
-        "ffi.typedb_transaction_query.enter",
-        vec![
-            ("query_op", op.clone()),
-            ("query_fingerprint", fingerprint.clone()),
-            ("query_len", query_text.len().to_string()),
-        ],
-    );
-
-    let answer = match execute_query(txn, query, options, None) {
-        Ok(a) => a,
-        Err(e) => {
-            rust_debug_log_timed(
-                "ffi.typedb_transaction_query.exit",
-                start,
-                vec![
-                    ("query_op", op.clone()),
-                    ("query_fingerprint", fingerprint.clone()),
-                    ("query_len", query_text.len().to_string()),
-                    ("result", "error".to_string()),
-                    ("error", e.clone()),
-                ],
-            );
-            set_error(err_out, e);
-            return null_mut();
-        }
-    };
-
-    match collect_answer_to_msgpack(answer) {
-        Ok(bytes) => {
-            let rows_or_bytes = bytes.len();
-            rust_debug_log_timed(
-                "ffi.typedb_transaction_query.exit",
-                start,
-                vec![
-                    ("query_op", op),
-                    ("query_fingerprint", fingerprint),
-                    ("query_len", query_text.len().to_string()),
-                    ("result", "ok".to_string()),
-                    ("bytes", rows_or_bytes.to_string()),
-                ],
-            );
-            vec_to_raw(bytes, out_len)
-        }
-        Err(e) => {
-            rust_debug_log_timed(
-                "ffi.typedb_transaction_query.exit",
-                start,
-                vec![
-                    ("query_op", op),
-                    ("query_fingerprint", fingerprint),
-                    ("query_len", query_text.len().to_string()),
-                    ("result", "error".to_string()),
-                    ("error", e.clone()),
-                ],
-            );
-            set_error(err_out, e);
-            null_mut()
-        }
-    }
+    ffi_call(err_out, null_mut, || {
+        let query_text = c_str(query)?;
+        run_logged_query(
+            "typedb_transaction_query",
+            txn,
+            query_text,
+            options,
+            None,
+            register_concepts,
+            out_len,
+        )
+    })
 }
 
 /// Execute a query with given rows and return results as a MessagePack-encoded byte buffer.
@@ -843,111 +926,93 @@ pub extern "C" fn typedb_transaction_query_with_rows(
     query: *const c_char,
     options: *const QueryOptions,
     rows_json: *const c_char,
+    register_concepts: bool,
     out_len: *mut usize,
     err_out: *mut *mut c_char,
 ) -> *mut u8 {
+    ffi_call(err_out, null_mut, || {
+        let query_text = c_str(query)?;
+        let rows = parse_given_rows(c_str(rows_json)?)?;
+        run_logged_query(
+            "typedb_transaction_query_with_rows",
+            txn,
+            query_text,
+            options,
+            Some(rows),
+            register_concepts,
+            out_len,
+        )
+    })
+}
+
+/// Shared query execution path with enter/exit debug logging.
+fn run_logged_query(
+    event: &str,
+    txn: *mut Transaction,
+    query: &str,
+    options: *const QueryOptions,
+    rows: Option<GivenRows>,
+    register_concepts: bool,
+    out_len: *mut usize,
+) -> Result<*mut u8, String> {
     let start = Instant::now();
-    let query_text = c_str(query);
-    let op = query_op(query_text);
-    let fingerprint = query_fingerprint(query_text);
+    let op = query_op(query);
+    let fingerprint = query_fingerprint(query);
     rust_debug_log(
-        "ffi.typedb_transaction_query_with_rows.enter",
+        &format!("ffi.{}.enter", event),
         vec![
             ("query_op", op.clone()),
             ("query_fingerprint", fingerprint.clone()),
-            ("query_len", query_text.len().to_string()),
+            ("query_len", query.len().to_string()),
         ],
     );
 
-    let rows = match parse_given_rows(c_str(rows_json)) {
-        Ok(rows) => rows,
-        Err(e) => {
-            rust_debug_log_timed(
-                "ffi.typedb_transaction_query_with_rows.exit",
-                start,
-                vec![
-                    ("query_op", op.clone()),
-                    ("query_fingerprint", fingerprint.clone()),
-                    ("query_len", query_text.len().to_string()),
-                    ("result", "error".to_string()),
-                    ("error", e.clone()),
-                ],
-            );
-            set_error(err_out, e);
-            return null_mut();
-        }
-    };
-
-    let answer = match execute_query(txn, query, options, Some(rows)) {
-        Ok(a) => a,
-        Err(e) => {
-            rust_debug_log_timed(
-                "ffi.typedb_transaction_query_with_rows.exit",
-                start,
-                vec![
-                    ("query_op", op.clone()),
-                    ("query_fingerprint", fingerprint.clone()),
-                    ("query_len", query_text.len().to_string()),
-                    ("result", "error".to_string()),
-                    ("error", e.clone()),
-                ],
-            );
-            set_error(err_out, e);
-            return null_mut();
-        }
-    };
-
-    match collect_answer_to_msgpack(answer) {
-        Ok(bytes) => {
-            let rows_or_bytes = bytes.len();
-            rust_debug_log_timed(
-                "ffi.typedb_transaction_query_with_rows.exit",
-                start,
-                vec![
-                    ("query_op", op),
-                    ("query_fingerprint", fingerprint),
-                    ("query_len", query_text.len().to_string()),
-                    ("result", "ok".to_string()),
-                    ("bytes", rows_or_bytes.to_string()),
-                ],
-            );
-            vec_to_raw(bytes, out_len)
-        }
-        Err(e) => {
-            rust_debug_log_timed(
-                "ffi.typedb_transaction_query_with_rows.exit",
-                start,
-                vec![
-                    ("query_op", op),
-                    ("query_fingerprint", fingerprint),
-                    ("query_len", query_text.len().to_string()),
-                    ("result", "error".to_string()),
-                    ("error", e.clone()),
-                ],
-            );
-            set_error(err_out, e);
-            null_mut()
-        }
+    let result = execute_query(txn, query, options, rows)
+        .and_then(|answer| collect_answer_to_msgpack(answer, register_concepts));
+    match &result {
+        Ok(bytes) => rust_debug_log_timed(
+            &format!("ffi.{}.exit", event),
+            start,
+            vec![
+                ("query_op", op),
+                ("query_fingerprint", fingerprint),
+                ("query_len", query.len().to_string()),
+                ("result", "ok".to_string()),
+                ("bytes", bytes.len().to_string()),
+            ],
+        ),
+        Err(e) => rust_debug_log_timed(
+            &format!("ffi.{}.exit", event),
+            start,
+            vec![
+                ("query_op", op),
+                ("query_fingerprint", fingerprint),
+                ("query_len", query.len().to_string()),
+                ("result", "error".to_string()),
+                ("error", e.clone()),
+            ],
+        ),
     }
+    Ok(vec_to_raw(result?, out_len))
 }
 
 fn execute_query(
     txn: *mut Transaction,
-    query: *const c_char,
+    query: &str,
     options: *const QueryOptions,
     rows: Option<GivenRows>,
 ) -> Result<QueryAnswer, String> {
-    let t = unsafe { &*txn };
+    let t = deref(txn, "transaction")?;
     let opts = if options.is_null() {
         QueryOptions::new()
     } else {
-        unsafe { *(&*options) }
+        *deref(options, "query options")?
     };
     let result = match rows {
         Some(rows) => t
-            .query_with_options_and_rows(c_str(query), opts, Some(rows))
+            .query_with_options_and_rows(query, opts, Some(rows))
             .resolve(),
-        None => t.query_with_options(c_str(query), opts).resolve(),
+        None => t.query_with_options(query, opts).resolve(),
     };
     result.map_err(|e| e.to_string())
 }
@@ -1056,8 +1121,11 @@ fn vec_to_raw(bytes: Vec<u8>, out_len: *mut usize) -> *mut u8 {
 }
 
 /// Helper: collect query answer into msgpack bytes.
-fn collect_answer_to_msgpack(answer: QueryAnswer) -> Result<Vec<u8>, String> {
-    let rows = collect_answer_to_values(answer)?;
+fn collect_answer_to_msgpack(
+    answer: QueryAnswer,
+    register_concepts: bool,
+) -> Result<Vec<u8>, String> {
+    let rows = collect_answer_to_values(answer, register_concepts)?;
     if rows.is_empty() {
         return Ok(vec![]);
     }
@@ -1065,7 +1133,10 @@ fn collect_answer_to_msgpack(answer: QueryAnswer) -> Result<Vec<u8>, String> {
 }
 
 /// Helper: collect query answer into Vec<serde_json::Value>.
-fn collect_answer_to_values(answer: QueryAnswer) -> Result<Vec<serde_json::Value>, String> {
+fn collect_answer_to_values(
+    answer: QueryAnswer,
+    register_concepts: bool,
+) -> Result<Vec<serde_json::Value>, String> {
     if answer.is_ok() {
         return Ok(vec![]);
     }
@@ -1075,12 +1146,10 @@ fn collect_answer_to_values(answer: QueryAnswer) -> Result<Vec<serde_json::Value
         for doc_result in answer.into_documents() {
             match doc_result {
                 Ok(doc) => {
-                    let json_val = doc.into_json();
-                    // Convert typedb JSON to serde_json::Value
-                    let json_str =
-                        serde_json::to_string(&json_val).unwrap_or_else(|_| json_val.to_string());
-                    let val: serde_json::Value =
-                        serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
+                    // Structural conversion via serde: single traversal, no
+                    // intermediate JSON string round trip.
+                    let val = serde_json::to_value(doc.into_json())
+                        .map_err(|e| format!("document conversion error: {}", e))?;
                     docs.push(val);
                 }
                 Err(e) => return Err(e.to_string()),
@@ -1099,7 +1168,10 @@ fn collect_answer_to_values(answer: QueryAnswer) -> Result<Vec<serde_json::Value
                     for (i, name) in col_names.iter().enumerate() {
                         match row.get_index(i) {
                             Ok(Some(concept)) => {
-                                obj.insert(name.clone(), concept_to_json(concept));
+                                obj.insert(
+                                    name.clone(),
+                                    concept_to_json(concept, register_concepts),
+                                );
                             }
                             Ok(None) => {
                                 obj.insert(name.clone(), serde_json::Value::Null);
@@ -1121,113 +1193,255 @@ fn collect_answer_to_values(answer: QueryAnswer) -> Result<Vec<serde_json::Value
 /// Commit the transaction and free it.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_commit(txn: *mut Transaction, err_out: *mut *mut c_char) {
-    let start = Instant::now();
-    rust_debug_log("ffi.typedb_transaction_commit.enter", vec![]);
-    if txn.is_null() {
-        rust_debug_log_timed(
-            "ffi.typedb_transaction_commit.exit",
-            start,
-            vec![("result", "nil_txn".to_string())],
-        );
-        return;
-    }
-    let t = unsafe { Box::from_raw(txn) };
-    if let Err(e) = t.commit().resolve() {
-        rust_debug_log_timed(
-            "ffi.typedb_transaction_commit.exit",
-            start,
-            vec![("result", "error".to_string()), ("error", e.to_string())],
-        );
-        set_error(err_out, e);
-        return;
-    }
-    rust_debug_log_timed(
-        "ffi.typedb_transaction_commit.exit",
-        start,
-        vec![("result", "ok".to_string())],
-    );
+    ffi_call(
+        err_out,
+        || (),
+        || {
+            let start = Instant::now();
+            rust_debug_log("ffi.typedb_transaction_commit.enter", vec![]);
+            if txn.is_null() {
+                rust_debug_log_timed(
+                    "ffi.typedb_transaction_commit.exit",
+                    start,
+                    vec![("result", "nil_txn".to_string())],
+                );
+                return Ok(());
+            }
+            let t = unsafe { Box::from_raw(txn) };
+            let result = t.commit().resolve().map_err(|e| e.to_string());
+            match &result {
+                Ok(()) => rust_debug_log_timed(
+                    "ffi.typedb_transaction_commit.exit",
+                    start,
+                    vec![("result", "ok".to_string())],
+                ),
+                Err(e) => rust_debug_log_timed(
+                    "ffi.typedb_transaction_commit.exit",
+                    start,
+                    vec![("result", "error".to_string()), ("error", e.clone())],
+                ),
+            }
+            result
+        },
+    )
 }
 
 /// Rollback the transaction.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_rollback(txn: *const Transaction, err_out: *mut *mut c_char) {
-    let start = Instant::now();
-    rust_debug_log("ffi.typedb_transaction_rollback.enter", vec![]);
-    if txn.is_null() {
-        rust_debug_log_timed(
-            "ffi.typedb_transaction_rollback.exit",
-            start,
-            vec![("result", "nil_txn".to_string())],
-        );
-        return;
-    }
-    let t = unsafe { &*txn };
-    if let Err(e) = t.rollback().resolve() {
-        rust_debug_log_timed(
-            "ffi.typedb_transaction_rollback.exit",
-            start,
-            vec![("result", "error".to_string()), ("error", e.to_string())],
-        );
-        set_error(err_out, e);
-        return;
-    }
-    rust_debug_log_timed(
-        "ffi.typedb_transaction_rollback.exit",
-        start,
-        vec![("result", "ok".to_string())],
-    );
+    ffi_call(
+        err_out,
+        || (),
+        || {
+            let start = Instant::now();
+            rust_debug_log("ffi.typedb_transaction_rollback.enter", vec![]);
+            if txn.is_null() {
+                rust_debug_log_timed(
+                    "ffi.typedb_transaction_rollback.exit",
+                    start,
+                    vec![("result", "nil_txn".to_string())],
+                );
+                return Ok(());
+            }
+            let t = unsafe { &*txn };
+            let result = t.rollback().resolve().map_err(|e| e.to_string());
+            match &result {
+                Ok(()) => rust_debug_log_timed(
+                    "ffi.typedb_transaction_rollback.exit",
+                    start,
+                    vec![("result", "ok".to_string())],
+                ),
+                Err(e) => rust_debug_log_timed(
+                    "ffi.typedb_transaction_rollback.exit",
+                    start,
+                    vec![("result", "error".to_string()), ("error", e.clone())],
+                ),
+            }
+            result
+        },
+    )
 }
 
 /// Close and free the transaction without committing.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_close(txn: *mut Transaction, err_out: *mut *mut c_char) {
-    let start = Instant::now();
-    rust_debug_log("ffi.typedb_transaction_close.enter", vec![]);
-    if txn.is_null() {
-        rust_debug_log_timed(
-            "ffi.typedb_transaction_close.exit",
-            start,
-            vec![("result", "nil_txn".to_string())],
-        );
-        return;
-    }
+    ffi_call(
+        err_out,
+        || (),
+        || {
+            let start = Instant::now();
+            rust_debug_log("ffi.typedb_transaction_close.enter", vec![]);
+            if txn.is_null() {
+                rust_debug_log_timed(
+                    "ffi.typedb_transaction_close.exit",
+                    start,
+                    vec![("result", "nil_txn".to_string())],
+                );
+                return Ok(());
+            }
 
-    let txn = unsafe { Box::from_raw(txn) };
-    if let Err(e) = txn.close().resolve() {
-        rust_debug_log_timed(
-            "ffi.typedb_transaction_close.exit",
-            start,
-            vec![("result", "error".to_string()), ("error", e.to_string())],
-        );
-        set_error(err_out, e);
-        return;
-    }
-
-    rust_debug_log_timed(
-        "ffi.typedb_transaction_close.exit",
-        start,
-        vec![("result", "ok".to_string())],
-    );
+            let txn = unsafe { Box::from_raw(txn) };
+            let result = txn.close().resolve().map_err(|e| e.to_string());
+            match &result {
+                Ok(()) => rust_debug_log_timed(
+                    "ffi.typedb_transaction_close.exit",
+                    start,
+                    vec![("result", "ok".to_string())],
+                ),
+                Err(e) => rust_debug_log_timed(
+                    "ffi.typedb_transaction_close.exit",
+                    start,
+                    vec![("result", "error".to_string()), ("error", e.clone())],
+                ),
+            }
+            result
+        },
+    )
 }
 
 /// Drop the transaction locally without waiting for the checked close result.
 #[no_mangle]
 pub extern "C" fn typedb_transaction_drop(txn: *mut Transaction) {
-    let start = Instant::now();
-    rust_debug_log("ffi.typedb_transaction_drop.enter", vec![]);
-    if txn.is_null() {
+    ffi_call_unit(|| {
+        let start = Instant::now();
+        rust_debug_log("ffi.typedb_transaction_drop.enter", vec![]);
+        if txn.is_null() {
+            rust_debug_log_timed(
+                "ffi.typedb_transaction_drop.exit",
+                start,
+                vec![("result", "nil_txn".to_string())],
+            );
+            return;
+        }
+
+        drop(unsafe { Box::from_raw(txn) });
         rust_debug_log_timed(
             "ffi.typedb_transaction_drop.exit",
             start,
-            vec![("result", "nil_txn".to_string())],
+            vec![("result", "ok".to_string())],
         );
-        return;
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn take_error(err: *mut c_char) -> String {
+        assert!(!err.is_null(), "expected an error message");
+        let msg = unsafe { CStr::from_ptr(err) }
+            .to_string_lossy()
+            .into_owned();
+        typedb_free_string(err);
+        msg
     }
 
-    drop(unsafe { Box::from_raw(txn) });
-    rust_debug_log_timed(
-        "ffi.typedb_transaction_drop.exit",
-        start,
-        vec![("result", "ok".to_string())],
-    );
+    #[test]
+    fn set_error_escapes_interior_nul() {
+        let mut err: *mut c_char = null_mut();
+        set_error(&mut err, "broken\0commit");
+        let msg = take_error(err);
+        assert_eq!(msg, "broken\\0commit");
+    }
+
+    #[test]
+    fn to_c_string_escapes_interior_nul() {
+        let ptr = to_c_string("a\0b".to_string());
+        let msg = take_error(ptr);
+        assert_eq!(msg, "a\\0b");
+    }
+
+    #[test]
+    fn c_str_rejects_null_pointer() {
+        let err = c_str(std::ptr::null()).unwrap_err();
+        assert!(err.contains("null string pointer"), "got: {}", err);
+    }
+
+    #[test]
+    fn c_str_rejects_invalid_utf8() {
+        let bytes = CString::new(vec![0xffu8, 0xfe]).unwrap();
+        let err = c_str(bytes.as_ptr()).unwrap_err();
+        assert!(err.contains("invalid UTF-8"), "got: {}", err);
+    }
+
+    #[test]
+    fn ffi_call_contains_panics() {
+        let mut err: *mut c_char = null_mut();
+        let value = ffi_call(
+            &mut err,
+            || 7i32,
+            || -> Result<i32, String> { panic!("boom {}", 42) },
+        );
+        assert_eq!(value, 7);
+        let msg = take_error(err);
+        assert!(msg.contains("panic in typedb-go-ffi"), "got: {}", msg);
+        assert!(msg.contains("boom 42"), "got: {}", msg);
+    }
+
+    #[test]
+    fn ffi_call_unit_contains_panics() {
+        ffi_call_unit(|| panic!("contained"));
+    }
+
+    #[test]
+    fn registry_drop_removes_handle() {
+        // A raw Concept is not constructible here; exercise the registry map
+        // through the handle-string API with the drop entry points.
+        assert!(get_registered_concept("concept-does-not-exist").is_err());
+        let handle = CString::new("concept-does-not-exist").unwrap();
+        typedb_concept_drop(handle.as_ptr()); // unknown handle: no panic
+        typedb_concept_drop(std::ptr::null()); // null handle: no panic
+        typedb_concepts_drop_all();
+        assert!(registry_lock().is_empty());
+    }
+
+    #[test]
+    fn null_transaction_query_returns_error_not_crash() {
+        let query = CString::new("match $x isa thing;").unwrap();
+        let mut out_len: usize = 0;
+        let mut err: *mut c_char = null_mut();
+        let buf = typedb_transaction_query(
+            null_mut(),
+            query.as_ptr(),
+            std::ptr::null(),
+            false,
+            &mut out_len,
+            &mut err,
+        );
+        assert!(buf.is_null());
+        let msg = take_error(err);
+        assert!(msg.contains("null transaction pointer"), "got: {}", msg);
+    }
+
+    #[test]
+    fn null_driver_database_ops_return_error_not_crash() {
+        let name = CString::new("db").unwrap();
+        let mut err: *mut c_char = null_mut();
+        typedb_databases_create(null_mut(), name.as_ptr(), &mut err);
+        let msg = take_error(err);
+        assert!(msg.contains("null driver pointer"), "got: {}", msg);
+
+        let mut err: *mut c_char = null_mut();
+        let version = typedb_driver_server_version(null_mut(), &mut err);
+        assert!(version.is_null());
+        let msg = take_error(err);
+        assert!(msg.contains("null driver pointer"), "got: {}", msg);
+    }
+
+    #[test]
+    fn credentials_new_rejects_invalid_utf8() {
+        let bad = CString::new(vec![0xffu8]).unwrap();
+        let pass = CString::new("password").unwrap();
+        let mut err: *mut c_char = null_mut();
+        let creds = typedb_credentials_new(bad.as_ptr(), pass.as_ptr(), &mut err);
+        assert!(creds.is_null());
+        let msg = take_error(err);
+        assert!(msg.contains("invalid UTF-8"), "got: {}", msg);
+    }
+
+    #[test]
+    fn init_logging_is_idempotent_and_contained() {
+        typedb_init_logging();
+        typedb_init_logging();
+    }
 }
