@@ -2,6 +2,7 @@ package tqlgen
 
 import (
 	"bytes"
+	"go/format"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,15 @@ func renderSchema(t *testing.T, schemaSrc string, cfg RenderConfig) (source, war
 		t.Fatalf("Render: %v", err)
 	}
 	return out.String(), warn.String()
+}
+
+// containsCode reports whether want appears in out, ignoring differences in
+// whitespace runs: gofmt-formatted output (issue #107) aligns struct fields,
+// tags, and map entries with padding, so exact-substring checks on single
+// spaces would be brittle.
+func containsCode(out, want string) bool {
+	norm := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	return strings.Contains(norm(out), norm(want))
 }
 
 // compileGenerated writes the generated source into a temporary module that
@@ -113,11 +123,11 @@ relation management sub employment, relates manager as employee;
 		t.Errorf("Management struct still carries the overridden employee role\n%s", out)
 	}
 	// `manager as employee` resolves its player through the parent role.
-	if !strings.Contains(out, "Manager *Person `typedb:\"role:manager\"`") {
+	if !containsCode(out, "Manager *Person `typedb:\"role:manager\"`") {
 		t.Errorf("missing Manager *Person role field\n%s", out)
 	}
 	// The inherited employer role resolves company's `plays employment:employer`.
-	if !strings.Contains(out, "Employer *Company `typedb:\"role:employer\"`") {
+	if !containsCode(out, "Employer *Company `typedb:\"role:employer\"`") {
 		t.Errorf("missing Employer *Company role field\n%s", out)
 	}
 	if warnings != "" {
@@ -149,7 +159,7 @@ entity person, owns birth-date, owns joined-at, owns balance, owns tenure, owns 
 		"Nickname *string", // undefined attribute defaults to string, with a warning
 		`"time"`,
 	} {
-		if !strings.Contains(out, want) {
+		if !containsCode(out, want) {
 			t.Errorf("missing %q in generated code\n%s", want, out)
 		}
 	}
@@ -179,7 +189,7 @@ entity person, owns tag @card(0..5), owns score @card(1..), owns alias[], owns n
 		"Alias []string `typedb:\"alias\"`",         // list ownership (owns alias[])
 		"Nick *string `typedb:\"nick,card=0..1\"`",  // max 1 stays an optional scalar
 	} {
-		if !strings.Contains(out, want) {
+		if !containsCode(out, want) {
 			t.Errorf("missing %q in generated code\n%s", want, out)
 		}
 	}
@@ -188,6 +198,138 @@ entity person, owns tag @card(0..5), owns score @card(1..), owns alias[], owns n
 	}
 
 	compileGenerated(t, out)
+}
+
+// TestRenderCompile_EnumValueSanitization is a regression test for issue #72:
+// @values strings containing '/', '+', spaces, or quotes used to be spliced
+// into constant names and values verbatim, producing invalid Go.
+func TestRenderCompile_EnumValueSanitization(t *testing.T) {
+	src := `define
+attribute grade, value string @values("n/a", "a+", "b c", "with \"quote\"", "1st");
+entity student, owns grade;
+`
+	out, warnings := renderSchema(t, src, DefaultConfig())
+
+	for _, want := range []string{
+		`GradeNA = "n/a"`,
+		`GradeA = "a+"`,
+		`GradeBC = "b c"`,
+		`GradeWithQuote = "with \"quote\""`,
+		`Grade1st = "1st"`,
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated code\n%s", want, out)
+		}
+	}
+	if warnings != "" {
+		t.Errorf("unexpected warnings: %q", warnings)
+	}
+
+	compileGenerated(t, out)
+}
+
+// TestRenderCompile_StructDefinitions is a regression test for issue #78:
+// TypeQL struct definitions were parsed and then silently dropped from the
+// generated models. They now map onto plain Go structs, with optional fields
+// as pointers and struct-typed fields referencing the generated struct.
+func TestRenderCompile_StructDefinitions(t *testing.T) {
+	src := `define
+attribute name, value string;
+entity person, owns name;
+struct address:
+    street value string,
+    zip value integer?;
+struct contact:
+    home value address?;
+`
+	out, warnings := renderSchema(t, src, DefaultConfig())
+
+	for _, want := range []string{
+		`// Address is generated from TypeQL struct "address".`,
+		"type Address struct {",
+		"Street string `typedb:\"street\"`",
+		"Zip *int64 `typedb:\"zip\"`",
+		"type Contact struct {",
+		"Home *Address `typedb:\"home\"`", // struct-typed field references the generated struct
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated code\n%s", want, out)
+		}
+	}
+	if warnings != "" {
+		t.Errorf("unexpected warnings: %q", warnings)
+	}
+
+	compileGenerated(t, out)
+}
+
+// TestRender_FunctionSkippedWarning covers the function half of issue #78:
+// TypeQL functions have no Go codegen, and dropping them must say so.
+func TestRender_FunctionSkippedWarning(t *testing.T) {
+	src := `define
+attribute name, value string;
+entity person, owns name;
+fun person_count() -> integer:
+match
+$p isa person;
+return count($p);
+`
+	_, warnings := renderSchema(t, src, DefaultConfig())
+	if !strings.Contains(warnings, `function "person_count" has no Go codegen; skipped`) {
+		t.Errorf("missing skipped-function warning, got: %q", warnings)
+	}
+}
+
+// TestRenderCompile_RegexRangeConstraintComments is a regression test for
+// issue #77: @regex and @range constraints were parsed and then discarded by
+// every renderer. Models now carry them as comments on the generated fields.
+func TestRenderCompile_RegexRangeConstraintComments(t *testing.T) {
+	src := `define
+attribute username, value string @regex("^[a-z]+$");
+attribute age, value integer @range(0..150);
+entity person, owns username, owns age;
+`
+	out, warnings := renderSchema(t, src, DefaultConfig())
+
+	if !strings.Contains(out, `// @regex("^[a-z]+$")`) {
+		t.Errorf("missing @regex constraint comment\n%s", out)
+	}
+	if !strings.Contains(out, "// @range(0..150)") {
+		t.Errorf("missing @range constraint comment\n%s", out)
+	}
+	if warnings != "" {
+		t.Errorf("unexpected warnings: %q", warnings)
+	}
+
+	compileGenerated(t, out)
+}
+
+// TestRender_OutputIsGofmtFormatted is a regression test for issue #107:
+// generated models must come out of Render already gofmt-formatted.
+func TestRender_OutputIsGofmtFormatted(t *testing.T) {
+	src := `define
+attribute name, value string;
+attribute status, value string @values("open", "closed");
+attribute created-at, value datetime;
+entity person, owns name @key, owns status, owns created-at, plays employment:employee;
+entity company, owns name @key, plays employment:employer;
+relation employment, relates employee, relates employer;
+struct address:
+    street value string,
+    zip value integer?;
+`
+	out, warnings := renderSchema(t, src, DefaultConfig())
+	if warnings != "" {
+		t.Errorf("unexpected warnings: %q", warnings)
+	}
+
+	formatted, err := format.Source([]byte(out))
+	if err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, out)
+	}
+	if string(formatted) != out {
+		t.Errorf("Render output is not gofmt-formatted:\n--- got ---\n%s\n--- want ---\n%s", out, formatted)
+	}
 }
 
 // TestRender_NameCollisionErrors is a regression test for issue #76: schema

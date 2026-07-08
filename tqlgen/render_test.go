@@ -139,10 +139,10 @@ func TestRenderMetaAnnotationsAsCommentsOnly(t *testing.T) {
 	if !strings.Contains(out, "func (Customer) SchemaMeta() map[string]string") {
 		t.Fatalf("missing SchemaMeta method\n%s", out)
 	}
-	if !strings.Contains(out, `"icon": "user"`) {
+	if !containsCode(out, `"icon": "user"`) {
 		t.Fatalf("missing icon metadata entry\n%s", out)
 	}
-	if !strings.Contains(out, `"owner": "crm"`) {
+	if !containsCode(out, `"owner": "crm"`) {
 		t.Fatalf("missing owner metadata entry\n%s", out)
 	}
 }
@@ -180,7 +180,7 @@ func TestRenderTypeMetaAnnotationsAsSchemaMetaMethod(t *testing.T) {
 	if !strings.Contains(out, "func (Employment) SchemaMeta() map[string]string") {
 		t.Fatalf("missing relation SchemaMeta method\n%s", out)
 	}
-	if !strings.Contains(out, `"owner": "crm"`) || !strings.Contains(out, `"ui": "account"`) || !strings.Contains(out, `"owner": "hr"`) {
+	if !containsCode(out, `"owner": "crm"`) || !containsCode(out, `"ui": "account"`) || !containsCode(out, `"owner": "hr"`) {
 		t.Fatalf("missing metadata map entries\n%s", out)
 	}
 }
