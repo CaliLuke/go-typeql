@@ -113,7 +113,7 @@ define
 	}
 	var b strings.Builder
 	b.WriteString("insert\n")
-	for i := 0; i < 300; i++ {
+	for i := 0; i < 100; i++ {
 		fmt.Fprintf(&b, "$p%d isa person, has name \"person-%d\";\n", i, i)
 	}
 	if _, err := writeTx.Query(b.String()); err != nil {
@@ -124,8 +124,10 @@ define
 	}
 
 	// Bound the abandoned server-side call so the pending-close drain below
-	// stays fast even if the server keeps computing.
-	txOpts := NewTransactionOptions().SetTimeout(15_000)
+	// stays fast even if the server keeps computing. Keep this short: the
+	// abandoned aggregation keeps consuming server memory until the timeout
+	// fires, and a heavier/longer variant OOM-killed the compose container.
+	txOpts := NewTransactionOptions().SetTimeout(5_000)
 	defer txOpts.Close()
 	baselineOpen := atomic.LoadInt64(&activeTxOpen)
 	tx, err := conn.TransactionWithOptions(dbName, Read, txOpts)
@@ -133,9 +135,10 @@ define
 		t.Fatalf("open read tx: %v", err)
 	}
 
-	// A deliberately heavy cartesian aggregation (300^3 = 27M combinations)
-	// that cannot complete before the context deadline fires.
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	// A deliberately heavy cartesian aggregation (100^3 = 1M combinations)
+	// that cannot complete before the context deadline fires. Sized to be
+	// slow, not huge: 300^3 exhausted the compose container's memory.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	_, err = tx.QueryWithContext(ctx, `
 match $a isa person; $b isa person; $c isa person;
