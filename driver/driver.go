@@ -12,7 +12,11 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -32,6 +36,10 @@ const (
 
 var loggingInitOnce sync.Once
 
+// ensureLoggingInitialized installs the Rust driver's tracing subscriber once
+// per process. Log verbosity is controlled by the TYPEDB_GO_RUST_LOG
+// environment variable (falling back to RUST_LOG); when neither is set,
+// Rust-side logging stays off.
 func ensureLoggingInitialized() {
 	loggingInitOnce.Do(func() {
 		C.typedb_init_logging()
@@ -64,6 +72,13 @@ type DriverOptions struct {
 	// PrimaryFailoverRetries controls retries when finding or re-routing to a primary server.
 	// Zero keeps the TypeDB driver's default.
 	PrimaryFailoverRetries int
+	// AddressTranslation optionally maps public (dialed) addresses to the
+	// private addresses the TypeDB server advertises, for setups such as
+	// container port mappings where the two differ. When set on a call to
+	// Open/OpenWithTLS/OpenWithOptions, the map must contain an entry for the
+	// dialed address. Addresses are used exactly as given; the driver never
+	// rewrites them implicitly.
+	AddressTranslation map[string]string
 }
 
 // ServerVersion is the TypeDB server version reported by the connected server.
@@ -92,10 +107,23 @@ func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA 
 
 // OpenWithOptions creates a new connection to a TypeDB server with connection-level options.
 //
-// For local non-default ports, such as the repo compose setup on localhost:1730,
-// the driver preserves the public address when TypeDB advertises its internal
-// 127.0.0.1:1729 address.
+// The address is dialed exactly as given. If the server advertises a private
+// address that differs from the dialed one (clusters, container port mappings
+// such as the repo compose setup on localhost:1730), configure the mapping
+// explicitly via DriverOptions.AddressTranslation or
+// OpenWithAddressTranslation. For local test setups, setting the
+// TYPEDB_GO_COMPOSE_PORT_MAP environment variable to "1" maps any dialed
+// localhost/127.0.0.1 address with a non-1729 port to the advertised
+// 127.0.0.1:1729.
 func OpenWithOptions(address, username, password string, opts DriverOptions) (*Driver, error) {
+	if translation, err := resolveAddressTranslation(address, opts); err != nil {
+		return nil, err
+	} else if translation != nil {
+		sub := opts
+		sub.AddressTranslation = nil
+		return OpenWithAddressTranslation(translation, username, password, sub)
+	}
+
 	ensureLoggingInitialized()
 	start := time.Now()
 	logFFIDebug("driver.open.start", "address", address, "tls_enabled", opts.TLSEnabled, "has_tls_ca", opts.TLSRootCA != "")
@@ -129,7 +157,7 @@ func OpenWithOptions(address, username, password string, opts DriverOptions) (*D
 //
 // Use this for clustered or routed TypeDB deployments where several public
 // server addresses are available. For a single address, this behaves like
-// OpenWithOptions and preserves the repo compose localhost:1730 mapping.
+// OpenWithOptions.
 func OpenWithAddresses(addresses []string, username, password string, opts DriverOptions) (*Driver, error) {
 	return openWithAddressSet(addresses, nil, username, password, opts)
 }
@@ -225,14 +253,54 @@ func newDriver(ptr unsafe.Pointer) *Driver {
 	}
 }
 
+// resolveAddressTranslation decides whether a single-address open should use
+// public-to-private address translation. It returns a non-nil translation map
+// when DriverOptions.AddressTranslation is set, or when the
+// TYPEDB_GO_COMPOSE_PORT_MAP test convenience applies. It returns an error
+// when a configured translation map lacks the dialed address.
+func resolveAddressTranslation(address string, opts DriverOptions) (map[string]string, error) {
+	if len(opts.AddressTranslation) > 0 {
+		if _, ok := opts.AddressTranslation[address]; !ok {
+			return nil, &DriverError{Message: fmt.Sprintf("driver: AddressTranslation has no entry for dialed address %q", address)}
+		}
+		return opts.AddressTranslation, nil
+	}
+	if composePortMapEnabled() {
+		if host, port, err := net.SplitHostPort(address); err == nil &&
+			(host == "localhost" || host == "127.0.0.1") && port != "1729" {
+			// Repo docker-compose convenience: the container advertises its
+			// internal 127.0.0.1:1729 address while the host maps another port.
+			return map[string]string{address: "127.0.0.1:1729"}, nil
+		}
+	}
+	return nil, nil
+}
+
+// composePortMapEnabled reports whether the TYPEDB_GO_COMPOSE_PORT_MAP
+// environment variable opts into the localhost compose port mapping. This is
+// a test-setup convenience only; production code should use
+// DriverOptions.AddressTranslation or OpenWithAddressTranslation.
+func composePortMapEnabled() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("TYPEDB_GO_COMPOSE_PORT_MAP")))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
 func openInputs(username, password string, opts DriverOptions) (unsafe.Pointer, unsafe.Pointer, func(), error) {
 	cUser := C.CString(username)
 	cPass := C.CString(password)
 
-	creds := C.typedb_credentials_new(cUser, cPass)
+	var credsErr *C.char
+	creds := C.typedb_credentials_new(cUser, cPass, &credsErr)
 	if creds == nil {
 		C.free(unsafe.Pointer(cUser))
 		C.free(unsafe.Pointer(cPass))
+		if err := getError(credsErr); err != nil {
+			return nil, nil, nil, err
+		}
 		return nil, nil, nil, ErrNilPointer
 	}
 

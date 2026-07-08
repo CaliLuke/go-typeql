@@ -41,7 +41,8 @@ func (o *TransactionOptions) Close() {
 
 // QueryOptions provides configuration for fine-tuning query execution behavior.
 type QueryOptions struct {
-	ptr unsafe.Pointer
+	ptr            unsafe.Pointer
+	conceptHandles bool
 }
 
 // NewQueryOptions creates a new set of query options with default values.
@@ -60,6 +61,20 @@ func (o *QueryOptions) SetIncludeInstanceTypes(include bool) *QueryOptions {
 // Increasing this can improve performance for large result sets.
 func (o *QueryOptions) SetPrefetchSize(size int64) *QueryOptions {
 	C.typedb_query_options_set_prefetch_size(o.ptr, C.longlong(size))
+	return o
+}
+
+// SetConceptHandles controls whether entity and relation concepts in row
+// results carry opaque concept handles (retrievable with AsConcept) that can
+// be passed back to the server via ConceptGiven.
+//
+// Handles are registered in a process-global registry and stay valid across
+// transactions until released, so every handle obtained this way must be
+// freed with Concept.Release (or ReleaseAllConcepts) once it is no longer
+// needed; otherwise the registry grows for the life of the process. Queries
+// executed without this option never register handles.
+func (o *QueryOptions) SetConceptHandles(enable bool) *QueryOptions {
+	o.conceptHandles = enable
 	return o
 }
 

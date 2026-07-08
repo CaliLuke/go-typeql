@@ -63,11 +63,21 @@ drv, err = driver.OpenWithAddresses([]string{
 drv, err = driver.OpenWithAddressTranslation(map[string]string{
     "localhost:1730": "127.0.0.1:1729",
 }, "admin", "password", driver.DriverOptions{})
+
+// The same mapping through DriverOptions on a single-address open
+drv, err = driver.OpenWithOptions("localhost:1730", "admin", "password", driver.DriverOptions{
+    AddressTranslation: map[string]string{"localhost:1730": "127.0.0.1:1729"},
+})
 ```
 
-`Open` and single-address `OpenWithAddresses` preserve the repo compose mapping
-(`localhost:1730` on the host to `127.0.0.1:1729` as advertised by TypeDB CE).
-Use `OpenWithAddressTranslation` for explicit public-to-private mappings.
+Addresses are dialed exactly as given -- the driver never rewrites localhost
+ports implicitly. When TypeDB advertises an address that differs from the one
+clients dial (for example the repo compose setup, where the container
+advertises `127.0.0.1:1729` while the host maps port `1730`), configure the
+mapping explicitly with `OpenWithAddressTranslation` or
+`DriverOptions.AddressTranslation`. For local test runs only, setting the
+`TYPEDB_GO_COMPOSE_PORT_MAP=1` environment variable maps any dialed
+`localhost`/`127.0.0.1` address with a non-`1729` port to `127.0.0.1:1729`.
 
 ### Connection Features
 
@@ -79,6 +89,7 @@ The Rust driver exposes a small set of connection-level controls through
 | `RequestTimeoutMillis`   | Unary RPCs such as database create/list, schema fetch, and transaction open |
 | `PrimaryFailoverRetries` | Finding or re-routing to a primary server in clustered deployments |
 | `TLSEnabled`/`TLSRootCA` | TLS setup, equivalent to `OpenWithTLS`                  |
+| `AddressTranslation`     | Public-to-private address mapping for single-address opens |
 
 These options do not replace `QueryOptions`; query result prefetch and
 instance-type inclusion are still configured per query.
@@ -138,18 +149,23 @@ insert $p isa person, has name == $name, has age == $age;
 
 The Go API supports scalar given values: string, integer, double, boolean,
 decimal, date, datetime, datetime-tz, duration, and empty entries. It also
-supports opaque entity and relation concepts returned by row queries:
+supports opaque entity and relation concepts returned by row queries. Concept
+handles are opt-in: request them with `QueryOptions.SetConceptHandles(true)`:
 
 ```go
-conceptRows, err := txn.Query(`
+opts := driver.NewQueryOptions().SetConceptHandles(true)
+defer opts.Close()
+
+conceptRows, err := txn.QueryWithOptions(`
 match
   $p isa person, has name "Alice";
 select $p;
-`)
+`, opts)
 person, ok := driver.AsConcept(conceptRows[0]["p"])
 if !ok {
     log.Fatal("query did not return an opaque concept")
 }
+defer person.Release()
 
 rows := driver.NewGivenRows("person", "age").
     MustAdd(driver.ConceptGiven(person), driver.IntGiven(30))
@@ -162,7 +178,10 @@ insert $person has age == $age;
 
 Opaque concept handles are process-local values produced by this driver. They
 are intended to be passed back to `ConceptGiven`, not persisted or constructed
-manually.
+manually. Each handle pins the concept in a process-global registry and stays
+valid across transactions until released, so call `Concept.Release` (or
+`driver.ReleaseAllConcepts`) when you are done with it; queries executed
+without `SetConceptHandles(true)` never register handles.
 
 ### Transaction Lifecycle Helpers
 
@@ -261,7 +280,9 @@ The `Conn` interface includes database lifecycle methods (`DatabaseCreate`, `Dat
 - `go build -tags "cgo,typedb" ./driver/...` compiles the driver
 - `go test -tags "cgo,typedb,integration" ./driver/...` runs integration tests
 
-If you use the repo `docker-compose.yml` for integration tests, set `TEST_DB_ADDRESS=localhost:1730` because the compose stack maps host port `1730` to the server's internal `1729`.
+If you use the repo `docker-compose.yml` for integration tests, set `TEST_DB_ADDRESS=localhost:1730` and `TYPEDB_GO_COMPOSE_PORT_MAP=1` because the compose stack maps host port `1730` to the server's internal `1729` (the env var opts into the localhost address translation; `make test-integration` sets both by default).
+
+**Rust driver logs**: `driver.Open` installs a `tracing` subscriber for the underlying Rust driver crate. Set `TYPEDB_GO_RUST_LOG` (or `RUST_LOG`) to an env-filter such as `typedb_driver=debug` to see driver logs on stderr; when unset, logging stays off.
 
 ## Error Handling
 

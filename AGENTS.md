@@ -19,7 +19,7 @@ go test -run TestManager_Insert ./gotype/...
 # ALWAYS run these after changes — not just unit tests.
 # When the user says "test" or "run tests", run ALL tests (unit + integration).
 docker compose up -d
-TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
 # Build Rust FFI library
 make build-rust
@@ -144,4 +144,4 @@ colima start
 docker compose up -d
 ```
 
-The repo compose file maps host port `1730` to the TypeDB server's internal port `1729`. Integration test address is configurable via `TEST_DB_ADDRESS` and defaults to `localhost:1729` when unset.
+The repo compose file maps host port `1730` to the TypeDB server's internal port `1729`. Integration test address is configurable via `TEST_DB_ADDRESS` and defaults to `localhost:1729` when unset. When targeting the compose server, also set `TYPEDB_GO_COMPOSE_PORT_MAP=1` so the driver translates the dialed `localhost:1730` to the advertised `127.0.0.1:1729` (the driver no longer rewrites localhost ports implicitly; `make test-integration` sets both variables by default).

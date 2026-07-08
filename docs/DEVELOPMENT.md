@@ -93,8 +93,11 @@ colima start
 # Start TypeDB (repo compose exposes host port 1730 -> container port 1729)
 docker compose up -d
 
-# Run integration tests
-TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+# Run integration tests (TYPEDB_GO_COMPOSE_PORT_MAP=1 opts into the localhost
+# port translation for the compose-mapped 1730 -> 1729 setup)
+TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+# Or simply:
+make test-integration
 
 # Stop TypeDB
 docker compose down
@@ -117,8 +120,9 @@ The `ast/`, `gotype/`, and `tqlgen/` packages compile and test without any build
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests
-# Default test address is localhost:1729. When using the repo compose file, use localhost:1730.
-TEST_DB_ADDRESS=localhost:1730 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+# Default test address is localhost:1729. When using the repo compose file, use
+# localhost:1730 and opt into the compose port translation.
+TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```
 
 ## Package Dependencies
