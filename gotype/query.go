@@ -368,7 +368,11 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 		}
 		tryMatches = append(tryMatches, fmt.Sprintf("try { $e has %s $old%d; };", attr, i))
 		tryDeletes = append(tryDeletes, fmt.Sprintf("try { $old%d of $e; };", i))
-		insHas = append(insHas, fmt.Sprintf("has %s %s", attr, FormatValue(updates[attr])))
+		lit, err := q.mgr.formatAttrValue(attr, updates[attr])
+		if err != nil {
+			return 0, fmt.Errorf("bulk_update %s: %w", q.mgr.info.TypeName, err)
+		}
+		insHas = append(insHas, fmt.Sprintf("has %s %s", attr, lit))
 	}
 	query := match + "\n" + strings.Join(tryMatches, "\n") +
 		"\ndelete\n" + strings.Join(tryDeletes, "\n") +

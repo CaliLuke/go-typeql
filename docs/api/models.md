@@ -51,10 +51,20 @@ Tags follow the format `typedb:"name[,option1][,option2]..."`:
 | `abstract`     | `typedb:"abstract"`         | Marks the type as abstract            |
 | `type:name`    | `typedb:"type:custom_name"` | Overrides the TypeDB type name        |
 | `sub:name`     | `typedb:"sub:artifact"`     | Declares an explicit supertype        |
+| `value:decimal` | `typedb:"price,value:decimal"` | Stores the attribute as TypeDB `decimal` |
 | `-`            | `typedb:"-"`                | Skip this field                       |
 
 Cardinality formats: `0..1`, `1..5`, `2..` (unbounded max), `0+` (shorthand for `0..`).
 Negative or inverted ranges (`card=5..2`) are rejected at registration.
+
+`value:decimal` overrides the value type derived from the Go field (a float64
+field would otherwise map to `double`). It is allowed on `float64`/`float32`
+fields (idiomatic, but lossy for fractions a binary float cannot represent) and
+on `string` fields (exact: digits round-trip verbatim, e.g. `"0.1"`), including
+pointers and slices of those; any other field kind is rejected at registration.
+Write paths emit `dec`-suffixed literals (`12.5dec`; integral values keep a
+fraction: `3.0dec`), and values read back arrive as decimal strings and are
+parsed into the field type automatically.
 
 Type-level options (`abstract`, `type:`, `sub:`) may be placed on the embedded base
 field (e.g. ``gotype.BaseEntity `typedb:"sub:artifact"` ``) or on a blank field

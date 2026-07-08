@@ -89,11 +89,22 @@ func (s *entityStrategy) buildInsertOrPut(info *ModelInfo, instance any, varName
 		ast.IsaStmt("$"+varName, info.TypeName),
 	}
 
+	var fieldErr error
 	for _, fi := range info.Fields {
 		visitFieldValues(v, fi, func(val any) {
-			statements = append(statements,
-				ast.HasStmt("$"+varName, fi.Tag.Name, ast.ValueFromGo(val)))
+			if fieldErr != nil {
+				return
+			}
+			stmt, err := hasStatementFor(fi, varName, val)
+			if err != nil {
+				fieldErr = fmt.Errorf("field %s: %w", fi.FieldName, err)
+				return
+			}
+			statements = append(statements, stmt)
 		})
+	}
+	if fieldErr != nil {
+		return "", fieldErr
 	}
 
 	// Build clause based on keyword
@@ -110,19 +121,32 @@ func (s *entityStrategy) buildInsertOrPut(info *ModelInfo, instance any, varName
 func (s *entityStrategy) BuildMatchByKey(info *ModelInfo, instance any, varName string) (string, error) {
 	v := reflectValue(instance)
 
-	// Build has constraints for key fields
+	// Build has constraints for key fields. Decimal-typed keys need a raw
+	// `dec`-suffixed literal, which the AST value nodes cannot express, so
+	// they become separate raw has-patterns after the entity pattern.
 	var constraints []ast.Constraint
+	var extraPatterns []ast.Pattern
 	for _, fi := range info.KeyFields {
 		val := extractSingleFieldValue(v, fi)
-		if val != nil {
-			constraints = append(constraints, ast.Has(fi.Tag.Name, ast.ValueFromGo(val)))
+		if val == nil {
+			continue
 		}
+		if fi.ValueType == "decimal" {
+			lit, err := formatFieldValue(&fi, val)
+			if err != nil {
+				return "", fmt.Errorf("field %s: %w", fi.FieldName, err)
+			}
+			extraPatterns = append(extraPatterns, ast.RawPattern{
+				Content: fmt.Sprintf("$%s has %s %s", varName, fi.Tag.Name, lit),
+			})
+			continue
+		}
+		constraints = append(constraints, ast.Has(fi.Tag.Name, ast.ValueFromGo(val)))
 	}
 
 	// Build match clause
-	match := ast.Match(
-		ast.Entity("$"+varName, info.TypeName, constraints...),
-	)
+	patterns := append([]ast.Pattern{ast.Entity("$"+varName, info.TypeName, constraints...)}, extraPatterns...)
+	match := ast.Match(patterns...)
 
 	return compileNode(match)
 }
@@ -218,14 +242,11 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 		if playerIID != "" {
 			matchPatterns = append(matchPatterns, ast.Entity("$"+roleVar, playerInfo.TypeName, ast.Iid(playerIID)))
 		} else {
-			var constraints []ast.Constraint
-			for _, kf := range playerInfo.KeyFields {
-				kVal := extractSingleFieldValue(playerVal, kf)
-				if kVal != nil {
-					constraints = append(constraints, ast.Has(kf.Tag.Name, ast.ValueFromGo(kVal)))
-				}
+			patterns, err := playerKeyMatchPatterns(playerInfo, playerVal, roleVar)
+			if err != nil {
+				return fmt.Errorf("relation %s: role %q: %w", info.TypeName, role.RoleName, err)
 			}
-			matchPatterns = append(matchPatterns, ast.Entity("$"+roleVar, playerInfo.TypeName, constraints...))
+			matchPatterns = append(matchPatterns, patterns...)
 		}
 
 		roleParts = append(roleParts, fmt.Sprintf("%s: $%s", role.RoleName, roleVar))
@@ -273,11 +294,11 @@ func (s *relationStrategy) buildInsertOrPut(info *ModelInfo, instance any, varNa
 	insertParts = append(insertParts, fmt.Sprintf("$%s isa %s, links (%s)",
 		varName, info.TypeName, strings.Join(roleParts, ", ")))
 
-	for _, fi := range info.Fields {
-		visitFieldValues(v, fi, func(val any) {
-			insertParts = append(insertParts, fmt.Sprintf("has %s %s", fi.Tag.Name, FormatValue(val)))
-		})
+	hasParts, err := buildHasClauseParts(v, info.Fields)
+	if err != nil {
+		return "", err
 	}
+	insertParts = append(insertParts, hasParts...)
 
 	// Compile query
 	query := ""
@@ -401,6 +422,72 @@ func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) 
 }
 
 // --- Helpers ---
+
+// playerKeyMatchPatterns builds the match patterns that identify a role
+// player by its key attributes. Decimal-typed keys need a raw `dec`-suffixed
+// literal (see entityStrategy.BuildMatchByKey), so they become raw
+// has-patterns after the entity pattern.
+func playerKeyMatchPatterns(playerInfo *ModelInfo, playerVal reflect.Value, roleVar string) ([]ast.Pattern, error) {
+	var constraints []ast.Constraint
+	var extraPatterns []ast.Pattern
+	for _, kf := range playerInfo.KeyFields {
+		kVal := extractSingleFieldValue(playerVal, kf)
+		if kVal == nil {
+			continue
+		}
+		if kf.ValueType == "decimal" {
+			lit, err := formatFieldValue(&kf, kVal)
+			if err != nil {
+				return nil, fmt.Errorf("key %s: %w", kf.FieldName, err)
+			}
+			extraPatterns = append(extraPatterns, ast.RawPattern{
+				Content: fmt.Sprintf("$%s has %s %s", roleVar, kf.Tag.Name, lit),
+			})
+			continue
+		}
+		constraints = append(constraints, ast.Has(kf.Tag.Name, ast.ValueFromGo(kVal)))
+	}
+	patterns := []ast.Pattern{ast.Entity("$"+roleVar, playerInfo.TypeName, constraints...)}
+	return append(patterns, extraPatterns...), nil
+}
+
+// buildHasClauseParts renders "has <attr> <literal>" clause strings for every
+// present value of the given fields, formatting decimal fields with
+// `dec`-suffixed literals. Shared by the relation insert/put and update paths.
+func buildHasClauseParts(v reflect.Value, fields []FieldInfo) ([]string, error) {
+	var parts []string
+	var fieldErr error
+	for _, fi := range fields {
+		visitFieldValues(v, fi, func(val any) {
+			if fieldErr != nil {
+				return
+			}
+			lit, err := formatFieldValue(&fi, val)
+			if err != nil {
+				fieldErr = fmt.Errorf("field %s: %w", fi.FieldName, err)
+				return
+			}
+			parts = append(parts, fmt.Sprintf("has %s %s", fi.Tag.Name, lit))
+		})
+	}
+	return parts, fieldErr
+}
+
+// hasStatementFor builds the insert/put has-statement for a single attribute
+// value. Decimal-typed fields need a raw `dec`-suffixed literal, which the
+// AST value nodes cannot express, so they compile via RawStatement.
+func hasStatementFor(fi FieldInfo, varName string, val any) (ast.Statement, error) {
+	if fi.ValueType == "decimal" {
+		lit, err := formatFieldValue(&fi, val)
+		if err != nil {
+			return nil, err
+		}
+		return ast.RawStatement{
+			Content: fmt.Sprintf("$%s has %s %s", varName, fi.Tag.Name, lit),
+		}, nil
+	}
+	return ast.HasStmt("$"+varName, fi.Tag.Name, ast.ValueFromGo(val)), nil
+}
 
 func reflectValue(instance any) reflect.Value {
 	v := reflect.ValueOf(instance)

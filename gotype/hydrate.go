@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -631,6 +632,9 @@ func coerceValue(val any, fi *FieldInfo) (any, error) {
 	case "double":
 		return coerceToFloat64(val, targetType)
 
+	case "decimal":
+		return coerceDecimal(val, targetType)
+
 	case "boolean":
 		b, ok := val.(bool)
 		if !ok {
@@ -741,6 +745,62 @@ func float64ToInt64Checked(v float64) (int64, error) {
 		return 0, fmt.Errorf("float value %v overflows int64", v)
 	}
 	return int64(v), nil
+}
+
+// coerceDecimal converts a raw decimal result value into the target Go type.
+// The Rust FFI driver transports TypeDB decimal values as strings (e.g.
+// "12.5"), so strings are the primary input; string targets receive the
+// digits verbatim (exact), float targets parse via strconv.ParseFloat
+// (lossy for non-representable fractions). Numeric inputs are accepted
+// defensively. The returned value has exactly targetType's dynamic type
+// (including named types).
+func coerceDecimal(val any, targetType reflect.Type) (any, error) {
+	switch targetType.Kind() {
+	case reflect.String:
+		var s string
+		switch v := val.(type) {
+		case string:
+			s = v
+		case []byte:
+			s = string(v)
+		case float64:
+			s = strconv.FormatFloat(v, 'f', -1, 64)
+		case float32:
+			s = strconv.FormatFloat(float64(v), 'f', -1, 32)
+		case int64:
+			s = strconv.FormatInt(v, 10)
+		default:
+			return nil, fmt.Errorf("cannot coerce %T to decimal string", val)
+		}
+		out := reflect.New(targetType).Elem()
+		out.SetString(s)
+		return out.Interface(), nil
+
+	case reflect.Float32, reflect.Float64:
+		var f64 float64
+		switch v := val.(type) {
+		case string:
+			parsed, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				return nil, fmt.Errorf("cannot parse decimal value %q: %w", v, err)
+			}
+			f64 = parsed
+		case float64:
+			f64 = v
+		case float32:
+			f64 = float64(v)
+		case int64:
+			f64 = float64(v)
+		default:
+			return nil, fmt.Errorf("cannot coerce %T to decimal float", val)
+		}
+		out := reflect.New(targetType).Elem()
+		out.SetFloat(f64)
+		return out.Interface(), nil
+
+	default:
+		return nil, fmt.Errorf("cannot hydrate decimal value into %s", targetType)
+	}
 }
 
 func coerceToFloat64(val any, targetType reflect.Type) (any, error) {
