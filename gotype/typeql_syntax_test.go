@@ -284,6 +284,85 @@ func TestTypeQLSyntax_DatetimeInsert(t *testing.T) {
 	}
 }
 
+// TestTypeQLSyntax_DecimalQueries validates the decimal literal shapes emitted
+// for fields declared with the value:decimal tag option: the schema define
+// (`value decimal`), insert/update/put has-clauses (`has price 12.5dec`,
+// integral values keep a fraction: `3.0dec`), key-match clauses, and filtered
+// Get matches.
+func TestTypeQLSyntax_DecimalQueries(t *testing.T) {
+	registerDecimal := func() {
+		ClearRegistry()
+		MustRegister[decimalProduct]()
+	}
+
+	t.Run("schema define with value decimal", func(t *testing.T) {
+		registerDecimal()
+		MustRegister[decimalKeyed]()
+		assertTypeQL(t, "decimal schema", GenerateSchema(), "")
+	})
+
+	t.Run("insert with decimal literals", func(t *testing.T) {
+		registerDecimal()
+		writeTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xABC123"}}}}
+		conn := &mockConn{txs: []*mockTx{writeTx}}
+		mgr := MustNewManager[decimalProduct](NewDatabase(conn, "test_db"))
+
+		tier := 3.0 // integral value must still emit a fraction (3.0dec)
+		p := &decimalProduct{SKU: "widget-1", Price: 12.5, Exact: "10.99", Tier: &tier, History: []float64{1.25}}
+		if err := mgr.Insert(context.Background(), p); err != nil {
+			t.Fatalf("Insert failed: %v", err)
+		}
+		for _, q := range writeTx.queries {
+			assertTypeQL(t, "decimal insert query", q, "")
+		}
+	})
+
+	t.Run("update with decimal literals", func(t *testing.T) {
+		registerDecimal()
+		writeTx := &mockTx{responses: [][]map[string]any{nil}}
+		conn := &mockConn{txs: []*mockTx{writeTx}}
+		mgr := MustNewManager[decimalProduct](NewDatabase(conn, "test_db"))
+
+		p := &decimalProduct{SKU: "widget-1", Price: 42.0, Exact: "0.1"}
+		p.SetIID("0xABC123")
+		if err := mgr.Update(context.Background(), p); err != nil {
+			t.Fatalf("Update failed: %v", err)
+		}
+		for _, q := range writeTx.queries {
+			assertTypeQL(t, "decimal update query", q, "")
+		}
+	})
+
+	t.Run("put with decimal key match", func(t *testing.T) {
+		ClearRegistry()
+		MustRegister[decimalKeyed]()
+		writeTx := &mockTx{responses: [][]map[string]any{nil, {{"_iid": "0xABC123"}}}}
+		conn := &mockConn{txs: []*mockTx{writeTx}}
+		mgr := MustNewManager[decimalKeyed](NewDatabase(conn, "test_db"))
+
+		if err := mgr.Put(context.Background(), &decimalKeyed{Rate: 9.75}); err != nil {
+			t.Fatalf("Put failed: %v", err)
+		}
+		for _, q := range writeTx.queries {
+			assertTypeQL(t, "decimal put query", q, "")
+		}
+	})
+
+	t.Run("filtered get with decimal literal", func(t *testing.T) {
+		registerDecimal()
+		readTx := &mockTx{}
+		conn := &mockConn{txs: []*mockTx{readTx}}
+		mgr := MustNewManager[decimalProduct](NewDatabase(conn, "test_db"))
+
+		if _, err := mgr.Get(context.Background(), map[string]any{"price": 12.5}); err != nil {
+			t.Fatalf("Get failed: %v", err)
+		}
+		for _, q := range readTx.queries {
+			assertTypeQL(t, "decimal filtered get query", q, "")
+		}
+	})
+}
+
 // TestTypeQLSyntax_GeneratedSchema validates the full registry-derived schema.
 func TestTypeQLSyntax_GeneratedSchema(t *testing.T) {
 	registerTestTypes(t)

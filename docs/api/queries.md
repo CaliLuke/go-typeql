@@ -19,6 +19,14 @@ All filters implement the `Filter` interface. They generate TypeQL pattern strin
 
 **Variable scoping gotcha**: Variable names use the format `$e__attr_name` (double underscore separator) to avoid TypeQL implicit equality semantics. Hyphens in attribute names are replaced with underscores in variable names.
 
+**Decimal comparison gotcha**: Filter combinators are context-free — they don't know
+the attribute's value type, so `Eq("price", 0.1)` emits the double literal `0.1`,
+which is not exactly equal to the stored `0.1dec` (a double holds the nearest binary
+fraction). Ordering comparisons (`Gt`, `Lt`, ...) against `decimal` attributes work
+fine, but exact equality on non-representable fractions can silently miss. For exact
+decimal equality use `Manager.Get` / `GetOne` with a filters map — those paths know
+the field metadata and emit `dec` literals (`has price 0.1dec`).
+
 ### Comparison Filters
 
 ```go

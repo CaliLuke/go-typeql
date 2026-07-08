@@ -29,12 +29,15 @@ type FieldTag struct {
 	Sub string
 	// Skip indicates the field should be ignored by the ORM.
 	Skip bool
+	// ValueType overrides the TypeDB value type derived from the Go field
+	// type (value:name). Only "decimal" is currently supported.
+	ValueType string
 }
 
 // hasFieldOptions reports whether the tag carries attribute-level options
 // that only make sense together with an attribute name.
 func (ft FieldTag) hasFieldOptions() bool {
-	return ft.Key || ft.Unique || ft.CardMin != nil || ft.CardMax != nil
+	return ft.Key || ft.Unique || ft.CardMin != nil || ft.CardMax != nil || ft.ValueType != ""
 }
 
 // hasTypeLevelOptions reports whether the tag carries type-level options
@@ -50,7 +53,8 @@ func (ft FieldTag) IsRole() bool {
 
 // ParseTag parses the content of a `typedb` struct tag into a FieldTag structure.
 // It supports options like key, unique, cardinality (card=M..N), roles (role:name),
-// type name overrides (type:name), and supertype declarations (sub:parent-name).
+// type name overrides (type:name), supertype declarations (sub:parent-name),
+// and value type overrides (value:decimal).
 func ParseTag(tag string) (FieldTag, error) {
 	if tag == "" || tag == "-" {
 		return FieldTag{Skip: tag == "-"}, nil
@@ -112,6 +116,15 @@ func applyTagOption(ft *FieldTag, part string, isFirst bool) error {
 			return fmt.Errorf("tag option %q: supertype name cannot be empty", part)
 		}
 		ft.Sub = name
+	case strings.HasPrefix(part, "value:"):
+		name := strings.TrimSpace(strings.TrimPrefix(part, "value:"))
+		if name == "" {
+			return fmt.Errorf("tag option %q: value type cannot be empty", part)
+		}
+		if name != "decimal" {
+			return fmt.Errorf("tag option %q: unsupported value type %q (only \"decimal\" is supported)", part, name)
+		}
+		ft.ValueType = name
 	case strings.HasPrefix(part, "card="):
 		cardStr := strings.TrimPrefix(part, "card=")
 		min, max, err := parseCardinality(cardStr)

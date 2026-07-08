@@ -264,20 +264,22 @@ func (m *Manager[T]) updateInstanceInTx(ctx context.Context, tx Tx, instance *T)
 
 	// Collect non-key attribute names for deletion, and new values for insertion.
 	var delAttrs []string
-	var insHas []string
-
+	nonKeyFields := make([]FieldInfo, 0, len(m.info.Fields))
 	for _, fi := range m.info.Fields {
 		if fi.Tag.Key {
 			continue
 		}
 		delAttrs = append(delAttrs, fi.Tag.Name)
+		nonKeyFields = append(nonKeyFields, fi)
+	}
 
-		// visitFieldValues handles pointers (skip nil: delete only) and
-		// slices (one has-clause per element) exactly like the insert path,
-		// so multi-valued attributes round-trip instead of being stringified.
-		visitFieldValues(v, fi, func(val any) {
-			insHas = append(insHas, fmt.Sprintf("has %s %s", fi.Tag.Name, FormatValue(val)))
-		})
+	// buildHasClauseParts handles pointers (skip nil: delete only), slices
+	// (one has-clause per element), and decimal literals exactly like the
+	// insert path, so multi-valued attributes round-trip instead of being
+	// stringified.
+	insHas, err := buildHasClauseParts(v, nonKeyFields)
+	if err != nil {
+		return fmt.Errorf("update %s: %w", m.info.TypeName, err)
 	}
 
 	// Single query: match entity + try-match old attrs, delete old, insert new.
@@ -287,8 +289,7 @@ func (m *Manager[T]) updateInstanceInTx(ctx context.Context, tx Tx, instance *T)
 	}
 
 	query := buildBatchUpdate(m.info.TypeName, iid, delAttrs, insHas)
-	_, err := tx.QueryWithContext(ctx, query)
-	if err != nil {
+	if _, err := tx.QueryWithContext(ctx, query); err != nil {
 		return fmt.Errorf("update %s: %w", m.info.TypeName, err)
 	}
 	return nil
@@ -794,13 +795,31 @@ func (m *Manager[T]) buildFilteredMatch(varName string, filters map[string]any) 
 		if err := validateAttrName(attr); err != nil {
 			return "", err
 		}
+		lit, err := m.formatAttrValue(attr, filters[attr])
+		if err != nil {
+			return "", err
+		}
 		b.WriteString(",\nhas ")
 		b.WriteString(attr)
 		b.WriteByte(' ')
-		b.WriteString(FormatValue(filters[attr]))
+		b.WriteString(lit)
 	}
 	b.WriteString(";")
 	return b.String(), nil
+}
+
+// formatAttrValue formats a value supplied by attribute name (Get filters,
+// bulk updates), using the model's field metadata when the attribute maps to
+// a registered field so decimal attributes get `dec`-suffixed literals.
+func (m *Manager[T]) formatAttrValue(attr string, val any) (string, error) {
+	if fi, ok := m.info.FieldByAttrName(attr); ok {
+		lit, err := formatFieldValue(&fi, val)
+		if err != nil {
+			return "", fmt.Errorf("attribute %s: %w", attr, err)
+		}
+		return lit, nil
+	}
+	return FormatValue(val), nil
 }
 
 // validateKeyAttributes ensures every key attribute carries a non-zero value

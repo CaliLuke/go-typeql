@@ -206,6 +206,9 @@ func addRoleField(info *ModelInfo, field reflect.StructField, tag FieldTag) erro
 	if tag.Name != "" {
 		return fmt.Errorf("field %s: tag cannot declare both an attribute name %q and a role %q", field.Name, tag.Name, tag.RoleName)
 	}
+	if tag.ValueType != "" {
+		return fmt.Errorf("field %s: the value:%s option applies to attribute fields, not role %q", field.Name, tag.ValueType, tag.RoleName)
+	}
 	role := RoleInfo{
 		RoleName:   tag.RoleName,
 		FieldName:  field.Name,
@@ -359,12 +362,39 @@ func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) (FieldIn
 		}
 	}
 
+	if tag.ValueType != "" {
+		// Explicit value type override (currently only "decimal"): validate
+		// that the Go field kind can carry the value. float64/float32 are the
+		// idiomatic (lossy) targets, string is the exact one.
+		if err := validateValueTypeOverride(tag.ValueType, ft); err != nil {
+			return FieldInfo{}, fmt.Errorf("field %s: %w", field.Name, err)
+		}
+		fi.ValueType = tag.ValueType
+		return fi, nil
+	}
+
 	valueType, err := goTypeToTypeDB(ft)
 	if err != nil {
 		return FieldInfo{}, fmt.Errorf("field %s: %w", field.Name, err)
 	}
 	fi.ValueType = valueType
 	return fi, nil
+}
+
+// validateValueTypeOverride checks that a value: tag override is compatible
+// with the (pointer/slice-unwrapped) Go field type.
+func validateValueTypeOverride(valueType string, ft reflect.Type) error {
+	switch valueType {
+	case "decimal":
+		switch ft.Kind() {
+		case reflect.Float32, reflect.Float64, reflect.String:
+			return nil
+		default:
+			return fmt.Errorf("value:decimal requires a float64, float32, or string field (or pointer/slice of those), got %s", ft)
+		}
+	default:
+		return fmt.Errorf("unsupported value type override %q", valueType)
+	}
 }
 
 // ToDict converts a registered model instance to a map[string]any using
