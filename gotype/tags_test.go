@@ -77,8 +77,51 @@ func TestParseTag(t *testing.T) {
 			want: FieldTag{Name: "start-date"},
 		},
 		{
+			name: "sub option",
+			tag:  "sub:parent-type",
+			want: FieldTag{Sub: "parent-type"},
+		},
+		{
 			name:    "invalid cardinality",
 			tag:     "x,card=abc",
+			wantErr: true,
+		},
+		{
+			// Issue #94: negative bounds are rejected.
+			name:    "negative cardinality min",
+			tag:     "x,card=-1..2",
+			wantErr: true,
+		},
+		{
+			name:    "negative cardinality max",
+			tag:     "x,card=0..-2",
+			wantErr: true,
+		},
+		{
+			name:    "negative cardinality shorthand",
+			tag:     "x,card=-1+",
+			wantErr: true,
+		},
+		{
+			// Issue #94: inverted ranges are rejected.
+			name:    "inverted cardinality range",
+			tag:     "x,card=5..2",
+			wantErr: true,
+		},
+		{
+			// Issue #29: empty role names are rejected at parse time.
+			name:    "empty role name",
+			tag:     "role:",
+			wantErr: true,
+		},
+		{
+			name:    "empty type name",
+			tag:     "type:",
+			wantErr: true,
+		},
+		{
+			name:    "empty supertype name",
+			tag:     "sub:",
 			wantErr: true,
 		},
 	}
@@ -113,6 +156,9 @@ func TestParseTag(t *testing.T) {
 			}
 			if got.TypeName != tt.want.TypeName {
 				t.Errorf("TypeName: got %q, want %q", got.TypeName, tt.want.TypeName)
+			}
+			if got.Sub != tt.want.Sub {
+				t.Errorf("Sub: got %q, want %q", got.Sub, tt.want.Sub)
 			}
 			if got.Skip != tt.want.Skip {
 				t.Errorf("Skip: got %v, want %v", got.Skip, tt.want.Skip)
