@@ -123,6 +123,15 @@ func TestTypeQLSyntax_GeneratedSchema(t *testing.T) {
 	assertTypeQL(t, "GenerateSchema", schema, "")
 }
 
+// TestTypeQLSyntax_SupertypeSchema validates the `entity child sub parent`
+// shape emitted for models declaring a sub: tag (issue #91).
+func TestTypeQLSyntax_SupertypeSchema(t *testing.T) {
+	ClearRegistry()
+	MustRegister[zzzParentModel]()
+	MustRegister[aaaChildModel]()
+	assertTypeQL(t, "GenerateSchema with sub clause", GenerateSchema(), "")
+}
+
 // TestTypeQLSyntax_MigrationStatements validates the statements the diff-based
 // migration path would execute against a live server.
 func TestTypeQLSyntax_MigrationStatements(t *testing.T) {

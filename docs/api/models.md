@@ -50,9 +50,22 @@ Tags follow the format `typedb:"name[,option1][,option2]..."`:
 | `role:name`    | `typedb:"role:employee"`    | Role player in a relation             |
 | `abstract`     | `typedb:"abstract"`         | Marks the type as abstract            |
 | `type:name`    | `typedb:"type:custom_name"` | Overrides the TypeDB type name        |
+| `sub:name`     | `typedb:"sub:artifact"`     | Declares an explicit supertype        |
 | `-`            | `typedb:"-"`                | Skip this field                       |
 
 Cardinality formats: `0..1`, `1..5`, `2..` (unbounded max), `0+` (shorthand for `0..`).
+Negative or inverted ranges (`card=5..2`) are rejected at registration.
+
+Type-level options (`abstract`, `type:`, `sub:`) may be placed on the embedded base
+field (e.g. ``gotype.BaseEntity `typedb:"sub:artifact"` ``) or on a blank field
+(`_ byte`). The declared supertype is emitted as `entity child sub parent` in the
+generated schema and populates `ModelInfo.Supertype` / `SubtypesOf`.
+
+Registration validates tags strictly and returns an error for: field-level options
+without an attribute name (`typedb:"key"` alone), unsupported Go field types
+(map/chan/complex/non-time structs), attribute names duplicated within a model or
+registered elsewhere with a different value type, reserved-word or malformed role
+names, conflicting `type:`/`sub:` declarations, and invalid cardinality ranges.
 
 ## Schema Documentation
 

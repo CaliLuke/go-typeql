@@ -128,8 +128,15 @@ type IsSimilarTo struct {
 | `typedb:"tag,card=0.."`  | `owns tag @card(0..)`  | Zero or more                       |
 | `typedb:"role:employee"` | `relates employee`     | Role player in a relation          |
 | `typedb:"type:my-type"`  | N/A                    | Override the TypeDB type name      |
+| `typedb:"sub:parent"`    | `sub parent`           | Explicit supertype declaration     |
 | `typedb:"abstract"`      | `@abstract`            | Abstract type                      |
 | `typedb:"-"`             | N/A                    | Skip field                         |
+
+Type-level options (`abstract`, `type:`, `sub:`) may sit on the embedded base field
+(``gotype.BaseEntity `typedb:"abstract"` ``) or a blank `_ byte` field. Registration
+validates tags strictly: options without an attribute name, unsupported field types,
+duplicate/conflicting attribute value types, bad role names, and inverted `card=`
+ranges all return an error from `Register` instead of emitting broken TypeQL later.
 
 ### Naming Convention
 
@@ -137,8 +144,10 @@ Go struct names are automatically converted to kebab-case for TypeDB type names:
 
 - `UserAccount` becomes `user-account`
 - `MigratedPerson` becomes `migrated-person`
+- Acronyms stay together: `IAMUser` becomes `iam-user`, `HTTPServer` becomes `http-server`
 
 Any hand-written TypeQL must use the kebab-case form, not the Go name.
+Go type names that differ only by case (`ABTest` vs `AbTest`) conflict and fail registration.
 
 ---
 
