@@ -616,41 +616,30 @@ func TestConnPool_CloseUnblocksWaiterWithErrPoolClosed(t *testing.T) {
 	})
 }
 
-func TestConnPool_PutDoesNotHandOffAfterClose(t *testing.T) {
-	pool := &ConnPool{
-		waitQueue: make([]*poolWaiter, 0, 1),
-	}
-
-	waiter := &poolWaiter{
-		result: make(chan poolWaitResult),
-		done:   make(chan struct{}),
-	}
-	pool.waitQueue = append(pool.waitQueue, waiter)
+func TestConnPool_HandoffRacingCloseDoesNotLeak(t *testing.T) {
+	// White-box: a waiter is handed a connection by Put, but Close wins the
+	// race before the waiter resumes. The waiter must observe the closed
+	// pool, discard the connection, and keep numOpen accounting consistent.
+	pool := &ConnPool{numOpen: 1}
+	waiter := &poolWaiter{result: make(chan poolWaitResult, 1)}
+	pool.waitQueue = []*poolWaiter{waiter}
 
 	conn := newPoolMockConn(1)
+	pool.Put(conn) // hands off to the waiter (buffered send)
+	pool.Close()   // close wins the race before the waiter runs
 
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		pool.Put(conn)
-	})
-
-	result := <-waiter.result
-	if result.conn != conn {
-		t.Fatalf("Put handed off unexpected connection: got %#v want %#v", result.conn, conn)
+	got, retry, err := pool.awaitConn(context.Background(), waiter)
+	if got != nil || retry {
+		t.Fatalf("awaitConn after close: got conn=%#v retry=%v, want nil/false", got, retry)
 	}
-
-	pool.Close()
-	result.accepted <- false
-	wg.Wait()
-
-	if !pool.closed {
-		t.Fatal("expected pool to be closed")
+	if err != ErrPoolClosed {
+		t.Fatalf("expected ErrPoolClosed, got %v", err)
 	}
 	if !conn.closed.Load() {
 		t.Fatal("expected connection to be closed after close wins the race")
 	}
-	if stats := pool.Stats(); stats.Waiting != 0 || stats.Available != 0 {
-		t.Fatalf("expected no queued or available connections after close, got %+v", stats)
+	if stats := pool.Stats(); stats.Waiting != 0 || stats.Available != 0 || stats.Total != 0 {
+		t.Fatalf("expected empty pool stats after close, got %+v", stats)
 	}
 }
 

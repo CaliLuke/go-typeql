@@ -128,8 +128,15 @@ type IsSimilarTo struct {
 | `typedb:"tag,card=0.."`  | `owns tag @card(0..)`  | Zero or more                       |
 | `typedb:"role:employee"` | `relates employee`     | Role player in a relation          |
 | `typedb:"type:my-type"`  | N/A                    | Override the TypeDB type name      |
+| `typedb:"sub:parent"`    | `sub parent`           | Explicit supertype declaration     |
 | `typedb:"abstract"`      | `@abstract`            | Abstract type                      |
 | `typedb:"-"`             | N/A                    | Skip field                         |
+
+Type-level options (`abstract`, `type:`, `sub:`) may sit on the embedded base field
+(``gotype.BaseEntity `typedb:"abstract"` ``) or a blank `_ byte` field. Registration
+validates tags strictly: options without an attribute name, unsupported field types,
+duplicate/conflicting attribute value types, bad role names, and inverted `card=`
+ranges all return an error from `Register` instead of emitting broken TypeQL later.
 
 ### Naming Convention
 
@@ -137,8 +144,10 @@ Go struct names are automatically converted to kebab-case for TypeDB type names:
 
 - `UserAccount` becomes `user-account`
 - `MigratedPerson` becomes `migrated-person`
+- Acronyms stay together: `IAMUser` becomes `iam-user`, `HTTPServer` becomes `http-server`
 
 Any hand-written TypeQL must use the kebab-case form, not the Go name.
+Go type names that differ only by case (`ABTest` vs `AbTest`) conflict and fail registration.
 
 ---
 
@@ -635,7 +644,12 @@ import "github.com/CaliLuke/go-typeql/tqlgen"
 
 // Parse a TypeQL schema file
 schema, err := tqlgen.ParseSchemaFile("schema.tql")
-schema.AccumulateInheritance() // propagate parent owns/plays to children
+
+// Propagate parent owns/plays to children. Returns an error on cyclic
+// `sub` declarations (e.g. "inheritance cycle: a -> b -> a").
+if err := schema.AccumulateInheritance(); err != nil {
+    return err
+}
 
 // --- Option A: Generate Go structs ---
 cfg := tqlgen.RenderConfig{PackageName: "models", UseAcronyms: true, Enums: true}
@@ -698,7 +712,17 @@ The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstrac
 - DTO mode (`-dto`) outputs Out/Create/Patch struct variants for HTTP APIs
 - N-role relation support (not limited to binary relations)
 - Comment annotations: `# @key value`, `# @key(value)`, `# @key` above type definitions
-- Inheritance propagation: parent `owns`/`plays` merged into children
+  (blank lines and plain comments between annotation and definition are allowed)
+- Inheritance propagation: parent `owns`/`plays` merged into children; cyclic `sub`
+  declarations are rejected with a clear error instead of crashing
+- Attribute subtyping: `attribute email sub name;` and abstract attributes parse; subtypes
+  inherit the parent's value type when they omit a `value` clause
+- List syntax: `owns nicknames[]` / `relates members[]` parse and surface as
+  `OwnsSpec.IsList` / `RelatesSpec.IsList` in the parsed model
+- `@range` accepts all operand forms (integer, decimal, string, date/datetime, half-open
+  like `@range(0..)`), captured verbatim in `AttributeSpec.RangeOp`
+- TypeQL functions (`fun ...`) are parsed by the grammar; definitions after a function
+  block are retained (bodies are captured as token lists for signature extraction)
 - Configurable constant prefixes (`TypePrefix`, `RelPrefix`)
 
 ---

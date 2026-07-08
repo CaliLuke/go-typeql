@@ -27,7 +27,7 @@ func (op AddAttribute) ToTypeQL() string {
 func (op AddAttribute) IsReversible() bool  { return true }
 func (op AddAttribute) IsDestructive() bool { return false }
 func (op AddAttribute) RollbackTypeQL() string {
-	return fmt.Sprintf("undefine attribute %s;", op.Name)
+	return fmt.Sprintf("undefine %s;", op.Name)
 }
 
 // AddEntity represents the creation of a new entity type in the schema.
@@ -53,7 +53,7 @@ func (op AddEntity) ToTypeQL() string {
 }
 func (op AddEntity) IsReversible() bool     { return true }
 func (op AddEntity) IsDestructive() bool    { return false }
-func (op AddEntity) RollbackTypeQL() string { return fmt.Sprintf("undefine entity %s;", op.Name) }
+func (op AddEntity) RollbackTypeQL() string { return fmt.Sprintf("undefine %s;", op.Name) }
 
 // AddRelation represents the creation of a new relation type in the schema.
 type AddRelation struct {
@@ -78,7 +78,7 @@ func (op AddRelation) ToTypeQL() string {
 }
 func (op AddRelation) IsReversible() bool     { return true }
 func (op AddRelation) IsDestructive() bool    { return false }
-func (op AddRelation) RollbackTypeQL() string { return fmt.Sprintf("undefine relation %s;", op.Name) }
+func (op AddRelation) RollbackTypeQL() string { return fmt.Sprintf("undefine %s;", op.Name) }
 
 // AddOwnership represents the assignment of an attribute ownership to a type.
 type AddOwnership struct {
@@ -97,7 +97,7 @@ func (op AddOwnership) ToTypeQL() string {
 func (op AddOwnership) IsReversible() bool  { return true }
 func (op AddOwnership) IsDestructive() bool { return false }
 func (op AddOwnership) RollbackTypeQL() string {
-	return fmt.Sprintf("undefine %s owns %s;", op.Owner, op.Attribute)
+	return fmt.Sprintf("undefine owns %s from %s;", op.Attribute, op.Owner)
 }
 
 // AddRole represents the addition of a role to a relation type.
@@ -117,7 +117,7 @@ func (op AddRole) ToTypeQL() string {
 func (op AddRole) IsReversible() bool  { return true }
 func (op AddRole) IsDestructive() bool { return false }
 func (op AddRole) RollbackTypeQL() string {
-	return fmt.Sprintf("undefine %s relates %s;", op.Relation, op.Role)
+	return fmt.Sprintf("undefine relates %s from %s;", op.Role, op.Relation)
 }
 
 // --- Destructive operations ---
@@ -127,7 +127,7 @@ type RemoveAttribute struct {
 	Name string
 }
 
-func (op RemoveAttribute) ToTypeQL() string       { return fmt.Sprintf("undefine attribute %s;", op.Name) }
+func (op RemoveAttribute) ToTypeQL() string       { return fmt.Sprintf("undefine %s;", op.Name) }
 func (op RemoveAttribute) IsReversible() bool     { return false }
 func (op RemoveAttribute) IsDestructive() bool    { return true }
 func (op RemoveAttribute) RollbackTypeQL() string { return "" }
@@ -137,7 +137,7 @@ type RemoveEntity struct {
 	Name string
 }
 
-func (op RemoveEntity) ToTypeQL() string       { return fmt.Sprintf("undefine entity %s;", op.Name) }
+func (op RemoveEntity) ToTypeQL() string       { return fmt.Sprintf("undefine %s;", op.Name) }
 func (op RemoveEntity) IsReversible() bool     { return false }
 func (op RemoveEntity) IsDestructive() bool    { return true }
 func (op RemoveEntity) RollbackTypeQL() string { return "" }
@@ -147,7 +147,7 @@ type RemoveRelation struct {
 	Name string
 }
 
-func (op RemoveRelation) ToTypeQL() string       { return fmt.Sprintf("undefine relation %s;", op.Name) }
+func (op RemoveRelation) ToTypeQL() string       { return fmt.Sprintf("undefine %s;", op.Name) }
 func (op RemoveRelation) IsReversible() bool     { return false }
 func (op RemoveRelation) IsDestructive() bool    { return true }
 func (op RemoveRelation) RollbackTypeQL() string { return "" }
@@ -159,7 +159,7 @@ type RemoveOwnership struct {
 }
 
 func (op RemoveOwnership) ToTypeQL() string {
-	return fmt.Sprintf("undefine %s owns %s;", op.Owner, op.Attribute)
+	return fmt.Sprintf("undefine owns %s from %s;", op.Attribute, op.Owner)
 }
 func (op RemoveOwnership) IsReversible() bool     { return false }
 func (op RemoveOwnership) IsDestructive() bool    { return true }
@@ -172,7 +172,7 @@ type RemoveRole struct {
 }
 
 func (op RemoveRole) ToTypeQL() string {
-	return fmt.Sprintf("undefine %s relates %s;", op.Relation, op.Role)
+	return fmt.Sprintf("undefine relates %s from %s;", op.Role, op.Relation)
 }
 func (op RemoveRole) IsReversible() bool     { return false }
 func (op RemoveRole) IsDestructive() bool    { return true }
@@ -193,7 +193,7 @@ func (op AddRolePlayer) ToTypeQL() string {
 func (op AddRolePlayer) IsReversible() bool  { return true }
 func (op AddRolePlayer) IsDestructive() bool { return false }
 func (op AddRolePlayer) RollbackTypeQL() string {
-	return fmt.Sprintf("undefine %s plays %s:%s;", op.Entity, op.Relation, op.Role)
+	return fmt.Sprintf("undefine plays %s:%s from %s;", op.Relation, op.Role, op.Entity)
 }
 
 // RemoveRolePlayer removes a plays clause from an entity type.
@@ -204,7 +204,7 @@ type RemoveRolePlayer struct {
 }
 
 func (op RemoveRolePlayer) ToTypeQL() string {
-	return fmt.Sprintf("undefine %s plays %s:%s;", op.Entity, op.Relation, op.Role)
+	return fmt.Sprintf("undefine plays %s:%s from %s;", op.Relation, op.Role, op.Entity)
 }
 func (op RemoveRolePlayer) IsReversible() bool     { return false }
 func (op RemoveRolePlayer) IsDestructive() bool    { return true }

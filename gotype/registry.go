@@ -4,6 +4,7 @@ package gotype
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 )
 
@@ -38,22 +39,6 @@ func Register[T any]() error {
 		return fmt.Errorf("registering %s: %w", t.Name(), err)
 	}
 
-	// Check for type: override in first field's tag
-	for field := range t.Fields() {
-		tagStr := field.Tag.Get("typedb")
-		if tagStr == "" {
-			continue
-		}
-		tag, err := ParseTag(tagStr)
-		if err != nil {
-			continue
-		}
-		if tag.TypeName != "" {
-			info.TypeName = tag.TypeName
-			break
-		}
-	}
-
 	if err := validateModelNames(info); err != nil {
 		return err
 	}
@@ -66,10 +51,42 @@ func Register[T any]() error {
 			return fmt.Errorf("type name %q already registered to %s", info.TypeName, existing.GoType.Name())
 		}
 	}
+	if existing, ok := globalRegistry.byGoName[lowerGoName(t.Name())]; ok {
+		if existing.GoType != t {
+			return fmt.Errorf("go type name %q conflicts (case-insensitively) with already registered %s", t.Name(), existing.GoType.Name())
+		}
+	}
+	if err := validateAgainstRegistry(info, t); err != nil {
+		return err
+	}
 
 	globalRegistry.byName[info.TypeName] = info
 	globalRegistry.byType[t] = info
 	globalRegistry.byGoName[lowerGoName(t.Name())] = info
+	return nil
+}
+
+// validateAgainstRegistry checks the model against already-registered models:
+// shared attribute names must agree on their value type, and a declared
+// supertype (if registered) must be of the same kind. Callers must hold the
+// registry lock.
+func validateAgainstRegistry(info *ModelInfo, t reflect.Type) error {
+	for _, fi := range info.Fields {
+		for _, other := range globalRegistry.byName {
+			if other.GoType == t {
+				continue
+			}
+			if of, ok := other.FieldByAttrName(fi.Tag.Name); ok && of.ValueType != fi.ValueType {
+				return fmt.Errorf("registering %s: attribute %q has value type %s but is already registered with value type %s by %s",
+					t.Name(), fi.Tag.Name, fi.ValueType, of.ValueType, other.GoType.Name())
+			}
+		}
+	}
+	if info.Supertype != "" {
+		if parent, ok := globalRegistry.byName[info.Supertype]; ok && parent.Kind != info.Kind {
+			return fmt.Errorf("registering %s: supertype %q is a different kind (entity vs relation)", t.Name(), info.Supertype)
+		}
+	}
 	return nil
 }
 
@@ -84,28 +101,36 @@ func validateModelNames(info *ModelInfo) error {
 	if err := ValidateIdentifier(info.TypeName, kindStr); err != nil {
 		return err
 	}
-	for _, fi := range info.Fields {
-		if fi.Tag.Name == "" {
-			continue
+	if info.Supertype != "" {
+		if IsReservedWord(info.Supertype) {
+			return &ReservedWordError{Word: info.Supertype, Context: "supertype"}
 		}
+		if err := ValidateIdentifier(info.Supertype, "supertype"); err != nil {
+			return err
+		}
+		if info.Supertype == info.TypeName {
+			return fmt.Errorf("%s %q cannot be its own supertype", kindStr, info.TypeName)
+		}
+	}
+	attrTypes := make(map[string]string, len(info.Fields))
+	for _, fi := range info.Fields {
 		if IsReservedWord(fi.Tag.Name) {
 			return &ReservedWordError{Word: fi.Tag.Name, Context: "attribute"}
 		}
 		if err := ValidateIdentifier(fi.Tag.Name, "attribute"); err != nil {
 			return err
 		}
-	}
-	if info.Kind != ModelKindRelation {
-		return nil
-	}
-	for _, fi := range info.Fields {
-		if fi.Tag.RoleName == "" {
-			continue
+		if prev, ok := attrTypes[fi.Tag.Name]; ok {
+			return fmt.Errorf("%s %q declares attribute %q more than once (value types %s and %s)",
+				kindStr, info.TypeName, fi.Tag.Name, prev, fi.ValueType)
 		}
-		if IsReservedWord(fi.Tag.RoleName) {
-			return &ReservedWordError{Word: fi.Tag.RoleName, Context: "role"}
+		attrTypes[fi.Tag.Name] = fi.ValueType
+	}
+	for _, role := range info.Roles {
+		if IsReservedWord(role.RoleName) {
+			return &ReservedWordError{Word: role.RoleName, Context: "role"}
 		}
-		if err := ValidateIdentifier(fi.Tag.RoleName, "role"); err != nil {
+		if err := ValidateIdentifier(role.RoleName, "role"); err != nil {
 			return err
 		}
 	}
@@ -150,7 +175,10 @@ func LookupByGoName(name string) (*ModelInfo, bool) {
 	return nil, false
 }
 
-// RegisteredTypes returns a slice containing ModelInfo for all registered types.
+// RegisteredTypes returns a slice containing ModelInfo for all registered
+// types in a deterministic order: sorted by TypeName, with registered
+// supertypes always preceding their subtypes. Deterministic ordering keeps
+// generated schemas and migration plans stable across runs.
 func RegisteredTypes() []*ModelInfo {
 	globalRegistry.mu.RLock()
 	defer globalRegistry.mu.RUnlock()
@@ -158,11 +186,40 @@ func RegisteredTypes() []*ModelInfo {
 	for _, info := range globalRegistry.byType {
 		result = append(result, info)
 	}
-	return result
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].TypeName < result[j].TypeName
+	})
+	return supertypesFirst(result)
+}
+
+// supertypesFirst reorders the name-sorted slice so that every registered
+// supertype precedes its subtypes, keeping the order stable otherwise.
+func supertypesFirst(sorted []*ModelInfo) []*ModelInfo {
+	byName := make(map[string]*ModelInfo, len(sorted))
+	for _, info := range sorted {
+		byName[info.TypeName] = info
+	}
+	out := make([]*ModelInfo, 0, len(sorted))
+	visited := make(map[string]bool, len(sorted))
+	var emit func(info *ModelInfo)
+	emit = func(info *ModelInfo) {
+		if visited[info.TypeName] {
+			return
+		}
+		visited[info.TypeName] = true
+		if parent, ok := byName[info.Supertype]; ok {
+			emit(parent)
+		}
+		out = append(out, info)
+	}
+	for _, info := range sorted {
+		emit(info)
+	}
+	return out
 }
 
 // SubtypesOf returns a slice of registered types that are direct subtypes
-// of the specified parent type.
+// of the specified parent type, sorted by TypeName.
 func SubtypesOf(typeName string) []*ModelInfo {
 	globalRegistry.mu.RLock()
 	defer globalRegistry.mu.RUnlock()
@@ -172,6 +229,9 @@ func SubtypesOf(typeName string) []*ModelInfo {
 			result = append(result, info)
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].TypeName < result[j].TypeName
+	})
 	return result
 }
 

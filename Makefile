@@ -1,9 +1,37 @@
-.PHONY: build-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang
+.PHONY: build-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang install-typeql-check
+
+# Version of the official TypeQL syntax checker (typedb/typedb-tools).
+# Keep in lockstep with the TypeDB server version pinned in docker-compose.yml.
+TYPEQL_CHECK_VERSION ?= 3.12.0
 
 # Build the Rust FFI static library
 # MACOSX_DEPLOYMENT_TARGET=11.0 matches Go's -mmacosx-version-min=11.0
 build-rust:
 	cd driver/rust && MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --release
+
+# Install the official typeql-check CLI into ~/go/bin (used by the TypeQL
+# syntax test gates; see internal/typeqlcheck and docs/TESTING.md).
+install-typeql-check:
+	@set -e; \
+	OS=$$(uname -s); ARCH=$$(uname -m); \
+	case "$$OS-$$ARCH" in \
+		Darwin-arm64)              NAME=typeql-check-mac-arm64;    EXT=zip ;; \
+		Darwin-x86_64)             NAME=typeql-check-mac-x86_64;   EXT=zip ;; \
+		Linux-aarch64|Linux-arm64) NAME=typeql-check-linux-arm64;  EXT=tar.gz ;; \
+		Linux-x86_64)              NAME=typeql-check-linux-x86_64; EXT=tar.gz ;; \
+		*) echo "unsupported platform: $$OS $$ARCH"; exit 1 ;; \
+	esac; \
+	URL="https://repo.typedb.com/public/public-release/raw/names/$$NAME/versions/$(TYPEQL_CHECK_VERSION)/$$NAME-$(TYPEQL_CHECK_VERSION).$$EXT"; \
+	TMP=$$(mktemp -d); trap 'rm -rf "$$TMP"' EXIT; \
+	echo "Downloading $$URL"; \
+	curl -sfL "$$URL" -o "$$TMP/pkg.$$EXT"; \
+	if [ "$$EXT" = "zip" ]; then unzip -q "$$TMP/pkg.$$EXT" -d "$$TMP"; else tar -xzf "$$TMP/pkg.$$EXT" -C "$$TMP"; fi; \
+	BIN=$$(find "$$TMP" -name typeql-check -type f | head -1); \
+	[ -n "$$BIN" ] || { echo "typeql-check binary not found in archive"; exit 1; }; \
+	mkdir -p "$$HOME/go/bin"; \
+	install -m 0755 "$$BIN" "$$HOME/go/bin/typeql-check"; \
+	"$$HOME/go/bin/typeql-check" 'match $$x isa person;' && \
+	echo "Installed $$HOME/go/bin/typeql-check ($(TYPEQL_CHECK_VERSION))"
 
 # Clean Rust build artifacts
 clean-rust:
