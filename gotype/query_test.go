@@ -221,19 +221,30 @@ func TestQuery_Count(t *testing.T) {
 
 func TestParseValueString(t *testing.T) {
 	tests := []struct {
-		name string
-		in   string
-		want float64
+		name    string
+		in      string
+		want    float64
+		wantErr bool
 	}{
 		{name: "integer", in: "Value(integer: 55)", want: 55},
 		{name: "double", in: "Value(double: 3.14)", want: 3.14},
 		{name: "legacy long", in: "Value(long: 42)", want: 42},
-		{name: "invalid", in: "not-a-value", want: 0},
+		{name: "invalid", in: "not-a-value", wantErr: true},
+		{name: "unknown value type", in: "Value(decimal: 1.5)", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseValueString(tt.in)
+			got, err := parseValueString(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseValueString(%q) = %v, want error", tt.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseValueString(%q) unexpected error: %v", tt.in, err)
+			}
 			if math.Abs(got-tt.want) > 1e-9 {
 				t.Fatalf("parseValueString(%q) = %v, want %v", tt.in, got, tt.want)
 			}
