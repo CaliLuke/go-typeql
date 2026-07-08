@@ -706,6 +706,13 @@ The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstrac
 ### Features
 
 - Generates Go structs with `BaseEntity`/`BaseRelation` embedding and `typedb:"..."` tags
+- Multi-valued attributes (list syntax `owns tag[]` or `@card` allowing >1) become slice
+  fields (`[]string`), not scalars
+- Full 3.x value-type mapping (`date`/`datetime-tz` → `time.Time`, `duration` →
+  `time.Duration`, `decimal` → `float64`); unknown value types warn (stderr /
+  `RenderConfig.WarnWriter`) before defaulting to string
+- `Render` errors when two schema labels map to the same Go name; roles nobody plays are
+  emitted as `// TODO` comments instead of undefined Go types
 - Generates string constants from `@values` constraints (`-enums`, on by default)
 - Decodes escaped TypeQL string literals in schema annotations, including `\uXXXX` and `\u{...}` forms in `@regex` and `@values`
 - Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas, abstract tracking, key attributes, schema hash

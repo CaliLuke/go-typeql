@@ -40,9 +40,19 @@ Given a TypeQL schema, tqlgen produces:
 
 - Go structs embedding `gotype.BaseEntity` or `gotype.BaseRelation`
 - `typedb:"..."` tags with attribute names, `key`, `unique`, and `card=` options
-- Role player fields with `role:name` tags
+- Role player fields with `role:name` tags, resolved through the relation's ancestor
+  chain and `as` role overrides; a role no entity or relation plays is emitted as a
+  `// TODO` comment (with a warning on `RenderConfig.WarnWriter`, default stderr)
+  instead of inventing an undefined Go type
 - Pointer types for optional fields (non-key attributes without explicit cardinality)
-- `time.Time` imports when datetime attributes are present
+- Slice fields (`[]T`) for multi-valued attributes — list syntax (`owns tag[]`) or a
+  cardinality allowing more than one value (`@card(0..5)`, `@card(1..)`)
+- Full TypeDB 3.x value-type mapping: `date`/`datetime`/`datetime-tz` → `time.Time`,
+  `duration` → `time.Duration`, `decimal` → `float64` (lossy), `long`/`integer` → `int64`;
+  unknown value types and `owns` of undefined attributes warn before defaulting to string
+- An error from `Render` when two schema labels map to the same Go name
+  (e.g. `user-name` and `user_name` both becoming `UserName`)
+- `time` imports when emitted field types require them
 - String constants from `@values` constraints (when `-enums=true`)
 - Go comments, `typedb_doc` tags, and `SchemaDoc()` methods from TypeDB `@doc`
   annotations

@@ -423,6 +423,17 @@ Validates, sorts by name, and applies pending migrations. Returns names of appli
 applied, err := gotype.RunSequentialMigrations(ctx, db, migrations)
 ```
 
+Statement-based migrations (anything built with `TQLMigration`) apply their Up
+statements **and** the tracking record in a single transaction — a schema
+transaction when any statement is a `define`/`undefine`/`redefine`, otherwise a
+write transaction — so a failure never leaves a half-applied or
+applied-but-unrecorded migration. Migrations with custom `Up`/`Down` functions
+own their transactions and keep the apply-then-record ordering; make their
+statements idempotent to survive a crash between the two steps.
+
+Checksums are recorded in a delimited format that detects statement-boundary
+changes; records written by older versions (undelimited format) still verify.
+
 ### Options
 
 | Option                | Description                                         |
@@ -430,6 +441,10 @@ applied, err := gotype.RunSequentialMigrations(ctx, db, migrations)
 | `WithSeqDryRun()`     | Validate and return pending names without executing |
 | `WithSeqTarget(name)` | Stop after applying the named migration             |
 | `WithSeqLogger(fn)`   | Callback for progress messages                      |
+
+`WithSeqTarget` errors when the named migration doesn't exist in the set, and
+never applies migrations past the target — targeting an already-applied
+migration applies only the pending ones before it.
 
 ### ValidateSequentialMigrations
 

@@ -114,13 +114,13 @@ func ExtractAnnotations(input string) map[string]map[string]string
 ExtractAnnotations parses comment annotations of the form "\# @key value" from schema text. Returns a map of type name \-\> annotation map.
 
 <a name="Render"></a>
-## func [Render](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L40>)
+## func [Render](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L50>)
 
 ```go
 func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error
 ```
 
-Render processes a ParsedSchema and writes the generated Go source code to the provided writer.
+Render processes a ParsedSchema and writes the generated Go source code to the provided writer. It returns an error when two schema labels would fold to the same Go identifier \(e.g. "user\-name" and "user\_name"\), since the generated code would not compile. Non\-fatal issues \(unknown value types, undefined attributes, roles with no resolvable player\) are reported to cfg.WarnWriter \(os.Stderr by default\).
 
 <a name="RenderDTO"></a>
 ## func [RenderDTO](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/dto.go#L331>)
@@ -1000,7 +1000,7 @@ type RelationSpec struct {
 ```
 
 <a name="RenderConfig"></a>
-## type [RenderConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L13-L26>)
+## type [RenderConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L14-L31>)
 
 RenderConfig specifies the settings for generating Go code from a TypeQL schema.
 
@@ -1018,11 +1018,15 @@ type RenderConfig struct {
     SchemaVersion string
     // Enums, if true, generates string constants from @values constraints on attributes.
     Enums bool
+    // WarnWriter receives non-fatal generation warnings (unknown value types,
+    // undefined attributes, roles without a resolvable player). When nil,
+    // warnings are written to os.Stderr.
+    WarnWriter io.Writer
 }
 ```
 
 <a name="DefaultConfig"></a>
-### func [DefaultConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L29>)
+### func [DefaultConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L34>)
 
 ```go
 func DefaultConfig() RenderConfig

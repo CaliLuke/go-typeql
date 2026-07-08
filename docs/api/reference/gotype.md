@@ -613,13 +613,17 @@ func MigrateFromEmpty(ctx context.Context, db *Database) error
 MigrateFromEmpty applies the complete schema defined by registered Go models to an empty database.
 
 <a name="MigrationChecksum"></a>
-## func [MigrationChecksum](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate_state.go#L109>)
+## func [MigrationChecksum](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate_state.go#L131>)
 
 ```go
 func MigrationChecksum(m SequentialMigration) string
 ```
 
 MigrationChecksum computes a SHA256 checksum for a migration's statements.
+
+Each statement is length\-prefixed and the Up/Down groups are framed with their statement counts, so moving text across statement boundaries — or between the Up and Down groups — always produces a different checksum.
+
+Compatibility: go\-typeql v1.12.x and earlier concatenated statements with no delimiter. Checksums recorded by those versions are still accepted during verification \(see legacyMigrationChecksum\), but new records are always written in the delimited format returned here.
 
 <a name="MustRegister"></a>
 ## func [MustRegister](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L142>)
@@ -640,7 +644,7 @@ func Register[T any]() error
 Register adds a Go struct type to the global registry as a TypeDB model. The type T must embed either BaseEntity or BaseRelation.
 
 <a name="RollbackSequentialMigration"></a>
-## func [RollbackSequentialMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L428>)
+## func [RollbackSequentialMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L525>)
 
 ```go
 func RollbackSequentialMigration(ctx context.Context, db *Database, migrations []SequentialMigration, steps int) ([]string, error)
@@ -648,8 +652,10 @@ func RollbackSequentialMigration(ctx context.Context, db *Database, migrations [
 
 RollbackSequentialMigration rolls back the last N applied migrations in reverse order. Returns the names of rolled\-back migrations.
 
+Atomicity mirrors RunSequentialMigrations: migrations created with TQLMigration execute their Down statements and the record deletion in one transaction, so a rollback can never complete without also clearing the migration's applied status. Migrations with a custom Down function run Down first and delete the record afterwards in a separate transaction; if the process dies in between, the record still shows the migration as applied even though Down has run.
+
 <a name="RunSequentialMigrations"></a>
-## func [RunSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L261>)
+## func [RunSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L342>)
 
 ```go
 func RunSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error)
@@ -657,8 +663,12 @@ func RunSequentialMigrations(ctx context.Context, db *Database, migrations []Seq
 
 RunSequentialMigrations validates, sorts, and applies pending migrations. Returns the names of migrations that were applied \(or would be applied in dry\-run mode\).
 
+Atomicity: migrations created with TQLMigration \(Statements set\) execute all of their statements plus the tracking record in one transaction — a schema transaction when any statement is a define/undefine/redefine \(TypeDB 3.x schema transactions may also execute data writes\), otherwise a write transaction. A failure at any point rolls back the whole migration, including any data it inserted, and leaves it pending.
+
+Migrations with a custom Up function manage their own transactions, so the same guarantee is impossible: Up runs first and the tracking record is inserted afterwards in its own write transaction. If the process dies between the two, the migration re\-runs on the next invocation. Custom migrations should therefore be idempotent — use put or key\-guarded insert statements rather than bare inserts.
+
 <a name="StampSequentialMigrations"></a>
-## func [StampSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L323>)
+## func [StampSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L418>)
 
 ```go
 func StampSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error)
@@ -1174,7 +1184,7 @@ type BreakingChange struct {
 ```
 
 <a name="ChecksumMismatchError"></a>
-## type [ChecksumMismatchError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate_state.go#L126-L130>)
+## type [ChecksumMismatchError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate_state.go#L168-L172>)
 
 ChecksumMismatchError is returned when a migration's checksum doesn't match what was recorded when it was first applied.
 
@@ -1187,7 +1197,7 @@ type ChecksumMismatchError struct {
 ```
 
 <a name="ChecksumMismatchError.Error"></a>
-### func \(\*ChecksumMismatchError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate_state.go#L132>)
+### func \(\*ChecksumMismatchError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate_state.go#L174>)
 
 ```go
 func (e *ChecksumMismatchError) Error() string
@@ -3725,7 +3735,7 @@ func (e *SchemaValidationError) Error() string
 Error returns the error message for SchemaValidationError.
 
 <a name="SeqMigrationError"></a>
-## type [SeqMigrationError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L39-L42>)
+## type [SeqMigrationError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L43-L46>)
 
 SeqMigrationError is returned when a sequential migration fails.
 
@@ -3737,7 +3747,7 @@ type SeqMigrationError struct {
 ```
 
 <a name="SeqMigrationError.Error"></a>
-### func \(\*SeqMigrationError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L45>)
+### func \(\*SeqMigrationError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L49>)
 
 ```go
 func (e *SeqMigrationError) Error() string
@@ -3746,7 +3756,7 @@ func (e *SeqMigrationError) Error() string
 Error returns the error message.
 
 <a name="SeqMigrationError.Unwrap"></a>
-### func \(\*SeqMigrationError\) [Unwrap](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L50>)
+### func \(\*SeqMigrationError\) [Unwrap](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L54>)
 
 ```go
 func (e *SeqMigrationError) Unwrap() error
@@ -3755,7 +3765,7 @@ func (e *SeqMigrationError) Unwrap() error
 Unwrap returns the underlying cause.
 
 <a name="SeqMigrationInfo"></a>
-## type [SeqMigrationInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L32-L36>)
+## type [SeqMigrationInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L36-L40>)
 
 SeqMigrationInfo describes the status of a single migration.
 
@@ -3768,7 +3778,7 @@ type SeqMigrationInfo struct {
 ```
 
 <a name="SeqMigrationStatus"></a>
-### func [SeqMigrationStatus](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L395>)
+### func [SeqMigrationStatus](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L484>)
 
 ```go
 func SeqMigrationStatus(ctx context.Context, db *Database, migrations []SequentialMigration) ([]SeqMigrationInfo, error)
@@ -3777,7 +3787,7 @@ func SeqMigrationStatus(ctx context.Context, db *Database, migrations []Sequenti
 SeqMigrationStatus returns the status of all provided migrations.
 
 <a name="SeqMigrationOption"></a>
-## type [SeqMigrationOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L69>)
+## type [SeqMigrationOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L73>)
 
 SeqMigrationOption configures RunSequentialMigrations.
 
@@ -3786,7 +3796,7 @@ type SeqMigrationOption func(*seqMigrationOptions)
 ```
 
 <a name="WithSeqDryRun"></a>
-### func [WithSeqDryRun](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L72>)
+### func [WithSeqDryRun](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L76>)
 
 ```go
 func WithSeqDryRun() SeqMigrationOption
@@ -3795,7 +3805,7 @@ func WithSeqDryRun() SeqMigrationOption
 WithSeqDryRun enables dry\-run mode: validates and returns pending migrations without executing.
 
 <a name="WithSeqLogger"></a>
-### func [WithSeqLogger](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L82>)
+### func [WithSeqLogger](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L90>)
 
 ```go
 func WithSeqLogger(fn func(string)) SeqMigrationOption
@@ -3804,16 +3814,16 @@ func WithSeqLogger(fn func(string)) SeqMigrationOption
 WithSeqLogger sets a callback for migration progress messages.
 
 <a name="WithSeqTarget"></a>
-### func [WithSeqTarget](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L77>)
+### func [WithSeqTarget](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L85>)
 
 ```go
 func WithSeqTarget(name string) SeqMigrationOption
 ```
 
-WithSeqTarget stops migration after applying the named migration.
+WithSeqTarget stops migration after applying the named migration. If no migration in the set has that name, RunSequentialMigrations and StampSequentialMigrations return an error instead of silently running everything. If the target is already applied, only pending migrations ordered before it are applied — nothing after the target ever runs.
 
 <a name="SeqValidationIssue"></a>
-## type [SeqValidationIssue](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L55-L59>)
+## type [SeqValidationIssue](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L59-L63>)
 
 SeqValidationIssue describes a problem found during migration validation.
 
@@ -3826,7 +3836,7 @@ type SeqValidationIssue struct {
 ```
 
 <a name="ValidateSequentialMigrations"></a>
-### func [ValidateSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L155>)
+### func [ValidateSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L168>)
 
 ```go
 func ValidateSequentialMigrations(migrations []SequentialMigration) []SeqValidationIssue
@@ -3835,7 +3845,7 @@ func ValidateSequentialMigrations(migrations []SequentialMigration) []SeqValidat
 ValidateSequentialMigrations checks migrations for structural issues without touching the database.
 
 <a name="SequentialMigration"></a>
-## type [SequentialMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L19-L29>)
+## type [SequentialMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L19-L33>)
 
 SequentialMigration represents a single named migration with Up and optional Down functions.
 
@@ -3847,20 +3857,26 @@ type SequentialMigration struct {
     Up  func(ctx context.Context, db *Database) error
     // Down reverses the migration. May be nil if rollback is not supported.
     Down func(ctx context.Context, db *Database) error
-    // Statements is optionally set by TQLMigration for dry-run introspection.
-    // nil for migrations with custom Up/Down functions.
+    // Statements is set by TQLMigration; nil for migrations with custom
+    // Up/Down functions. When present, RunSequentialMigrations and
+    // RollbackSequentialMigration execute the statements directly — together
+    // with the migration's tracking record, in a single transaction — instead
+    // of calling Up/Down (which remain usable for direct invocation and run
+    // one transaction per statement).
     Statements *TQLStatements
 }
 ```
 
 <a name="TQLMigration"></a>
-### func [TQLMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L99>)
+### func [TQLMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L112>)
 
 ```go
 func TQLMigration(name string, up []string, down []string) SequentialMigration
 ```
 
-TQLMigration creates a SequentialMigration from raw TypeQL statement slices. Each statement is routed to ExecuteSchema or ExecuteWrite based on its prefix.
+TQLMigration creates a SequentialMigration from raw TypeQL statement slices.
+
+When run through RunSequentialMigrations or RollbackSequentialMigration, all statements execute in a single transaction together with the migration tracking record \(see the Statements field\). The generated Up/Down functions instead route each statement to ExecuteSchema or ExecuteWrite based on its prefix, one transaction per statement.
 
 <a name="StringFilter"></a>
 ## type [StringFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L118-L123>)
