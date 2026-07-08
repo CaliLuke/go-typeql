@@ -79,9 +79,11 @@ fetch {
 			case time.Time:
 				r.AppliedAt = v
 			case string:
-				if parsed, err := time.Parse(time.RFC3339, v); err == nil {
-					r.AppliedAt = parsed
+				parsed, err := parseAppliedAt(v)
+				if err != nil {
+					return nil, fmt.Errorf("migration state: parse applied-at %q: %w", v, err)
 				}
+				r.AppliedAt = parsed
 			}
 		}
 		records = append(records, r)
@@ -110,16 +112,49 @@ reduce $count = count($m);`, hash)
 	return extractCount(results[0]) > 0, nil
 }
 
-// Record saves a new migration record to the database after it has been applied.
-func (ms *MigrationState) Record(ctx context.Context, hash, summary string) error {
+// appliedAtLayouts are the datetime shapes migration state records come back
+// in. TypeDB datetime values are zone-less: the write side stores naive UTC
+// wall-clock literals ("2006-01-02T15:04:05[.fff]") and the FFI driver may
+// render them in chrono's Display form ("2006-01-02 15:04:05[.fff]") — none
+// of which RFC3339 alone accepts (issue #61). Zone-less values parse as UTC,
+// matching the write side. Fractional seconds are accepted by every layout.
+var appliedAtLayouts = [...]string{
+	time.RFC3339,
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
+	"2006-01-02",
+}
+
+// parseAppliedAt parses a migration state timestamp, returning an error
+// instead of silently yielding the zero time when no layout matches.
+func parseAppliedAt(v string) (time.Time, error) {
+	var lastErr error
+	for _, layout := range appliedAtLayouts {
+		t, err := time.Parse(layout, v)
+		if err == nil {
+			return t, nil
+		}
+		lastErr = err
+	}
+	return time.Time{}, lastErr
+}
+
+// recordQuery builds the insert statement that records an applied migration.
+// It is shared by Record (standalone write transaction) and the atomic apply
+// path in MigrateWithStateFromSchema, which executes it inside the same
+// schema transaction as the migration statements.
+func recordQuery(hash, summary string) string {
 	now := FormatValue(time.Now().UTC())
-	query := fmt.Sprintf(`insert
+	return fmt.Sprintf(`insert
 $m isa migration-record,
 has migration-hash "%s",
 has migration-summary "%s",
-has migration-applied-at %s;`, hash, escapeTQL(summary), now)
+has migration-applied-at %s;`, escapeTQL(hash), escapeTQL(summary), now)
+}
 
-	_, err := ms.db.ExecuteWrite(ctx, query)
+// Record saves a new migration record to the database after it has been applied.
+func (ms *MigrationState) Record(ctx context.Context, hash, summary string) error {
+	_, err := ms.db.ExecuteWrite(ctx, recordQuery(hash, summary))
 	if err != nil {
 		return fmt.Errorf("migration state: record: %w", err)
 	}
@@ -151,6 +186,12 @@ func MigrateWithState(ctx context.Context, db *Database) (*SchemaDiff, error) {
 // MigrateWithStateFromSchema performs a migration using the provided schema string
 // while tracking progress in the database. It ensures that identical migrations
 // are not applied more than once.
+//
+// The migration's statements and its tracking record are committed atomically
+// in a single schema transaction (TypeDB 3.x schema transactions accept data
+// writes): either the schema changes and the record all land, or none do
+// (issue #55). Diffs with nothing executable — including removal-only diffs,
+// which the additive path never applies — are not recorded.
 func MigrateWithStateFromSchema(ctx context.Context, db *Database, currentSchemaStr string) (*SchemaDiff, error) {
 	ms := NewMigrationState(db)
 
@@ -166,12 +207,12 @@ func MigrateWithStateFromSchema(ctx context.Context, db *Database, currentSchema
 	}
 
 	diff := DiffSchemaFromRegistry(current)
-	if diff.IsEmpty() {
-		return diff, nil
+	plan := diff.Plan()
+	if plan.IsEmpty() {
+		return diff, nil // nothing executable — never record an empty migration
 	}
 
-	stmts := diff.GenerateMigration()
-	hash := HashStatements(stmts)
+	hash := HashStatements(plan.Statements)
 
 	// Check if already applied
 	applied, err := ms.IsApplied(ctx, hash)
@@ -182,16 +223,9 @@ func MigrateWithStateFromSchema(ctx context.Context, db *Database, currentSchema
 		return diff, nil // already applied, skip
 	}
 
-	// Apply migration
-	for _, stmt := range stmts {
-		if err := db.ExecuteSchema(ctx, stmt); err != nil {
-			return diff, fmt.Errorf("migrate: execute %q: %w", stmt, err)
-		}
-	}
-
-	// Record as applied
-	if err := ms.Record(ctx, hash, diff.Summary()); err != nil {
-		return diff, fmt.Errorf("migrate: record state: %w", err)
+	// Apply the migration and its state record atomically.
+	if err := executePlan(ctx, db, plan, recordQuery(hash, diff.Summary())); err != nil {
+		return diff, fmt.Errorf("migrate: %w", err)
 	}
 
 	return diff, nil

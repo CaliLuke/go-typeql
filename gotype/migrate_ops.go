@@ -46,8 +46,10 @@ func (op AddEntity) ToTypeQL() string {
 	if op.Abstract {
 		s += " @abstract"
 	}
+	// `sub` is a separate constraint: TypeDB 3.x rejects annotations placed
+	// after it, so it must follow the annotated type name (issue #32).
 	if op.Parent != "" {
-		s += " sub " + op.Parent
+		s += ", sub " + op.Parent
 	}
 	return s + ";"
 }
@@ -71,8 +73,10 @@ func (op AddRelation) ToTypeQL() string {
 	if op.Abstract {
 		s += " @abstract"
 	}
+	// `sub` is a separate constraint: TypeDB 3.x rejects annotations placed
+	// after it, so it must follow the annotated type name (issue #32).
 	if op.Parent != "" {
-		s += " sub " + op.Parent
+		s += ", sub " + op.Parent
 	}
 	return s + ";"
 }
@@ -272,12 +276,14 @@ func (op RunTypeQL) RollbackTypeQL() string { return op.Down }
 
 // BreakingChange describes a change that could cause data loss or schema errors.
 type BreakingChange struct {
-	Type   string // "removal", "type_change", "cardinality_change"
+	Type   string // "removal", "type_change", "cardinality_change", "annotation_change"
 	Entity string // affected type name
 	Detail string // human-readable description
 }
 
-// BreakingChanges analyzes the diff for changes that could cause data loss.
+// BreakingChanges analyzes the diff for changes that could cause data loss,
+// including detected changes that cannot be applied automatically (see
+// SchemaDiff.Unsupported).
 func (d *SchemaDiff) BreakingChanges() []BreakingChange {
 	var changes []BreakingChange
 
@@ -289,6 +295,14 @@ func (d *SchemaDiff) BreakingChanges() []BreakingChange {
 		})
 	}
 
+	for _, name := range d.RemoveAttributes {
+		changes = append(changes, BreakingChange{
+			Type:   "removal",
+			Entity: name,
+			Detail: fmt.Sprintf("attribute %q exists in DB but not in Go structs — removing would delete all its values", name),
+		})
+	}
+
 	for _, o := range d.RemoveOwns {
 		changes = append(changes, BreakingChange{
 			Type:   "removal",
@@ -297,12 +311,17 @@ func (d *SchemaDiff) BreakingChanges() []BreakingChange {
 		})
 	}
 
+	changes = append(changes, d.Unsupported...)
+
 	return changes
 }
 
 // HasBreakingChanges returns true if the diff contains any breaking changes.
 func (d *SchemaDiff) HasBreakingChanges() bool {
-	return len(d.RemoveTypes) > 0 || len(d.RemoveOwns) > 0
+	return len(d.RemoveTypes) > 0 ||
+		len(d.RemoveOwns) > 0 ||
+		len(d.RemoveAttributes) > 0 ||
+		len(d.Unsupported) > 0
 }
 
 // Operations converts the diff into a list of discrete, ordered operations.
@@ -332,6 +351,18 @@ func (d *SchemaDiff) Operations() []Operation {
 		ops = append(ops, AddRole{Relation: r.TypeName, Role: r.Role, Card: r.Card})
 	}
 
+	// Role-player additions (issue #34)
+	for _, p := range d.AddPlays {
+		ops = append(ops, AddRolePlayer{Entity: p.TypeName, Relation: p.Relation, Role: p.Role})
+	}
+
+	// In-place ownership annotation changes, applied via redefine (issue #56).
+	// Kept last: redefine statements execute as standalone queries after the
+	// batched define block.
+	for _, m := range d.ModifyOwns {
+		ops = append(ops, ModifyOwnership{Owner: m.TypeName, Attribute: m.Attribute, OldAnnots: m.OldAnnots, NewAnnots: m.NewAnnots})
+	}
+
 	return ops
 }
 
@@ -345,11 +376,16 @@ func (d *SchemaDiff) DestructiveOperations() []Operation {
 		ops = append(ops, RemoveOwnership{Owner: o.TypeName, Attribute: o.Attribute})
 	}
 
-	// Remove types
+	// Remove types. The bare TypeDB 3.x form `undefine <name>;` works for
+	// entities and relations alike, so RemoveEntity covers both.
 	for _, name := range d.RemoveTypes {
-		// We don't know if it's an entity or relation from just the name,
-		// but undefine works on the type name regardless
 		ops = append(ops, RemoveEntity{Name: name})
+	}
+
+	// Remove stale attribute types last, after every type that owned them is
+	// gone (issue #57).
+	for _, name := range d.RemoveAttributes {
+		ops = append(ops, RemoveAttribute{Name: name})
 	}
 
 	return ops
