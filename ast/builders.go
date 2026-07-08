@@ -226,6 +226,11 @@ func errValuef(format string, args ...any) Value {
 // kinds; other types fall back to their string representation. A nil value
 // (or nil pointer) yields a Value whose compilation fails with a descriptive
 // error rather than silently becoming an empty string.
+//
+// A time.Time becomes a plain "datetime" value: the instant is stored as UTC
+// and compiles to a naive (zone-less) datetime literal. Use
+// Lit(t, "datetime-tz") or Lit(t, "date") for the other temporal literal
+// kinds.
 func ValueFromGo(val any) Value {
 	switch v := val.(type) {
 	case nil:
@@ -259,8 +264,9 @@ func ValueFromGo(val any) Value {
 	case float64:
 		return Double(v)
 	case time.Time:
-		// Format as datetime literal
-		return Lit(v.Format(time.RFC3339), "datetime")
+		// Datetime literal; formatting (UTC conversion, fractional seconds)
+		// happens in one place when the literal is compiled (issue #66).
+		return Lit(v, "datetime")
 	default:
 		return valueFromGoReflect(val)
 	}
@@ -278,7 +284,7 @@ func valueFromGoReflect(val any) Value {
 	}
 
 	if t, ok := v.Interface().(time.Time); ok {
-		return Lit(t.Format(time.RFC3339), "datetime")
+		return Lit(t, "datetime")
 	}
 
 	switch v.Kind() {

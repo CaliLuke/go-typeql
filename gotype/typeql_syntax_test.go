@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/CaliLuke/go-typeql/internal/typeqlcheck"
 	"github.com/CaliLuke/go-typeql/tqlgen"
@@ -111,6 +112,46 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 			assertTypeQL(t, "count query", q, "")
 		}
 	})
+}
+
+// TestTypeQLSyntax_DatetimeInsert validates the datetime literal shape the
+// Manager emits for time.Time fields (issues #53/#66): naive UTC datetime
+// literals, including midnight and non-UTC sub-second values.
+func TestTypeQLSyntax_DatetimeInsert(t *testing.T) {
+	ClearRegistry()
+	MustRegister[entityWithDatetime]()
+
+	values := []time.Time{
+		time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+		time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), // midnight must stay a datetime literal
+		time.Date(2024, 1, 15, 12, 30, 0, 123456789, time.FixedZone("UTC+2", 2*60*60)),
+	}
+	for _, v := range values {
+		writeTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xABC123"}}}}
+		conn := &mockConn{txs: []*mockTx{writeTx}}
+		mgr := MustNewManager[entityWithDatetime](NewDatabase(conn, "test_db"))
+
+		if err := mgr.Insert(context.Background(), &entityWithDatetime{Name: "e", CreatedAt: v}); err != nil {
+			t.Fatalf("Insert failed: %v", err)
+		}
+		for _, q := range writeTx.queries {
+			assertTypeQL(t, "datetime insert query", q, "")
+		}
+
+		// Update path (delete-old/insert-new) formats datetimes via
+		// FormatGoValue; both halves must agree on the literal shape.
+		updateTx := &mockTx{responses: [][]map[string]any{nil}}
+		conn = &mockConn{txs: []*mockTx{updateTx}}
+		mgr = MustNewManager[entityWithDatetime](NewDatabase(conn, "test_db"))
+		e := &entityWithDatetime{Name: "e", CreatedAt: v}
+		e.SetIID("0xABC123")
+		if err := mgr.Update(context.Background(), e); err != nil {
+			t.Fatalf("Update failed: %v", err)
+		}
+		for _, q := range updateTx.queries {
+			assertTypeQL(t, "datetime update query", q, "")
+		}
+	}
 }
 
 // TestTypeQLSyntax_GeneratedSchema validates the full registry-derived schema.

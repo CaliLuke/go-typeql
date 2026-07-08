@@ -594,6 +594,12 @@ func compileAggregateExpr(agg AggregateExpr) (string, error) {
 // When val does not match valueType (e.g. an int passed as a "string"
 // literal), it falls back to FormatGoValue instead of silently emitting a
 // zero value. The compiler itself reports such mismatches as errors.
+//
+// A time.Time with valueType "datetime" is stored as UTC: the instant is
+// converted to UTC and emitted as a naive (zone-less) datetime literal with
+// up to nanosecond precision, and hydration parses it back as UTC, so the
+// instant survives round trips. Use "datetime-tz" to keep the value's own
+// offset, or "date" for a date-only literal.
 func FormatLiteral(val any, valueType string) string {
 	s, err := formatLiteralChecked(val, valueType)
 	if err != nil {
@@ -638,16 +644,21 @@ func formatLiteralChecked(val any, valueType string) (string, error) {
 		return "", fmt.Errorf("double literal: expected numeric value, got %T (%v)", val, val)
 	case "datetime":
 		if t, ok := val.(time.Time); ok {
-			return t.Format("2006-01-02T15:04:05"), nil
+			// Plain datetime attributes have no timezone: the instant is
+			// stored as UTC wall-clock time. Convert before dropping the
+			// zone so non-UTC values keep the same instant on round trip
+			// (issue #53). Fractional seconds are preserved (up to
+			// nanoseconds) and omitted when zero.
+			return t.UTC().Format(datetimeLayout), nil
 		}
 		if s, ok := val.(string); ok {
-			// Pre-formatted datetime string (e.g. from ValueFromGo).
+			// Pre-formatted datetime string.
 			return s, nil
 		}
 		return "", fmt.Errorf("datetime literal: expected time.Time or string value, got %T (%v)", val, val)
 	case "datetime-tz":
 		if t, ok := val.(time.Time); ok {
-			return t.Format(time.RFC3339), nil
+			return t.Format(datetimeTZLayout), nil
 		}
 		if s, ok := val.(string); ok {
 			return s, nil
@@ -711,18 +722,29 @@ func FormatGoValue(value any) string {
 	}
 }
 
-// formatTimeValue formats a time.Time as a TypeQL date/datetime literal.
+// Canonical wire formats for time.Time values (issue #66). One format per
+// TypeQL value type, used consistently by FormatLiteral, FormatGoValue, and
+// ValueFromGo:
+//
+//   - datetime: naive UTC wall-clock time ("2006-01-02T15:04:05[.fff...]").
+//     The instant is converted to UTC before the zone is dropped, and read
+//     back as UTC on hydration, so round trips preserve the instant.
+//   - datetime-tz: RFC 3339 with the value's own offset.
+//
+// Fractional seconds print up to nanosecond precision and are omitted when
+// zero.
+const (
+	datetimeLayout   = "2006-01-02T15:04:05.999999999"
+	datetimeTZLayout = "2006-01-02T15:04:05.999999999Z07:00"
+)
+
+// formatTimeValue formats a time.Time as a TypeQL datetime literal (naive,
+// UTC). A time.Time always formats as a datetime literal regardless of its
+// clock value — callers that want a date or datetime-tz literal must say so
+// explicitly via Lit(t, "date") or Lit(t, "datetime-tz") (issue #66; the old
+// midnight-means-date heuristic silently changed the literal kind).
 func formatTimeValue(val time.Time) string {
-	// Date-only format (midnight UTC)
-	if val.Hour() == 0 && val.Minute() == 0 && val.Second() == 0 && val.Nanosecond() == 0 {
-		return val.Format("2006-01-02")
-	}
-	// DateTime without timezone (UTC)
-	if val.Location() == time.UTC {
-		return val.Format("2006-01-02T15:04:05")
-	}
-	// DateTime with timezone
-	return val.Format(time.RFC3339)
+	return val.UTC().Format(datetimeLayout)
 }
 
 // formatGoValueReflect is the reflection-based slow path of FormatGoValue,

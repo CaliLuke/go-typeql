@@ -25,7 +25,7 @@ func TestFormatValue(t *testing.T) {
 		{"nil", nil, "null"},
 		{"pointer to string", new("test"), `"test"`},
 		{"nil pointer", (*string)(nil), "null"},
-		{"time date only", time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), "2024-01-15"},
+		{"time date only (midnight formats as datetime, issue #66)", time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), "2024-01-15T00:00:00"},
 		{"time datetime", time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), "2024-01-15T10:30:00"},
 	}
 

@@ -553,15 +553,30 @@ func TestValueFromGo_UnknownTypeFallback(t *testing.T) {
 	}
 }
 
-// TestValueFromGo_Datetime verifies time.Time still compiles to an unquoted
-// datetime literal.
+// TestValueFromGo_Datetime verifies time.Time compiles to an unquoted naive
+// (zone-less) datetime literal, not a datetime-tz literal (issue #66).
 func TestValueFromGo_Datetime(t *testing.T) {
 	c := &Compiler{}
 	got, err := c.Compile(ValueFromGo(time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)))
 	if err != nil {
 		t.Fatalf("compile error: %v", err)
 	}
-	want := "2024-01-15T10:30:00Z"
+	want := "2024-01-15T10:30:00"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestValueFromGo_DatetimeNonUTC verifies a non-UTC time.Time converts to
+// UTC before the zone is dropped, preserving the instant (issue #53).
+func TestValueFromGo_DatetimeNonUTC(t *testing.T) {
+	c := &Compiler{}
+	loc := time.FixedZone("UTC+2", 2*60*60)
+	got, err := c.Compile(ValueFromGo(time.Date(2024, 1, 15, 12, 30, 0, 500000000, loc)))
+	if err != nil {
+		t.Fatalf("compile error: %v", err)
+	}
+	want := "2024-01-15T10:30:00.5"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

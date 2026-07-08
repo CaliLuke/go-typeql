@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -40,8 +41,13 @@ type FieldInfo struct {
 	ElemType reflect.Type
 	// ValueType is the TypeDB value type (e.g., "string", "long", "boolean").
 	ValueType string
-	// timeLayoutHint caches the last successful datetime parsing layout index.
-	timeLayoutHint uint32
+	// timeLayoutHint caches the last successful datetime parsing layout index
+	// (1-based; 0 means unknown). It is a shared pointer, allocated once per
+	// field at registration time, so FieldInfo value copies (KeyFields,
+	// FieldByName/FieldByAttrName results, range-by-value loops) all observe
+	// the same atomically updated cache instead of racing on a plain word
+	// inside each copy (issue #43).
+	timeLayoutHint *atomic.Uint32
 }
 
 // ModelInfo contains comprehensive metadata about a registered TypeDB model,
@@ -334,6 +340,8 @@ func buildFieldInfo(field reflect.StructField, index int, tag FieldTag) (FieldIn
 		FieldName:  field.Name,
 		FieldIndex: index,
 		FieldType:  field.Type,
+		// Shared across all value copies of this FieldInfo (issue #43).
+		timeLayoutHint: new(atomic.Uint32),
 	}
 
 	ft := field.Type
