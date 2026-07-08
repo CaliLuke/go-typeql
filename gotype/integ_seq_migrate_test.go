@@ -66,8 +66,8 @@ func TestSeqMigrate_Fresh(t *testing.T) {
 			"define attribute name, value string; attribute email, value string;",
 			"define entity person, owns name @key, owns email;",
 		}, []string{
-			"undefine entity person;",
-			"undefine attribute name; attribute email;",
+			"undefine person;",
+			"undefine name; email;",
 		}),
 	}
 

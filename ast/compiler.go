@@ -86,10 +86,16 @@ func (c *Compiler) compileClause(clause Clause) (string, error) {
 }
 
 func (c *Compiler) compileMatchClause(cl MatchClause) (string, error) {
+	if len(cl.Patterns) == 0 {
+		return "", fmt.Errorf("match clause has no patterns")
+	}
 	return joinCompiled("match\n", ";\n", ";", cl.Patterns, c.compilePattern)
 }
 
 func (c *Compiler) compileStmtBlock(keyword string, statements []Statement) (string, error) {
+	if len(statements) == 0 {
+		return "", fmt.Errorf("%s clause has no statements", keyword)
+	}
 	stmts := make([]string, 0, len(statements))
 	for _, s := range statements {
 		compiled, err := c.compileStatement(s)
@@ -141,6 +147,9 @@ func (c *Compiler) compileReduceClause(cl ReduceClause) (string, error) {
 }
 
 func (c *Compiler) compileMatchLet(clause MatchLetClause) (string, error) {
+	if len(clause.Patterns) == 0 && len(clause.Assignments) == 0 {
+		return "", fmt.Errorf("match clause has no patterns or let assignments")
+	}
 	lines := make([]string, 0, len(clause.Patterns)+len(clause.Assignments))
 	for _, pattern := range clause.Patterns {
 		compiled, err := c.compilePattern(pattern)
@@ -187,7 +196,7 @@ func (c *Compiler) compilePattern(pattern Pattern) (string, error) {
 	case HasPattern:
 		return p.ThingVar + " has " + p.AttrType + " " + p.AttrVar, nil
 	case ValueComparisonPattern:
-		valStr, err := c.compileValueOrString(p.Value)
+		valStr, err := c.compileValueOrVar(p.Value)
 		if err != nil {
 			return "", err
 		}
@@ -333,7 +342,7 @@ func (c *Compiler) compileConstraint(constraint Constraint) (string, error) {
 		return "iid " + cn.IID, nil
 
 	case HasConstraint:
-		valStr, err := c.compileValueOrString(cn.Value)
+		valStr, err := c.compileValueOrVar(cn.Value)
 		if err != nil {
 			return "", err
 		}
@@ -356,11 +365,11 @@ func (c *Compiler) compileConstraint(constraint Constraint) (string, error) {
 func (c *Compiler) compileValue(v Value) (string, error) {
 	switch val := v.(type) {
 	case ArithmeticValue:
-		leftStr, err := c.compileValueOrString(val.Left)
+		leftStr, err := c.compileValueOrVar(val.Left)
 		if err != nil {
 			return "", err
 		}
-		rightStr, err := c.compileValueOrString(val.Right)
+		rightStr, err := c.compileValueOrVar(val.Right)
 		if err != nil {
 			return "", err
 		}
@@ -369,7 +378,7 @@ func (c *Compiler) compileValue(v Value) (string, error) {
 	case FunctionCallValue:
 		args := make([]string, 0, len(val.Args))
 		for _, arg := range val.Args {
-			s, err := c.compileValueOrString(arg)
+			s, err := c.compileValueOrVar(arg)
 			if err != nil {
 				return "", err
 			}
@@ -378,13 +387,37 @@ func (c *Compiler) compileValue(v Value) (string, error) {
 		return fmt.Sprintf("%s(%s)", val.Function, strings.Join(args, ", ")), nil
 
 	case LiteralValue:
-		return FormatLiteral(val.Val, val.ValueType), nil
+		return formatLiteralChecked(val.Val, val.ValueType)
+
+	case errorValue:
+		return "", val.err
 
 	default:
 		return "", fmt.Errorf("unknown value type: %T", v)
 	}
 }
 
+// compileValueOrVar compiles a value position. Value nodes compile directly,
+// strings starting with "$" pass through as variable references, and any
+// other Go value (including bare strings) is converted via ValueFromGo so it
+// is emitted as a properly quoted/escaped TypeQL literal.
+func (c *Compiler) compileValueOrVar(v any) (string, error) {
+	switch val := v.(type) {
+	case Value:
+		return c.compileValue(val)
+	case string:
+		if strings.HasPrefix(val, "$") {
+			return val, nil
+		}
+		return c.compileValue(ValueFromGo(val))
+	default:
+		return c.compileValue(ValueFromGo(v))
+	}
+}
+
+// compileValueOrString compiles an expression position (let/reduce
+// expressions): Value nodes compile directly, strings pass through verbatim
+// as raw TypeQL expressions (e.g. "count($p)" or "$x").
 func (c *Compiler) compileValueOrString(v any) (string, error) {
 	switch val := v.(type) {
 	case Value:
@@ -492,22 +525,29 @@ func (c *Compiler) compileFetchItem(item any) (string, error) {
 		return fi, nil
 
 	case FetchAttribute:
-		return `"` + fi.Key + `": ` + fi.Var + "." + fi.AttrName, nil
+		if fi.AttrName == "" {
+			// No attribute: fetch the variable directly instead of emitting
+			// an unparseable trailing dot.
+			return `"` + EscapeString(fi.Key) + `": ` + fi.Var, nil
+		}
+		return `"` + EscapeString(fi.Key) + `": ` + fi.Var + "." + fi.AttrName, nil
 
 	case FetchVariable:
-		return `"` + fi.Key + `": ` + fi.Var, nil
+		return `"` + EscapeString(fi.Key) + `": ` + fi.Var, nil
 
 	case FetchAttributeList:
-		return `"` + fi.Key + `": [` + fi.Var + "." + fi.AttrName + "]", nil
+		return `"` + EscapeString(fi.Key) + `": [` + fi.Var + "." + fi.AttrName + "]", nil
 
 	case FetchFunction:
-		return `"` + fi.Key + `": ` + fi.FuncName + "(" + fi.Var + ")", nil
+		return `"` + EscapeString(fi.Key) + `": ` + fi.FuncName + "(" + fi.Var + ")", nil
 
 	case FetchWildcard:
-		return `"` + fi.Key + `": ` + fi.Var + ".*", nil
+		// Attribute wildcards are only valid inside an object per the TypeQL
+		// grammar, so the braced form is the only parseable emission.
+		return `"` + EscapeString(fi.Key) + `": { ` + fi.Var + ".* }", nil
 
 	case FetchNestedWildcard:
-		return `"` + fi.Key + `": { ` + fi.Var + ".* }", nil
+		return `"` + EscapeString(fi.Key) + `": { ` + fi.Var + ".* }", nil
 
 	default:
 		return "", fmt.Errorf("unknown fetch item type: %T", item)
@@ -517,6 +557,13 @@ func (c *Compiler) compileFetchItem(item any) (string, error) {
 // --- Reduce ---
 
 func (c *Compiler) compileReduceAssignment(a ReduceAssignment) (string, error) {
+	if agg, ok := a.Expression.(AggregateExpr); ok {
+		compiled, err := compileAggregateExpr(agg)
+		if err != nil {
+			return "", err
+		}
+		return a.Variable + " = " + compiled, nil
+	}
 	exprStr, err := c.compileValueOrString(a.Expression)
 	if err != nil {
 		return "", err
@@ -524,74 +571,126 @@ func (c *Compiler) compileReduceAssignment(a ReduceAssignment) (string, error) {
 	return a.Variable + " = " + exprStr, nil
 }
 
+// compileAggregateExpr compiles an AggregateExpr into TypeQL, e.g. count($p).
+func compileAggregateExpr(agg AggregateExpr) (string, error) {
+	if agg.FuncName == "" {
+		return "", fmt.Errorf("aggregate expression has no function name")
+	}
+	if agg.AttrName != "" {
+		// TypeQL 3.x reduce aggregates variables only; there is no attribute
+		// projection like sum($p.salary). Refusing here beats emitting
+		// syntax the server will reject.
+		return "", fmt.Errorf(
+			"aggregate expression %s: TypeQL reduce cannot aggregate attribute %q directly; bind it to a variable in the match clause (e.g. $p has %s $v) and aggregate that variable",
+			agg.FuncName, agg.AttrName, agg.AttrName)
+	}
+	if agg.Var == "" {
+		return "", fmt.Errorf("aggregate expression %s has no variable", agg.FuncName)
+	}
+	return agg.FuncName + "(" + agg.Var + ")", nil
+}
+
 // FormatLiteral formats a Go value as a TypeQL literal string.
+// When val does not match valueType (e.g. an int passed as a "string"
+// literal), it falls back to FormatGoValue instead of silently emitting a
+// zero value. The compiler itself reports such mismatches as errors.
 func FormatLiteral(val any, valueType string) string {
+	s, err := formatLiteralChecked(val, valueType)
+	if err != nil {
+		return FormatGoValue(val)
+	}
+	return s
+}
+
+// formatLiteralChecked formats a Go value as a TypeQL literal, returning an
+// error when the value's dynamic type does not match the declared value type
+// instead of silently emitting a zero value.
+func formatLiteralChecked(val any, valueType string) (string, error) {
 	switch valueType {
 	case "string":
-		s, _ := val.(string)
-		return `"` + EscapeString(s) + `"`
-	case "boolean":
-		b, _ := val.(bool)
-		if b {
-			return "true"
+		s, ok := val.(string)
+		if !ok {
+			return "", fmt.Errorf("string literal: expected string value, got %T (%v)", val, val)
 		}
-		return "false"
+		return `"` + EscapeString(s) + `"`, nil
+	case "boolean":
+		b, ok := val.(bool)
+		if !ok {
+			return "", fmt.Errorf("boolean literal: expected bool value, got %T (%v)", val, val)
+		}
+		if b {
+			return "true", nil
+		}
+		return "false", nil
 	case "long":
-		return formatInteger(val)
+		switch val.(type) {
+		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+			return formatInteger(val), nil
+		}
+		return "", fmt.Errorf("long literal: expected integer value, got %T (%v)", val, val)
 	case "double":
-		return formatFloat(val)
+		switch val.(type) {
+		case float32, float64:
+			return formatFloat(val), nil
+		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+			return formatInteger(val), nil
+		}
+		return "", fmt.Errorf("double literal: expected numeric value, got %T (%v)", val, val)
 	case "datetime":
 		if t, ok := val.(time.Time); ok {
-			return t.Format("2006-01-02T15:04:05")
+			return t.Format("2006-01-02T15:04:05"), nil
 		}
-		return fmt.Sprint(val)
+		if s, ok := val.(string); ok {
+			// Pre-formatted datetime string (e.g. from ValueFromGo).
+			return s, nil
+		}
+		return "", fmt.Errorf("datetime literal: expected time.Time or string value, got %T (%v)", val, val)
 	case "datetime-tz":
 		if t, ok := val.(time.Time); ok {
-			return t.Format(time.RFC3339)
+			return t.Format(time.RFC3339), nil
 		}
-		return fmt.Sprint(val)
+		if s, ok := val.(string); ok {
+			return s, nil
+		}
+		return "", fmt.Errorf("datetime-tz literal: expected time.Time or string value, got %T (%v)", val, val)
 	case "date":
 		if t, ok := val.(time.Time); ok {
-			return t.Format("2006-01-02")
+			return t.Format("2006-01-02"), nil
 		}
-		return fmt.Sprint(val)
+		if s, ok := val.(string); ok {
+			return s, nil
+		}
+		return "", fmt.Errorf("date literal: expected time.Time or string value, got %T (%v)", val, val)
 	default:
-		return `"` + EscapeString(fmt.Sprint(val)) + `"`
+		return `"` + EscapeString(fmt.Sprint(val)) + `"`, nil
 	}
 }
+
+// typeqlStringEscaper rewrites TypeQL string-literal special characters in a
+// single pass (and returns the input unchanged, allocation-free, when clean).
+var typeqlStringEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`"`, `\"`,
+	"\n", `\n`,
+	"\r", `\r`,
+	"\t", `\t`,
+)
 
 // EscapeString escapes special characters in a string for use in TypeQL string literals.
 // It handles backslashes, quotes, newlines, carriage returns, and tabs.
 func EscapeString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "\n", `\n`)
-	s = strings.ReplaceAll(s, "\r", `\r`)
-	s = strings.ReplaceAll(s, "\t", `\t`)
-	return s
+	return typeqlStringEscaper.Replace(s)
 }
 
 // FormatGoValue converts a Go value into its TypeQL literal string representation.
-// It uses reflection to determine the type and handles basic types, pointers, and time.Time.
+// It handles basic types, pointers, and time.Time; common concrete types take a
+// fast path, and reflection is used only for pointers and named/unknown types.
 // This is the canonical formatting function for Go values; other packages should use this
 // instead of implementing their own formatting logic.
 func FormatGoValue(value any) string {
-	if value == nil {
-		return "null"
-	}
-
-	v := reflect.ValueOf(value)
-
-	// Dereference pointers
-	for v.Kind() == reflect.Pointer {
-		if v.IsNil() {
-			return "null"
-		}
-		v = v.Elem()
-		value = v.Interface()
-	}
-
 	switch val := value.(type) {
+	case nil:
+		return "null"
 	case string:
 		return `"` + EscapeString(val) + `"`
 	case bool:
@@ -606,20 +705,62 @@ func FormatGoValue(value any) string {
 	case float32, float64:
 		return formatFloat(val)
 	case time.Time:
-		// Date-only format (midnight UTC)
-		if val.Hour() == 0 && val.Minute() == 0 && val.Second() == 0 && val.Nanosecond() == 0 {
-			return val.Format("2006-01-02")
+		return formatTimeValue(val)
+	default:
+		return formatGoValueReflect(value)
+	}
+}
+
+// formatTimeValue formats a time.Time as a TypeQL date/datetime literal.
+func formatTimeValue(val time.Time) string {
+	// Date-only format (midnight UTC)
+	if val.Hour() == 0 && val.Minute() == 0 && val.Second() == 0 && val.Nanosecond() == 0 {
+		return val.Format("2006-01-02")
+	}
+	// DateTime without timezone (UTC)
+	if val.Location() == time.UTC {
+		return val.Format("2006-01-02T15:04:05")
+	}
+	// DateTime with timezone
+	return val.Format(time.RFC3339)
+}
+
+// formatGoValueReflect is the reflection-based slow path of FormatGoValue,
+// handling pointers and named/unknown types.
+func formatGoValueReflect(value any) string {
+	v := reflect.ValueOf(value)
+
+	// Dereference pointers
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return "null"
 		}
-		// DateTime without timezone (UTC)
-		if val.Location() == time.UTC {
-			return val.Format("2006-01-02T15:04:05")
+		v = v.Elem()
+	}
+
+	if t, ok := v.Interface().(time.Time); ok {
+		return formatTimeValue(t)
+	}
+
+	switch v.Kind() {
+	case reflect.String:
+		return `"` + EscapeString(v.String()) + `"`
+	case reflect.Bool:
+		if v.Bool() {
+			return "true"
 		}
-		// DateTime with timezone
-		return val.Format(time.RFC3339)
+		return "false"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(v.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(v.Uint(), 10)
+	case reflect.Float32:
+		return strconv.FormatFloat(v.Float(), 'f', -1, 32)
+	case reflect.Float64:
+		return strconv.FormatFloat(v.Float(), 'f', -1, 64)
 	default:
 		// Fallback: convert to string and escape
-		s := fmt.Sprint(val)
-		return `"` + EscapeString(s) + `"`
+		return `"` + EscapeString(fmt.Sprint(v.Interface())) + `"`
 	}
 }
 

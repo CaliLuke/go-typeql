@@ -18,14 +18,15 @@ func GenerateSchema() string {
 	var parts []string
 	attrsSeen := make(map[string]bool)
 
-	// Collect all attribute definitions first
+	// Collect all attribute definitions first. Registration rejects models
+	// whose shared attribute names disagree on value type, so deduplicating
+	// by name alone cannot drop a conflicting declaration.
 	for _, info := range types {
 		for _, f := range info.Fields {
-			attrKey := f.Tag.Name + ":" + f.ValueType
-			if attrsSeen[attrKey] {
+			if attrsSeen[f.Tag.Name] {
 				continue
 			}
-			attrsSeen[attrKey] = true
+			attrsSeen[f.Tag.Name] = true
 			parts = append(parts, fmt.Sprintf("attribute %s, value %s;", f.Tag.Name, f.ValueType))
 		}
 	}
@@ -52,11 +53,10 @@ func GenerateSchemaFor(info *ModelInfo) string {
 	attrsSeen := make(map[string]bool)
 
 	for _, f := range info.Fields {
-		attrKey := f.Tag.Name + ":" + f.ValueType
-		if attrsSeen[attrKey] {
+		if attrsSeen[f.Tag.Name] {
 			continue
 		}
-		attrsSeen[attrKey] = true
+		attrsSeen[f.Tag.Name] = true
 		parts = append(parts, fmt.Sprintf("attribute %s, value %s;", f.Tag.Name, f.ValueType))
 	}
 
@@ -92,6 +92,9 @@ func generateTypeDef(info *ModelInfo, playsMap map[string][]string) string {
 	}
 
 	header := fmt.Sprintf("%s %s", kindStr, info.TypeName)
+	if info.Supertype != "" {
+		header += " sub " + info.Supertype
+	}
 	if info.IsAbstract {
 		header += " @abstract"
 	}
@@ -100,9 +103,6 @@ func generateTypeDef(info *ModelInfo, playsMap map[string][]string) string {
 	}
 	for _, meta := range info.Meta {
 		header += " " + metaAnnotation(meta.Key, meta.Value)
-	}
-	if info.Supertype != "" {
-		header += fmt.Sprintf(", sub %s", info.Supertype)
 	}
 	lines = append(lines, header)
 

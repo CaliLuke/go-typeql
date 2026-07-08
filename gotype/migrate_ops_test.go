@@ -66,7 +66,7 @@ func TestRemoveAttribute_IsDestructive(t *testing.T) {
 func TestRemoveOwnership_ToTypeQL(t *testing.T) {
 	op := RemoveOwnership{Owner: "person", Attribute: "old-attr"}
 	got := op.ToTypeQL()
-	if got != "undefine person owns old-attr;" {
+	if got != "undefine owns old-attr from person;" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -74,7 +74,7 @@ func TestRemoveOwnership_ToTypeQL(t *testing.T) {
 func TestRemoveRole_ToTypeQL(t *testing.T) {
 	op := RemoveRole{Relation: "employment", Role: "old-role"}
 	got := op.ToTypeQL()
-	if got != "undefine employment relates old-role;" {
+	if got != "undefine relates old-role from employment;" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -198,7 +198,7 @@ func TestAddRolePlayer_ToTypeQL(t *testing.T) {
 func TestRemoveRolePlayer_ToTypeQL(t *testing.T) {
 	op := RemoveRolePlayer{Entity: "person", Relation: "employment", Role: "employee"}
 	got := op.ToTypeQL()
-	if got != "undefine person plays employment:employee;" {
+	if got != "undefine plays employment:employee from person;" {
 		t.Errorf("got %q", got)
 	}
 	if op.IsReversible() {

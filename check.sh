@@ -12,8 +12,23 @@ FIX="${1:-}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-UNIT_PKGS=(./ast/... ./gotype/... ./tqlgen/... ./cmd/...)
+UNIT_PKGS=(./ast/... ./gotype/... ./tqlgen/... ./cmd/... ./internal/...)
 PKG_DIRS=$(go list -f '{{.Dir}}' "${UNIT_PKGS[@]}" | tr '\n' ' ')
+
+# TypeQL syntax gate: the test suites validate generated TypeQL with the
+# official typeql-check CLI (typedb/typedb-tools) when it is installed.
+# When present, make the assertions mandatory so they can't silently skip.
+TYPEQL_CHECK_BIN="$(command -v typeql-check 2>/dev/null || true)"
+if [ -z "$TYPEQL_CHECK_BIN" ] && [ -x "$HOME/go/bin/typeql-check" ]; then
+  TYPEQL_CHECK_BIN="$HOME/go/bin/typeql-check"
+fi
+if [ -n "$TYPEQL_CHECK_BIN" ]; then
+  export TYPEQL_CHECK_REQUIRED=1
+  echo "typeql-check: $TYPEQL_CHECK_BIN (TypeQL syntax gates active)"
+else
+  echo "typeql-check: not found — TypeQL syntax assertions will be skipped"
+  echo "              install with: make install-typeql-check"
+fi
 
 FAILED=()
 run_gate() {
@@ -69,7 +84,7 @@ run_gate "go test (-race)" go test -race "${UNIT_PKGS[@]}" -timeout 180s
 # Non-test Go sources for the gocyclo / dupl blocking gates — production code
 # only. Test files routinely have high parallel-symmetry (deliberate) and
 # long table-driven functions; gating them fights readability.
-NON_TEST_GO=$(find ast gotype tqlgen cmd -name '*.go' -not -name '*_test.go' 2>/dev/null | tr '\n' ' ')
+NON_TEST_GO=$(find ast gotype tqlgen cmd internal -name '*.go' -not -name '*_test.go' 2>/dev/null | tr '\n' ' ')
 
 run_gate "gocyclo (>20, non-test)" bash -c "
   out=\$(gocyclo -over 20 $NON_TEST_GO 2>/dev/null)

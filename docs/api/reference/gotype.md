@@ -485,7 +485,7 @@ func BuiltinFuncExpr(funcName string, args ...string) string
 BuiltinFuncExpr builds a TypeQL function call expression string. Useful with Computed filter.
 
 <a name="ClearRegistry"></a>
-## func [ClearRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L185>)
+## func [ClearRegistry](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L245>)
 
 ```go
 func ClearRegistry()
@@ -514,7 +514,7 @@ FormatValue converts a Go value into its TypeQL literal string representation. I
 This function delegates to ast.FormatGoValue for the actual formatting logic.
 
 <a name="FromDict"></a>
-## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L349>)
+## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L408>)
 
 ```go
 func FromDict[T any](data map[string]any) (*T, error)
@@ -532,7 +532,7 @@ func GenerateSchema() string
 GenerateSchema produces a complete TypeQL \`define\` query string for all models currently registered in the global registry.
 
 <a name="GenerateSchemaFor"></a>
-## func [GenerateSchemaFor](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/schema.go#L50>)
+## func [GenerateSchemaFor](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/schema.go#L51>)
 
 ```go
 func GenerateSchemaFor(info *ModelInfo) string
@@ -622,7 +622,7 @@ func MigrationChecksum(m SequentialMigration) string
 MigrationChecksum computes a SHA256 checksum for a migration's statements.
 
 <a name="MustRegister"></a>
-## func [MustRegister](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L117>)
+## func [MustRegister](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L142>)
 
 ```go
 func MustRegister[T any]()
@@ -631,7 +631,7 @@ func MustRegister[T any]()
 MustRegister is a helper that calls Register and panics if an error occurs. It is intended for use during application initialization.
 
 <a name="Register"></a>
-## func [Register](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L29>)
+## func [Register](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L30>)
 
 ```go
 func Register[T any]() error
@@ -671,7 +671,7 @@ This is useful when a database's schema was applied in bulk \(e.g., via ExecuteS
 Supports WithSeqDryRun \(report without stamping\), WithSeqTarget \(stamp up to a named migration\), and WithSeqLogger \(progress callback\).
 
 <a name="ToDict"></a>
-## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L305>)
+## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L364>)
 
 ```go
 func ToDict[T any](instance *T) (map[string]any, error)
@@ -680,7 +680,7 @@ func ToDict[T any](instance *T) (map[string]any, error)
 ToDict converts a registered model instance to a map\[string\]any using TypeDB attribute names as keys. Includes "\_iid" if set.
 
 <a name="ToInsertQuery"></a>
-## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L354>)
+## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L413>)
 
 ```go
 func ToInsertQuery[T any](instance *T) (string, error)
@@ -689,7 +689,7 @@ func ToInsertQuery[T any](instance *T) (string, error)
 ToInsertQuery generates a TypeQL insert query string for the given instance.
 
 <a name="ToMatchQuery"></a>
-## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L363>)
+## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L422>)
 
 ```go
 func ToMatchQuery[T any](instance *T) (string, error)
@@ -1272,9 +1272,11 @@ type Conn interface {
 ```
 
 <a name="ConnPool"></a>
-## type [ConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L34-L46>)
+## type [ConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L41-L54>)
 
 ConnPool manages a pool of database connections for concurrent access.
+
+Locking protocol: p.mu protects conns, numOpen, waitQueue, and closed. Blocking calls on connections \(IsOpen, Close, the factory\) are never made while holding p.mu. numOpen counts every live connection: idle in conns, checked out by callers, and slots reserved for in\-flight factory dials. Whenever numOpen is decremented while waiters are queued, one waiter is woken with a retry signal so freed capacity is never lost.
 
 ```go
 type ConnPool struct {
@@ -1283,7 +1285,7 @@ type ConnPool struct {
 ```
 
 <a name="NewConnPool"></a>
-### func [NewConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L75>)
+### func [NewConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L94>)
 
 ```go
 func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, error)
@@ -1292,7 +1294,7 @@ func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, er
 NewConnPool creates a new connection pool with the given configuration and factory function. The factory function is called to create new connections when needed. If config.MinSize \> 0, the pool will be pre\-warmed with MinSize connections.
 
 <a name="ConnPool.Close"></a>
-### func \(\*ConnPool\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L274>)
+### func \(\*ConnPool\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L389>)
 
 ```go
 func (p *ConnPool) Close()
@@ -1301,7 +1303,7 @@ func (p *ConnPool) Close()
 Close closes all connections in the pool and prevents new connections from being acquired.
 
 <a name="ConnPool.Get"></a>
-### func \(\*ConnPool\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L114>)
+### func \(\*ConnPool\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L139>)
 
 ```go
 func (p *ConnPool) Get(ctx context.Context) (Conn, error)
@@ -1310,7 +1312,7 @@ func (p *ConnPool) Get(ctx context.Context) (Conn, error)
 Get acquires a connection from the pool. If no connections are available and the pool is at max capacity, it waits for one to become available. Returns ErrPoolClosed if the pool is closed, or ErrPoolTimeout if WaitTimeout is exceeded.
 
 <a name="ConnPool.Put"></a>
-### func \(\*ConnPool\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L222>)
+### func \(\*ConnPool\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L348>)
 
 ```go
 func (p *ConnPool) Put(conn Conn)
@@ -1319,7 +1321,7 @@ func (p *ConnPool) Put(conn Conn)
 Put returns a connection to the pool. If the connection is no longer open, it is discarded instead of being returned to the pool.
 
 <a name="ConnPool.Stats"></a>
-### func \(\*ConnPool\) [Stats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L325>)
+### func \(\*ConnPool\) [Stats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L440>)
 
 ```go
 func (p *ConnPool) Stats() PoolStats
@@ -1348,7 +1350,7 @@ func NewDatabase(conn Conn, dbName string) *Database
 NewDatabase creates a new Database handle bound to a specific database name.
 
 <a name="NewDatabaseWithPool"></a>
-### func [NewDatabaseWithPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L383>)
+### func [NewDatabaseWithPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L504>)
 
 ```go
 func NewDatabaseWithPool(config PoolConfig, dbName string, factory func() (Conn, error)) (*Database, error)
@@ -1558,7 +1560,7 @@ type FieldInfo struct {
 ```
 
 <a name="FieldTag"></a>
-## type [FieldTag](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/tags.go#L11-L30>)
+## type [FieldTag](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/tags.go#L11-L32>)
 
 FieldTag contains the structured representation of a parsed \`typedb\` struct tag.
 
@@ -1580,22 +1582,24 @@ type FieldTag struct {
     Abstract bool
     // TypeName provides an explicit override for the TypeDB type name.
     TypeName string
+    // Sub names the TypeDB supertype of the model (sub:parent-name).
+    Sub string
     // Skip indicates the field should be ignored by the ORM.
     Skip bool
 }
 ```
 
 <a name="ParseTag"></a>
-### func [ParseTag](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/tags.go#L40>)
+### func [ParseTag](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/tags.go#L54>)
 
 ```go
 func ParseTag(tag string) (FieldTag, error)
 ```
 
-ParseTag parses the content of a \`typedb\` struct tag into a FieldTag structure. It supports options like key, unique, cardinality \(card=M..N\), roles \(role:name\), and type name overrides \(type:name\).
+ParseTag parses the content of a \`typedb\` struct tag into a FieldTag structure. It supports options like key, unique, cardinality \(card=M..N\), roles \(role:name\), type name overrides \(type:name\), and supertype declarations \(sub:parent\-name\).
 
 <a name="FieldTag.IsRole"></a>
-### func \(FieldTag\) [IsRole](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/tags.go#L33>)
+### func \(FieldTag\) [IsRole](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/tags.go#L47>)
 
 ```go
 func (ft FieldTag) IsRole() bool
@@ -2242,7 +2246,7 @@ type MatchBuilder interface {
 ```
 
 <a name="Meta"></a>
-## type [Meta](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L220-L225>)
+## type [Meta](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L275-L280>)
 
 Meta describes a TypeDB @meta\("key", "value"\) annotation.
 
@@ -2376,7 +2380,7 @@ func (ms *MigrationState) Record(ctx context.Context, hash, summary string) erro
 Record saves a new migration record to the database after it has been applied.
 
 <a name="ModelInfo"></a>
-## type [ModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L49-L71>)
+## type [ModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L49-L74>)
 
 ModelInfo contains comprehensive metadata about a registered TypeDB model, including its mapping to a Go struct and its TypeDB schema properties.
 
@@ -2407,16 +2411,16 @@ type ModelInfo struct {
 ```
 
 <a name="ExtractModelInfo"></a>
-### func [ExtractModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L95>)
+### func [ExtractModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L102>)
 
 ```go
 func ExtractModelInfo(t reflect.Type) (*ModelInfo, error)
 ```
 
-ExtractModelInfo analyzes a Go struct type and extracts its TypeDB model metadata. The struct must embed BaseEntity or BaseRelation to be a valid model.
+ExtractModelInfo analyzes a Go struct type and extracts its TypeDB model metadata. The struct must embed BaseEntity or BaseRelation to be a valid model. Type\-level tag options \(abstract, type:name, sub:parent\-name\) may appear on any field, including the embedded base field and blank \(\`\_\`\) fields. Fields with unsupported Go types or option\-only tags without an attribute name cause an error so invalid schemas fail at registration time.
 
 <a name="Lookup"></a>
-### func [Lookup](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L124>)
+### func [Lookup](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L149>)
 
 ```go
 func Lookup(typeName string) (*ModelInfo, bool)
@@ -2425,7 +2429,7 @@ func Lookup(typeName string) (*ModelInfo, bool)
 Lookup retrieves ModelInfo for a given TypeDB type name.
 
 <a name="LookupByGoName"></a>
-### func [LookupByGoName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L143>)
+### func [LookupByGoName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L168>)
 
 ```go
 func LookupByGoName(name string) (*ModelInfo, bool)
@@ -2434,7 +2438,7 @@ func LookupByGoName(name string) (*ModelInfo, bool)
 LookupByGoName retrieves ModelInfo based on the name of the Go struct.
 
 <a name="LookupType"></a>
-### func [LookupType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L132>)
+### func [LookupType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L157>)
 
 ```go
 func LookupType(t reflect.Type) (*ModelInfo, bool)
@@ -2443,16 +2447,16 @@ func LookupType(t reflect.Type) (*ModelInfo, bool)
 LookupType retrieves ModelInfo for a given Go reflect.Type.
 
 <a name="RegisteredTypes"></a>
-### func [RegisteredTypes](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L154>)
+### func [RegisteredTypes](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L182>)
 
 ```go
 func RegisteredTypes() []*ModelInfo
 ```
 
-RegisteredTypes returns a slice containing ModelInfo for all registered types.
+RegisteredTypes returns a slice containing ModelInfo for all registered types in a deterministic order: sorted by TypeName, with registered supertypes always preceding their subtypes. Deterministic ordering keeps generated schemas and migration plans stable across runs.
 
 <a name="ResolveType"></a>
-### func [ResolveType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L179>)
+### func [ResolveType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L239>)
 
 ```go
 func ResolveType(typeLabel string) (*ModelInfo, bool)
@@ -2461,16 +2465,16 @@ func ResolveType(typeLabel string) (*ModelInfo, bool)
 ResolveType maps a TypeDB type label to its registered ModelInfo.
 
 <a name="SubtypesOf"></a>
-### func [SubtypesOf](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L166>)
+### func [SubtypesOf](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L223>)
 
 ```go
 func SubtypesOf(typeName string) []*ModelInfo
 ```
 
-SubtypesOf returns a slice of registered types that are direct subtypes of the specified parent type.
+SubtypesOf returns a slice of registered types that are direct subtypes of the specified parent type, sorted by TypeName.
 
 <a name="ModelInfo.FieldByAttrName"></a>
-### func \(\*ModelInfo\) [FieldByAttrName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L84>)
+### func \(\*ModelInfo\) [FieldByAttrName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L87>)
 
 ```go
 func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool)
@@ -2479,7 +2483,7 @@ func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool)
 FieldByAttrName retrieves FieldInfo by the TypeDB attribute name.
 
 <a name="ModelInfo.FieldByName"></a>
-### func \(\*ModelInfo\) [FieldByName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L74>)
+### func \(\*ModelInfo\) [FieldByName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L77>)
 
 ```go
 func (m *ModelInfo) FieldByName(name string) (FieldInfo, bool)
@@ -2742,7 +2746,7 @@ func DefaultPoolConfig() PoolConfig
 DefaultPoolConfig returns a reasonable default pool configuration.
 
 <a name="PoolStats"></a>
-## type [PoolStats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L338-L343>)
+## type [PoolStats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L453-L458>)
 
 PoolStats provides statistics about the connection pool.
 
@@ -3010,7 +3014,7 @@ func (f *RegexFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for a regex filter.
 
 <a name="Registry"></a>
-## type [Registry](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L20-L25>)
+## type [Registry](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/registry.go#L21-L26>)
 
 Registry maintains a mapping between Go struct types and TypeDB model metadata. It is used to look up schema information during query generation and hydration.
 
@@ -3498,7 +3502,7 @@ func (op RunTypeQL) ToTypeQL() string
 
 
 <a name="SchemaAnnotated"></a>
-## type [SchemaAnnotated](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L229-L231>)
+## type [SchemaAnnotated](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L284-L286>)
 
 SchemaAnnotated can be implemented by a model to emit type\-level TypeDB @meta annotations during schema generation.
 
@@ -3689,7 +3693,7 @@ func (d *SchemaDiff) Summary() string
 Summary returns a human\-readable description of the changes in the diff.
 
 <a name="SchemaDocumented"></a>
-## type [SchemaDocumented](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L215-L217>)
+## type [SchemaDocumented](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L270-L272>)
 
 SchemaDocumented can be implemented by a model to emit a type\-level TypeDB @doc annotation during schema generation.
 

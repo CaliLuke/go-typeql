@@ -115,7 +115,10 @@ func TestPaginatedSearchTemplate(t *testing.T) {
 	if !strings.Contains(query, "{ $n isa user_story; } or { $n isa task; }") {
 		t.Fatalf("expected type alternatives, got:\n%s", query)
 	}
-	if !strings.Contains(query, "sort $n.name desc;") {
+	if !strings.Contains(query, "$n has name $sort_name;") {
+		t.Fatalf("expected sort attribute binding, got:\n%s", query)
+	}
+	if !strings.Contains(query, "sort $sort_name desc;") {
 		t.Fatalf("expected descending sort, got:\n%s", query)
 	}
 	if !strings.Contains(query, "offset 10;") {
@@ -170,6 +173,98 @@ func TestFluentBuilders_Immutable(t *testing.T) {
 	if !strings.Contains(changedQuery, `has status "done"`) {
 		t.Fatalf("changed query missing constraint: %s", changedQuery)
 	}
+}
+
+// Regression for issue #21: clone() copied the matchPatterns slice but the
+// first pattern's Constraints backing array was shared, so two branches forked
+// from the same builder could write into the same array slot.
+func TestFluentBuilders_SiblingBranchesIndependent(t *testing.T) {
+	// Three Has calls leave the shared Constraints slice with spare capacity
+	// (len 3, cap 4), so both branch appends target the same array slot.
+	base := FluentMatch("p", "person").Has("a", 1).Has("b", 2).Has("c", 3)
+	branchA := base.Has("y", 20)
+	branchB := base.Has("z", 30)
+
+	queryA, err := branchA.Build()
+	if err != nil {
+		t.Fatalf("branch A build error: %v", err)
+	}
+	queryB, err := branchB.Build()
+	if err != nil {
+		t.Fatalf("branch B build error: %v", err)
+	}
+
+	if !strings.Contains(queryA, "has y 20") {
+		t.Fatalf("branch A lost its own constraint:\n%s", queryA)
+	}
+	if strings.Contains(queryA, "has z") {
+		t.Fatalf("branch A was corrupted by sibling branch B:\n%s", queryA)
+	}
+	if !strings.Contains(queryB, "has z 30") {
+		t.Fatalf("branch B lost its own constraint:\n%s", queryB)
+	}
+	if strings.Contains(queryB, "has y") {
+		t.Fatalf("branch B was corrupted by sibling branch A:\n%s", queryB)
+	}
+}
+
+// Regression for issue #22: Has/Iid/MatchByIdentifier used to silently no-op
+// when the first match pattern was not an EntityPattern, which could turn a
+// targeted delete into a mass delete. They must now surface an error at Build.
+func TestFluentConstraintOnNonEntityPattern_ErrorsAtBuild(t *testing.T) {
+	relationFirst := func() MatchStage {
+		return FluentPatterns(
+			Relation("$r", "employment", []RolePlayer{Role("employee", "$p")}),
+		)
+	}
+
+	t.Run("Has on relation-first builder", func(t *testing.T) {
+		_, err := relationFirst().Has("start-date", "2020-01-01").DeleteThing().Build()
+		if err == nil {
+			t.Fatal("expected build error when Has cannot attach, got nil")
+		}
+		if !strings.Contains(err.Error(), "EntityPattern") {
+			t.Fatalf("expected error to explain the entity-first requirement, got: %v", err)
+		}
+	})
+
+	t.Run("Iid on relation-first builder", func(t *testing.T) {
+		_, err := relationFirst().Iid("0x123").Build()
+		if err == nil {
+			t.Fatal("expected build error when Iid cannot attach, got nil")
+		}
+	})
+
+	t.Run("MatchByIdentifier IID arm on relation-first builder", func(t *testing.T) {
+		_, err := relationFirst().MatchByIdentifier("0x123", "display_id", nil).Build()
+		if err == nil {
+			t.Fatal("expected build error when MatchByIdentifier cannot attach, got nil")
+		}
+	})
+
+	t.Run("Has with no match patterns", func(t *testing.T) {
+		_, err := FluentPatterns().Has("name", "x").Build()
+		if err == nil {
+			t.Fatal("expected build error when there are no match patterns, got nil")
+		}
+	})
+
+	t.Run("error survives later stages", func(t *testing.T) {
+		_, err := relationFirst().Has("start-date", "2020-01-01").Fetch("r", "start-date").Limit(5).Build()
+		if err == nil {
+			t.Fatal("expected deferred error to survive output-stage transitions, got nil")
+		}
+	})
+
+	t.Run("valid entity-first builders still build", func(t *testing.T) {
+		q, err := FluentPatterns(Entity("$p", "person")).Has("name", "Alice").Build()
+		if err != nil {
+			t.Fatalf("unexpected build error: %v", err)
+		}
+		if !strings.Contains(q, `$p isa person, has name "Alice"`) {
+			t.Fatalf("expected attached constraint, got:\n%s", q)
+		}
+	})
 }
 
 func TestFluentBuilders_Nodes(t *testing.T) {

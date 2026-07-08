@@ -322,4 +322,4 @@ The recognized acronyms are: ID, URL, UUID, API, HTTP, IID, NF.
 - `struct` definitions (parsed for field extraction)
 - Comment annotations (`# @key value`, `# @key(value)`, `# @key` above type definitions)
 
-The parser uses [participle/v2](https://github.com/alecthomas/participle). TypeQL functions are stripped via pre-processing (truncate at first `fun`) rather than being parsed by the grammar.
+The parser uses [participle/v2](https://github.com/alecthomas/participle). TypeQL functions are parsed by the grammar: each `fun` body is captured as a flat token list for signature extraction and ends at the next top-level definition keyword (`entity`, `relation`, `attribute`, `struct`, `fun`), so definitions after a function are parsed normally.

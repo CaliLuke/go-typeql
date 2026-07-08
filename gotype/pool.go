@@ -31,18 +31,26 @@ func DefaultPoolConfig() PoolConfig {
 }
 
 // ConnPool manages a pool of database connections for concurrent access.
+//
+// Locking protocol: p.mu protects conns, numOpen, waitQueue, and closed.
+// Blocking calls on connections (IsOpen, Close, the factory) are never made
+// while holding p.mu. numOpen counts every live connection: idle in conns,
+// checked out by callers, and slots reserved for in-flight factory dials.
+// Whenever numOpen is decremented while waiters are queued, one waiter is
+// woken with a retry signal so freed capacity is never lost.
 type ConnPool struct {
 	config      PoolConfig
 	connFactory func() (Conn, error) // factory function to create new connections
 
 	mu        sync.Mutex
 	conns     []pooledConn  // available connections
-	numOpen   int           // total open connections (available + in-use)
+	numOpen   int           // total open connections (available + in-use + dialing)
 	waitQueue []*poolWaiter // waiting goroutines
 	closed    bool
 
-	stopCleaner chan struct{} // signal to stop the idle connection cleaner
-	cleanerDone chan struct{} // signal that cleaner has stopped
+	cleanerStarted bool          // whether the idle-connection cleaner goroutine was started
+	stopCleaner    chan struct{} // signal to stop the idle connection cleaner
+	cleanerDone    chan struct{} // signal that cleaner has stopped
 }
 
 // pooledConn tracks a connection and its idle time.
@@ -51,15 +59,26 @@ type pooledConn struct {
 	idleSince time.Time
 }
 
+// poolWaitResult is delivered to a queued waiter. Exactly one of three shapes
+// is sent: a connection handoff (conn != nil), an error (err != nil), or a
+// retry signal (both nil) meaning a capacity slot was freed and the waiter
+// should loop and try to acquire again.
 type poolWaitResult struct {
-	conn     Conn
-	err      error
-	accepted chan bool
+	conn Conn
+	err  error
 }
 
+// poolWaiter represents a goroutine queued in Get waiting for capacity.
+//
+// The result channel is buffered (capacity 1) and has exactly one sender: the
+// party that pops the waiter from waitQueue while holding p.mu owns it and
+// sends at most one result before releasing the lock. Sends therefore never
+// block. A waiter that times out removes itself from the queue under p.mu and
+// then drains the channel non-blockingly; because pop+send happen inside one
+// critical section, any result claimed before the removal is guaranteed to be
+// in the buffer by then.
 type poolWaiter struct {
 	result chan poolWaitResult
-	done   chan struct{}
 }
 
 var (
@@ -91,8 +110,13 @@ func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, er
 		for i := 0; i < config.MinSize; i++ {
 			conn, err := factory()
 			if err != nil {
-				// Close any connections created so far
-				pool.Close()
+				// Close the connections created so far directly. The pool has
+				// not escaped yet and the cleaner goroutine has not started,
+				// so pool.Close() must not be used here: it would block
+				// forever waiting for a cleaner that never ran (issue #19).
+				for _, pc := range pool.conns {
+					pc.conn.Close()
+				}
 				return nil, fmt.Errorf("failed to create initial connection %d/%d: %w", i+1, config.MinSize, err)
 			}
 			pool.conns = append(pool.conns, pooledConn{conn: conn, idleSince: time.Now()})
@@ -102,6 +126,7 @@ func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, er
 
 	// Start the idle connection cleaner if idle timeout is configured
 	if config.IdleTimeout > 0 {
+		pool.cleanerStarted = true
 		go pool.cleanIdleConnections()
 	}
 
@@ -135,86 +160,187 @@ func (p *ConnPool) Get(ctx context.Context) (Conn, error) {
 			// health check does not block unrelated Get/Put operations.
 			if pc.conn.IsOpen() {
 				p.mu.Lock()
-				closed := p.closed
-				p.mu.Unlock()
-				if closed {
+				if p.closed {
+					// The pool closed while we validated; it no longer tracks
+					// this connection, so account for it and discard it.
+					p.numOpen--
+					p.mu.Unlock()
 					pc.conn.Close()
 					return nil, ErrPoolClosed
 				}
+				p.mu.Unlock()
 				return pc.conn, nil
 			}
 
-			pc.conn.Close()
 			p.mu.Lock()
-			p.numOpen--
+			p.freeSlotLocked()
 			p.mu.Unlock()
+			pc.conn.Close()
 			continue
 		}
 
 		// No available connections - try to create a new one.
 		if p.config.MaxSize == 0 || p.numOpen < p.config.MaxSize {
-			p.numOpen++
+			p.numOpen++ // reserve a capacity slot for the dial
 			p.mu.Unlock()
 
-			conn, err := p.connFactory()
+			conn, err := p.dial(ctx)
 			if err != nil {
-				p.mu.Lock()
-				p.numOpen--
-				p.mu.Unlock()
-				return nil, fmt.Errorf("failed to create connection: %w", err)
+				// dial released the reserved slot (or transferred ownership
+				// to a background goroutine on context cancellation).
+				return nil, err
 			}
 
 			p.mu.Lock()
-			closed := p.closed
-			p.mu.Unlock()
-			if closed {
+			if p.closed {
+				p.numOpen--
+				p.mu.Unlock()
 				conn.Close()
 				return nil, ErrPoolClosed
 			}
+			p.mu.Unlock()
 			return conn, nil
 		}
 
-		// Pool is at max capacity - must wait for a connection.
-		waiter := &poolWaiter{
-			result: make(chan poolWaitResult),
-			done:   make(chan struct{}),
-		}
+		// Pool is at max capacity - must wait for capacity or a handoff.
+		waiter := &poolWaiter{result: make(chan poolWaitResult, 1)}
 		p.waitQueue = append(p.waitQueue, waiter)
 		p.mu.Unlock()
 
-		// Determine wait timeout
-		waitCtx := ctx
-		if p.config.WaitTimeout > 0 {
-			var cancel context.CancelFunc
-			waitCtx, cancel = context.WithTimeout(ctx, p.config.WaitTimeout)
-			defer cancel()
+		conn, retry, err := p.awaitConn(ctx, waiter)
+		if err != nil {
+			return nil, err
 		}
+		if retry {
+			continue
+		}
+		return conn, nil
+	}
+}
 
+// awaitConn blocks until the waiter receives a handoff, an error, a retry
+// signal (retry == true: a capacity slot was freed, loop and re-acquire), or
+// the wait times out.
+func (p *ConnPool) awaitConn(ctx context.Context, waiter *poolWaiter) (conn Conn, retry bool, err error) {
+	waitCtx := ctx
+	if p.config.WaitTimeout > 0 {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, p.config.WaitTimeout)
+		defer cancel()
+	}
+
+	select {
+	case result := <-waiter.result:
+		if result.err != nil {
+			return nil, false, result.err
+		}
+		if result.conn == nil {
+			return nil, true, nil // retry signal: capacity was freed
+		}
+		p.mu.Lock()
+		if p.closed {
+			// Close raced with the handoff; the pool no longer tracks this
+			// connection, so account for it and discard it.
+			p.numOpen--
+			p.mu.Unlock()
+			result.conn.Close()
+			return nil, false, ErrPoolClosed
+		}
+		p.mu.Unlock()
+		return result.conn, false, nil
+
+	case <-waitCtx.Done():
+		p.removeWaiter(waiter)
+		// A sender may have claimed this waiter before we removed it; the
+		// result is then already buffered (pop+send share one critical
+		// section), so a non-blocking drain is race-free.
 		select {
 		case result := <-waiter.result:
-			if result.err != nil {
-				return nil, result.err
+			switch {
+			case result.conn != nil:
+				p.Put(result.conn)
+			case result.err == nil:
+				// A retry signal was addressed to us; forward the freed slot
+				// to the next waiter so it is not lost.
+				p.mu.Lock()
+				p.wakeWaiterLocked()
+				p.mu.Unlock()
 			}
-			p.mu.Lock()
-			closed := p.closed
-			if result.accepted != nil {
-				result.accepted <- !closed
-			}
-			p.mu.Unlock()
-			if closed {
-				return nil, ErrPoolClosed
-			}
-			return result.conn, nil
-		case <-waitCtx.Done():
-			close(waiter.done)
-			p.removeWaiter(waiter)
-
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			return nil, ErrPoolTimeout
+		default:
 		}
+
+		if ctx.Err() != nil {
+			return nil, false, ctx.Err()
+		}
+		return nil, false, ErrPoolTimeout
 	}
+}
+
+// dial creates a new connection via the factory while honoring ctx. The
+// caller must have reserved a capacity slot (numOpen++). On factory error the
+// slot is released here. On context cancellation, ownership of the slot moves
+// to a background goroutine that either returns the late connection to the
+// pool or releases the slot if the factory failed.
+func (p *ConnPool) dial(ctx context.Context) (Conn, error) {
+	type dialResult struct {
+		conn Conn
+		err  error
+	}
+	ch := make(chan dialResult, 1)
+	go func() {
+		conn, err := p.connFactory()
+		ch <- dialResult{conn: conn, err: err}
+	}()
+
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			p.mu.Lock()
+			p.freeSlotLocked()
+			p.mu.Unlock()
+			return nil, fmt.Errorf("failed to create connection: %w", r.err)
+		}
+		return r.conn, nil
+	case <-ctx.Done():
+		go func() {
+			r := <-ch
+			if r.err != nil {
+				p.mu.Lock()
+				p.freeSlotLocked()
+				p.mu.Unlock()
+				return
+			}
+			p.Put(r.conn)
+		}()
+		return nil, ctx.Err()
+	}
+}
+
+// freeSlotLocked releases a capacity slot and wakes one queued waiter so the
+// freed capacity is not lost. Caller must hold p.mu.
+func (p *ConnPool) freeSlotLocked() {
+	p.numOpen--
+	p.wakeWaiterLocked()
+}
+
+// wakeWaiterLocked pops one waiter (if any) and signals it to retry.
+// Caller must hold p.mu; the buffered, single-sender channel makes the send
+// non-blocking.
+func (p *ConnPool) wakeWaiterLocked() {
+	if w := p.popWaiterLocked(); w != nil {
+		w.result <- poolWaitResult{}
+	}
+}
+
+// popWaiterLocked removes and returns the next queued waiter, or nil.
+// Caller must hold p.mu.
+func (p *ConnPool) popWaiterLocked() *poolWaiter {
+	if len(p.waitQueue) == 0 {
+		return nil
+	}
+	w := p.waitQueue[0]
+	p.waitQueue = p.waitQueue[1:]
+	return w
 }
 
 // Put returns a connection to the pool.
@@ -224,45 +350,34 @@ func (p *ConnPool) Put(conn Conn) {
 		return
 	}
 
+	// Health-check outside the pool mutex so one slow FFI call does not
+	// block unrelated Get/Put/Stats operations.
+	healthy := conn.IsOpen()
+
 	p.mu.Lock()
 
 	if p.closed {
-		p.mu.Unlock()
-		conn.Close()
-		return
-	}
-
-	// If connection is dead, discard it
-	if !conn.IsOpen() {
-		conn.Close()
 		p.numOpen--
 		p.mu.Unlock()
+		conn.Close()
 		return
 	}
 
-	// Try to satisfy a waiting goroutine first
-	for len(p.waitQueue) > 0 {
-		waiter := p.waitQueue[0]
-		p.waitQueue = p.waitQueue[1:]
-		accepted := make(chan bool)
+	// If the connection is dead, discard it and wake a waiter: the freed
+	// capacity slot lets it dial a fresh connection.
+	if !healthy {
+		p.freeSlotLocked()
 		p.mu.Unlock()
-		select {
-		case waiter.result <- poolWaitResult{conn: conn, accepted: accepted}:
-			if <-accepted {
-				// Successfully handed off to waiter.
-				return
-			}
-			p.mu.Lock()
-			if p.closed {
-				p.mu.Unlock()
-				conn.Close()
-				return
-			}
-			// Close won the race; try the next waiter or return to the pool.
-		case <-waiter.done:
-			p.mu.Lock()
-			// Waiter timed out or was already notified, try the next one.
-		}
+		conn.Close()
+		return
+	}
+
+	// Hand off to a waiting goroutine if there is one. The send must happen
+	// in the same critical section as the pop (see poolWaiter).
+	if w := p.popWaiterLocked(); w != nil {
+		w.result <- poolWaitResult{conn: conn}
+		p.mu.Unlock()
+		return
 	}
 
 	// Return connection to pool
@@ -280,31 +395,31 @@ func (p *ConnPool) Close() {
 	p.closed = true
 
 	// Stop the idle connection cleaner
-	if p.config.IdleTimeout > 0 {
+	if p.cleanerStarted {
 		close(p.stopCleaner)
 	}
 
-	// Close all available connections
-	for _, pc := range p.conns {
-		pc.conn.Close()
-	}
+	// Take ownership of the idle connections; they are closed after the
+	// lock is released so slow FFI closes cannot stall other pool users.
+	idle := p.conns
 	p.conns = nil
+	p.numOpen -= len(idle)
 
-	waiters := p.waitQueue
+	// Notify waiting goroutines. Buffered single-sender channels make these
+	// sends non-blocking (see poolWaiter).
+	for _, waiter := range p.waitQueue {
+		waiter.result <- poolWaitResult{err: ErrPoolClosed}
+	}
 	p.waitQueue = nil
 
 	p.mu.Unlock()
 
-	// Notify waiting goroutines after releasing the lock so an in-flight waiter can receive.
-	for _, waiter := range waiters {
-		select {
-		case waiter.result <- poolWaitResult{err: ErrPoolClosed}:
-		case <-waiter.done:
-		}
+	for _, pc := range idle {
+		pc.conn.Close()
 	}
 
 	// Wait for cleaner to stop
-	if p.config.IdleTimeout > 0 {
+	if p.cleanerStarted {
 		<-p.cleanerDone
 	}
 }
@@ -356,20 +471,26 @@ func (p *ConnPool) cleanIdleConnections() {
 
 			now := time.Now()
 			keepConns := make([]pooledConn, 0, len(p.conns))
+			var expired []Conn
 
 			for _, pc := range p.conns {
 				// Keep connections that are still within idle timeout or needed for MinSize
 				if now.Sub(pc.idleSince) < p.config.IdleTimeout || len(keepConns) < p.config.MinSize {
 					keepConns = append(keepConns, pc)
 				} else {
-					// Close idle connection
-					pc.conn.Close()
-					p.numOpen--
+					// Reap the idle connection; the actual Close happens
+					// after the lock is released.
+					expired = append(expired, pc.conn)
+					p.freeSlotLocked()
 				}
 			}
 
 			p.conns = keepConns
 			p.mu.Unlock()
+
+			for _, c := range expired {
+				c.Close()
+			}
 
 		case <-p.stopCleaner:
 			return
@@ -426,9 +547,23 @@ func (pca *poolConnAdapter) TransactionContext(ctx context.Context, dbName strin
 	return &pooledTx{tx: tx, conn: conn, pool: pca.pool}, nil
 }
 
+// acquireCtx returns the context used for pool acquisition in the adapter's
+// admin operations. The Conn interface has no context parameters for these,
+// so the pool's WaitTimeout bounds the whole acquisition (queue wait and
+// dial) instead of leaving it uncancellable; WaitTimeout == 0 preserves the
+// documented "no timeout" behavior.
+func (pca *poolConnAdapter) acquireCtx() (context.Context, context.CancelFunc) {
+	if t := pca.pool.config.WaitTimeout; t > 0 {
+		return context.WithTimeout(context.Background(), t)
+	}
+	return context.WithCancel(context.Background())
+}
+
 // Schema retrieves the schema using a connection from the pool.
 func (pca *poolConnAdapter) Schema(dbName string) (string, error) {
-	conn, err := pca.pool.Get(context.Background())
+	ctx, cancel := pca.acquireCtx()
+	defer cancel()
+	conn, err := pca.pool.Get(ctx)
 	if err != nil {
 		return "", fmt.Errorf("get connection from pool: %w", err)
 	}
@@ -439,7 +574,9 @@ func (pca *poolConnAdapter) Schema(dbName string) (string, error) {
 
 // DatabaseCreate creates a database using a connection from the pool.
 func (pca *poolConnAdapter) DatabaseCreate(name string) error {
-	conn, err := pca.pool.Get(context.Background())
+	ctx, cancel := pca.acquireCtx()
+	defer cancel()
+	conn, err := pca.pool.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("get connection from pool: %w", err)
 	}
@@ -449,7 +586,9 @@ func (pca *poolConnAdapter) DatabaseCreate(name string) error {
 
 // DatabaseDelete deletes a database using a connection from the pool.
 func (pca *poolConnAdapter) DatabaseDelete(name string) error {
-	conn, err := pca.pool.Get(context.Background())
+	ctx, cancel := pca.acquireCtx()
+	defer cancel()
+	conn, err := pca.pool.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("get connection from pool: %w", err)
 	}
@@ -459,7 +598,9 @@ func (pca *poolConnAdapter) DatabaseDelete(name string) error {
 
 // DatabaseContains checks database existence using a connection from the pool.
 func (pca *poolConnAdapter) DatabaseContains(name string) (bool, error) {
-	conn, err := pca.pool.Get(context.Background())
+	ctx, cancel := pca.acquireCtx()
+	defer cancel()
+	conn, err := pca.pool.Get(ctx)
 	if err != nil {
 		return false, fmt.Errorf("get connection from pool: %w", err)
 	}
@@ -469,7 +610,9 @@ func (pca *poolConnAdapter) DatabaseContains(name string) (bool, error) {
 
 // DatabaseAll lists all databases using a connection from the pool.
 func (pca *poolConnAdapter) DatabaseAll() ([]string, error) {
-	conn, err := pca.pool.Get(context.Background())
+	ctx, cancel := pca.acquireCtx()
+	defer cancel()
+	conn, err := pca.pool.Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get connection from pool: %w", err)
 	}
