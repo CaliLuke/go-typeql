@@ -77,6 +77,7 @@ This package wraps a thin C FFI layer \(driver/rust/\) that itself wraps the off
   - [func \(t \*Transaction\) IsOpen\(\) bool](<#Transaction.IsOpen>)
   - [func \(t \*Transaction\) Query\(query string\) \(\[\]map\[string\]any, error\)](<#Transaction.Query>)
   - [func \(t \*Transaction\) QueryWithContext\(ctx context.Context, query string\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithContext>)
+  - [func \(t \*Transaction\) QueryWithContextAndOptions\(ctx context.Context, query string, opts \*QueryOptions, rows \*GivenRows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithContextAndOptions>)
   - [func \(t \*Transaction\) QueryWithOptions\(query string, opts \*QueryOptions\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithOptions>)
   - [func \(t \*Transaction\) QueryWithOptionsAndRows\(query string, opts \*QueryOptions, rows \*GivenRows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithOptionsAndRows>)
   - [func \(t \*Transaction\) QueryWithRows\(query string, rows \*GivenRows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithRows>)
@@ -99,11 +100,16 @@ var (
     ErrNotConnected = errors.New("driver: not connected")
     // ErrNilPointer is returned when an FFI call unexpectedly returns a nil pointer.
     ErrNilPointer = errors.New("driver: nil pointer")
+    // ErrTransactionAbandoned is returned when an operation is attempted on a
+    // transaction that was abandoned by a cancelled QueryWithContext call. The
+    // in-flight query goroutine frees the underlying native handle once the
+    // driver call returns; the transaction cannot be reused.
+    ErrTransactionAbandoned = errors.New("driver: transaction abandoned after context cancellation")
 )
 ```
 
 <a name="ReleaseAllConcepts"></a>
-## func ReleaseAllConcepts
+## func [ReleaseAllConcepts](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L78>)
 
 ```go
 func ReleaseAllConcepts()
@@ -112,7 +118,7 @@ func ReleaseAllConcepts()
 ReleaseAllConcepts frees every concept handle registered by this process, across all drivers and transactions. Handles obtained before this call become invalid.
 
 <a name="WaitForPendingCloses"></a>
-## func WaitForPendingCloses
+## func [WaitForPendingCloses](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L193>)
 
 ```go
 func WaitForPendingCloses(ctx context.Context) error
@@ -121,7 +127,7 @@ func WaitForPendingCloses(ctx context.Context) error
 WaitForPendingCloses waits for already accepted asynchronous transaction close jobs to finish. It is a drain point for tests and graceful shutdown; it does not stop close workers.
 
 <a name="Concept"></a>
-## type Concept
+## type [Concept](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L56-L61>)
 
 Concept is an opaque TypeDB concept returned by a row query.
 
@@ -139,7 +145,7 @@ type Concept struct {
 ```
 
 <a name="AsConcept"></a>
-### func AsConcept
+### func [AsConcept](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L205>)
 
 ```go
 func AsConcept(value any) (Concept, bool)
@@ -150,7 +156,7 @@ AsConcept extracts an opaque TypeDB concept from a query result value.
 It only succeeds for entity/relation values returned by a query executed with QueryOptions.SetConceptHandles\(true\); other results carry no handle.
 
 <a name="Concept.Release"></a>
-### func \(Concept\) Release
+### func \(Concept\) [Release](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L66>)
 
 ```go
 func (c Concept) Release()
@@ -159,7 +165,7 @@ func (c Concept) Release()
 Release frees the registry entry backing this concept handle. After Release, passing the handle to ConceptGiven yields an "unknown concept handle" error. Releasing an empty or already\-released handle is a no\-op.
 
 <a name="DatabaseManager"></a>
-## type DatabaseManager
+## type [DatabaseManager](<https://github.com/CaliLuke/go-typeql/blob/main/driver/database.go#L14-L16>)
 
 DatabaseManager provides methods for administrative operations on TypeDB databases, such as creating, deleting, and listing databases.
 
@@ -170,7 +176,7 @@ type DatabaseManager struct {
 ```
 
 <a name="DatabaseManager.All"></a>
-### func \(\*DatabaseManager\) All
+### func \(\*DatabaseManager\) [All](<https://github.com/CaliLuke/go-typeql/blob/main/driver/database.go#L19>)
 
 ```go
 func (dm *DatabaseManager) All() ([]string, error)
@@ -179,7 +185,7 @@ func (dm *DatabaseManager) All() ([]string, error)
 All returns the names of all databases currently existing on the server.
 
 <a name="DatabaseManager.Contains"></a>
-### func \(\*DatabaseManager\) Contains
+### func \(\*DatabaseManager\) [Contains](<https://github.com/CaliLuke/go-typeql/blob/main/driver/database.go#L63>)
 
 ```go
 func (dm *DatabaseManager) Contains(name string) (bool, error)
@@ -188,7 +194,7 @@ func (dm *DatabaseManager) Contains(name string) (bool, error)
 Contains returns true if a database with the specified name exists on the server.
 
 <a name="DatabaseManager.Create"></a>
-### func \(\*DatabaseManager\) Create
+### func \(\*DatabaseManager\) [Create](<https://github.com/CaliLuke/go-typeql/blob/main/driver/database.go#L46>)
 
 ```go
 func (dm *DatabaseManager) Create(name string) error
@@ -197,7 +203,7 @@ func (dm *DatabaseManager) Create(name string) error
 Create creates a new database with the given name on the server.
 
 <a name="DatabaseManager.Delete"></a>
-### func \(\*DatabaseManager\) Delete
+### func \(\*DatabaseManager\) [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/driver/database.go#L108>)
 
 ```go
 func (dm *DatabaseManager) Delete(name string) error
@@ -206,7 +212,7 @@ func (dm *DatabaseManager) Delete(name string) error
 Delete permanently removes the database with the specified name from the server.
 
 <a name="DatabaseManager.Schema"></a>
-### func \(\*DatabaseManager\) Schema
+### func \(\*DatabaseManager\) [Schema](<https://github.com/CaliLuke/go-typeql/blob/main/driver/database.go#L83>)
 
 ```go
 func (dm *DatabaseManager) Schema(name string) (string, error)
@@ -215,9 +221,11 @@ func (dm *DatabaseManager) Schema(name string) (string, error)
 Schema returns the full schema of the specified database as a TypeQL 'define' query string.
 
 <a name="Driver"></a>
-## type Driver
+## type [Driver](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L56-L68>)
 
 Driver represents an active connection to a TypeDB server. It is used to open transactions and manage databases.
+
+The underlying Rust driver handle is internally thread\-safe, so driver\-level operations \(opening transactions, database management, ServerVersion\) run concurrently; only Close serializes against them while it frees the handle.
 
 ```go
 type Driver struct {
@@ -226,7 +234,7 @@ type Driver struct {
 ```
 
 <a name="Open"></a>
-### func Open
+### func [Open](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L105>)
 
 ```go
 func Open(address, username, password string) (*Driver, error)
@@ -235,7 +243,7 @@ func Open(address, username, password string) (*Driver, error)
 Open creates a new connection to a TypeDB server at the specified address. It uses the provided username and password for authentication.
 
 <a name="OpenWithAddressTranslation"></a>
-### func OpenWithAddressTranslation
+### func [OpenWithAddressTranslation](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L181>)
 
 ```go
 func OpenWithAddressTranslation(addressTranslation map[string]string, username, password string, opts DriverOptions) (*Driver, error)
@@ -246,7 +254,7 @@ OpenWithAddressTranslation creates a connection with public\-to\-private address
 Keys are user\-facing public addresses; values are private addresses advertised by TypeDB. This is useful for clusters, container port mappings, and network layouts where the address clients dial differs from the address the server reports.
 
 <a name="OpenWithAddresses"></a>
-### func OpenWithAddresses
+### func [OpenWithAddresses](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L172>)
 
 ```go
 func OpenWithAddresses(addresses []string, username, password string, opts DriverOptions) (*Driver, error)
@@ -257,7 +265,7 @@ OpenWithAddresses creates a new connection using one or more public TypeDB addre
 Use this for clustered or routed TypeDB deployments where several public server addresses are available. For a single address, this behaves like OpenWithOptions.
 
 <a name="OpenWithOptions"></a>
-### func OpenWithOptions
+### func [OpenWithOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L129>)
 
 ```go
 func OpenWithOptions(address, username, password string, opts DriverOptions) (*Driver, error)
@@ -268,7 +276,7 @@ OpenWithOptions creates a new connection to a TypeDB server with connection\-lev
 The address is dialed exactly as given. If the server advertises a private address that differs from the dialed one \(clusters, container port mappings such as the repo compose setup on localhost:1730\), configure the mapping explicitly via DriverOptions.AddressTranslation or OpenWithAddressTranslation. For local test setups, setting the TYPEDB\_GO\_COMPOSE\_PORT\_MAP environment variable to "1" maps any dialed localhost/127.0.0.1 address with a non\-1729 port to the advertised 127.0.0.1:1729.
 
 <a name="OpenWithTLS"></a>
-### func OpenWithTLS
+### func [OpenWithTLS](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L112>)
 
 ```go
 func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA string) (*Driver, error)
@@ -277,7 +285,7 @@ func OpenWithTLS(address, username, password string, tlsEnabled bool, tlsRootCA 
 OpenWithTLS creates a new connection to a TypeDB server with optional TLS configuration. If tlsEnabled is true, it establishes an encrypted connection. tlsRootCA can optionally specify a path to a custom root certificate authority.
 
 <a name="Driver.Close"></a>
-### func \(\*Driver\) Close
+### func \(\*Driver\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L416>)
 
 ```go
 func (d *Driver) Close()
@@ -285,8 +293,10 @@ func (d *Driver) Close()
 
 Close closes the driver connection and frees resources.
 
+Transactions still open on this driver are closed first \(their close jobs drain through the async close worker\), so forgotten transactions do not leak native handles or server\-side transactions. Close blocks behind in\-flight FFI calls: a running query on an open, non\-abandoned transaction must return before that transaction can be closed, and in\-flight driver calls \(transaction opens, database operations\) must return before the driver handle is freed.
+
 <a name="Driver.CloseDatabaseTransactions"></a>
-### func \(\*Driver\) CloseDatabaseTransactions
+### func \(\*Driver\) [CloseDatabaseTransactions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L456>)
 
 ```go
 func (d *Driver) CloseDatabaseTransactions(ctx context.Context, databaseName string) error
@@ -295,7 +305,7 @@ func (d *Driver) CloseDatabaseTransactions(ctx context.Context, databaseName str
 CloseDatabaseTransactions synchronously closes all transactions opened by this driver for the named database.
 
 <a name="Driver.Databases"></a>
-### func \(\*Driver\) Databases
+### func \(\*Driver\) [Databases](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L566>)
 
 ```go
 func (d *Driver) Databases() *DatabaseManager
@@ -304,7 +314,7 @@ func (d *Driver) Databases() *DatabaseManager
 Databases returns a DatabaseManager for this connection.
 
 <a name="Driver.HasOpenTransactions"></a>
-### func \(\*Driver\) HasOpenTransactions
+### func \(\*Driver\) [HasOpenTransactions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L443>)
 
 ```go
 func (d *Driver) HasOpenTransactions(databaseName string) (bool, error)
@@ -313,7 +323,7 @@ func (d *Driver) HasOpenTransactions(databaseName string) (bool, error)
 HasOpenTransactions reports whether this driver has locally opened transactions for the named database that have not been committed, rolled back, or closed.
 
 <a name="Driver.IsOpen"></a>
-### func \(\*Driver\) IsOpen
+### func \(\*Driver\) [IsOpen](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L370>)
 
 ```go
 func (d *Driver) IsOpen() bool
@@ -322,7 +332,7 @@ func (d *Driver) IsOpen() bool
 IsOpen checks if the driver connection is still open.
 
 <a name="Driver.ServerVersion"></a>
-### func \(\*Driver\) ServerVersion
+### func \(\*Driver\) [ServerVersion](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L383>)
 
 ```go
 func (d *Driver) ServerVersion() (ServerVersion, error)
@@ -333,7 +343,7 @@ ServerVersion returns the version reported by the connected TypeDB server.
 It is useful for startup diagnostics and for checking that the server is compatible with the linked TypeDB driver protocol.
 
 <a name="Driver.Transaction"></a>
-### func \(\*Driver\) Transaction
+### func \(\*Driver\) [Transaction](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L524>)
 
 ```go
 func (d *Driver) Transaction(databaseName string, txnType TransactionType) (*Transaction, error)
@@ -342,7 +352,7 @@ func (d *Driver) Transaction(databaseName string, txnType TransactionType) (*Tra
 Transaction opens a new transaction with default options.
 
 <a name="Driver.TransactionWithOptions"></a>
-### func \(\*Driver\) TransactionWithOptions
+### func \(\*Driver\) [TransactionWithOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L529>)
 
 ```go
 func (d *Driver) TransactionWithOptions(databaseName string, txnType TransactionType, opts *TransactionOptions) (*Transaction, error)
@@ -351,7 +361,7 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 TransactionWithOptions opens a new transaction with the given options.
 
 <a name="DriverError"></a>
-## type DriverError
+## type [DriverError](<https://github.com/CaliLuke/go-typeql/blob/main/driver/errors.go#L12-L17>)
 
 DriverError represents an error returned by the underlying TypeDB Rust driver.
 
@@ -365,7 +375,7 @@ type DriverError struct {
 ```
 
 <a name="DriverError.Error"></a>
-### func \(\*DriverError\) Error
+### func \(\*DriverError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/driver/errors.go#L19>)
 
 ```go
 func (e *DriverError) Error() string
@@ -374,7 +384,7 @@ func (e *DriverError) Error() string
 
 
 <a name="DriverOptions"></a>
-## type DriverOptions
+## type [DriverOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L75-L93>)
 
 DriverOptions configures connection\-level TypeDB driver behavior.
 
@@ -403,7 +413,7 @@ type DriverOptions struct {
 ```
 
 <a name="GivenRows"></a>
-## type GivenRows
+## type [GivenRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L17-L20>)
 
 GivenRows contains typed input rows for a TypeQL query with a given stage.
 
@@ -417,7 +427,7 @@ type GivenRows struct {
 ```
 
 <a name="NewGivenRows"></a>
-### func NewGivenRows
+### func [NewGivenRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L83>)
 
 ```go
 func NewGivenRows(variables ...string) *GivenRows
@@ -426,7 +436,7 @@ func NewGivenRows(variables ...string) *GivenRows
 NewGivenRows creates a GivenRows value with the given variable names.
 
 <a name="GivenRows.Add"></a>
-### func \(\*GivenRows\) Add
+### func \(\*GivenRows\) [Add](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L89>)
 
 ```go
 func (r *GivenRows) Add(values ...GivenValue) error
@@ -435,7 +445,7 @@ func (r *GivenRows) Add(values ...GivenValue) error
 Add appends a row. It returns an error if the row width does not match the declared variable count.
 
 <a name="GivenRows.MustAdd"></a>
-### func \(\*GivenRows\) MustAdd
+### func \(\*GivenRows\) [MustAdd](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L101>)
 
 ```go
 func (r *GivenRows) MustAdd(values ...GivenValue) *GivenRows
@@ -444,7 +454,7 @@ func (r *GivenRows) MustAdd(values ...GivenValue) *GivenRows
 MustAdd appends a row and panics if the row is invalid.
 
 <a name="GivenValue"></a>
-## type GivenValue
+## type [GivenValue](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L23-L26>)
 
 GivenValue is a typed value or opaque concept handle for a given input row.
 
@@ -456,7 +466,7 @@ type GivenValue struct {
 ```
 
 <a name="BoolGiven"></a>
-### func BoolGiven
+### func [BoolGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L154>)
 
 ```go
 func BoolGiven(v bool) GivenValue
@@ -465,7 +475,7 @@ func BoolGiven(v bool) GivenValue
 BoolGiven creates a boolean given row entry.
 
 <a name="ConceptGiven"></a>
-### func ConceptGiven
+### func [ConceptGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L149>)
 
 ```go
 func ConceptGiven(v Concept) GivenValue
@@ -474,7 +484,7 @@ func ConceptGiven(v Concept) GivenValue
 ConceptGiven creates a concept given row entry from an opaque concept handle.
 
 <a name="DateGiven"></a>
-### func DateGiven
+### func [DateGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L180>)
 
 ```go
 func DateGiven(v string) GivenValue
@@ -483,7 +493,7 @@ func DateGiven(v string) GivenValue
 DateGiven creates a date given row entry from an ISO\-8601 date string.
 
 <a name="DatetimeGiven"></a>
-### func DatetimeGiven
+### func [DatetimeGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L186>)
 
 ```go
 func DatetimeGiven(v string) GivenValue
@@ -492,7 +502,7 @@ func DatetimeGiven(v string) GivenValue
 DatetimeGiven creates a datetime given row entry from an ISO\-8601 local datetime string.
 
 <a name="DatetimeTZGiven"></a>
-### func DatetimeTZGiven
+### func [DatetimeTZGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L192>)
 
 ```go
 func DatetimeTZGiven(v string) GivenValue
@@ -501,7 +511,7 @@ func DatetimeTZGiven(v string) GivenValue
 DatetimeTZGiven creates a datetime\-tz given row entry from an ISO\-8601 timestamp with timezone.
 
 <a name="DecimalGiven"></a>
-### func DecimalGiven
+### func [DecimalGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L175>)
 
 ```go
 func DecimalGiven(v string) GivenValue
@@ -510,7 +520,7 @@ func DecimalGiven(v string) GivenValue
 DecimalGiven creates a decimal given row entry from its TypeDB decimal string representation.
 
 <a name="DoubleGiven"></a>
-### func DoubleGiven
+### func [DoubleGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L164>)
 
 ```go
 func DoubleGiven(v float64) GivenValue
@@ -519,7 +529,7 @@ func DoubleGiven(v float64) GivenValue
 DoubleGiven creates a double given row entry.
 
 <a name="DurationGiven"></a>
-### func DurationGiven
+### func [DurationGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L197>)
 
 ```go
 func DurationGiven(v string) GivenValue
@@ -528,7 +538,7 @@ func DurationGiven(v string) GivenValue
 DurationGiven creates a duration given row entry from a TypeDB duration string.
 
 <a name="EmptyGiven"></a>
-### func EmptyGiven
+### func [EmptyGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L144>)
 
 ```go
 func EmptyGiven() GivenValue
@@ -537,7 +547,7 @@ func EmptyGiven() GivenValue
 EmptyGiven creates an empty given row entry.
 
 <a name="IntGiven"></a>
-### func IntGiven
+### func [IntGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L159>)
 
 ```go
 func IntGiven(v int64) GivenValue
@@ -546,7 +556,7 @@ func IntGiven(v int64) GivenValue
 IntGiven creates an integer given row entry.
 
 <a name="StringGiven"></a>
-### func StringGiven
+### func [StringGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L169>)
 
 ```go
 func StringGiven(v string) GivenValue
@@ -555,7 +565,7 @@ func StringGiven(v string) GivenValue
 StringGiven creates a string given row entry.
 
 <a name="GivenValueType"></a>
-## type GivenValueType
+## type [GivenValueType](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L29>)
 
 GivenValueType identifies the TypeDB value type for a given row entry.
 
@@ -582,7 +592,7 @@ const (
 ```
 
 <a name="QueryOptions"></a>
-## type QueryOptions
+## type [QueryOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L43-L46>)
 
 QueryOptions provides configuration for fine\-tuning query execution behavior.
 
@@ -593,7 +603,7 @@ type QueryOptions struct {
 ```
 
 <a name="NewQueryOptions"></a>
-### func NewQueryOptions
+### func [NewQueryOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L49>)
 
 ```go
 func NewQueryOptions() *QueryOptions
@@ -602,7 +612,7 @@ func NewQueryOptions() *QueryOptions
 NewQueryOptions creates a new set of query options with default values.
 
 <a name="QueryOptions.Close"></a>
-### func \(\*QueryOptions\) Close
+### func \(\*QueryOptions\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L82>)
 
 ```go
 func (o *QueryOptions) Close()
@@ -611,7 +621,7 @@ func (o *QueryOptions) Close()
 Close releases the resources associated with the QueryOptions object.
 
 <a name="QueryOptions.SetConceptHandles"></a>
-### func \(\*QueryOptions\) SetConceptHandles
+### func \(\*QueryOptions\) [SetConceptHandles](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L76>)
 
 ```go
 func (o *QueryOptions) SetConceptHandles(enable bool) *QueryOptions
@@ -622,7 +632,7 @@ SetConceptHandles controls whether entity and relation concepts in row results c
 Handles are registered in a process\-global registry and stay valid across transactions until released, so every handle obtained this way must be freed with Concept.Release \(or ReleaseAllConcepts\) once it is no longer needed; otherwise the registry grows for the life of the process. Queries executed without this option never register handles.
 
 <a name="QueryOptions.SetIncludeInstanceTypes"></a>
-### func \(\*QueryOptions\) SetIncludeInstanceTypes
+### func \(\*QueryOptions\) [SetIncludeInstanceTypes](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L55>)
 
 ```go
 func (o *QueryOptions) SetIncludeInstanceTypes(include bool) *QueryOptions
@@ -631,7 +641,7 @@ func (o *QueryOptions) SetIncludeInstanceTypes(include bool) *QueryOptions
 SetIncludeInstanceTypes specifies whether the server should include type information for each concept returned in the query results.
 
 <a name="QueryOptions.SetPrefetchSize"></a>
-### func \(\*QueryOptions\) SetPrefetchSize
+### func \(\*QueryOptions\) [SetPrefetchSize](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L62>)
 
 ```go
 func (o *QueryOptions) SetPrefetchSize(size int64) *QueryOptions
@@ -640,7 +650,7 @@ func (o *QueryOptions) SetPrefetchSize(size int64) *QueryOptions
 SetPrefetchSize specifies the number of additional result rows to prefetch from the server. Increasing this can improve performance for large result sets.
 
 <a name="ServerVersion"></a>
-## type ServerVersion
+## type [ServerVersion](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L96-L101>)
 
 ServerVersion is the TypeDB server version reported by the connected server.
 
@@ -654,9 +664,14 @@ type ServerVersion struct {
 ```
 
 <a name="Transaction"></a>
-## type Transaction
+## type [Transaction](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L44-L61>)
 
 Transaction represents an active unit of work in a TypeDB database. Transactions are used to execute queries and must be either committed or closed.
+
+Lifecycle contract: whoever opens a transaction ends it exactly once via Commit, Rollback, Close, CloseAsync, or CloseChecked. Two backstops exist for transactions that escape that contract:
+
+- When a QueryWithContext call is cancelled, the transaction is abandoned: the background goroutine that is still blocked in the synchronous driver call frees the native handle once that call returns, and every later lifecycle call \(Commit, Rollback, Close, CloseAsync, CloseChecked, IsOpen\) returns immediately instead of blocking behind it.
+- A garbage\-collection finalizer frees the native handle of a transaction that was never ended, logging a leak warning.
 
 ```go
 type Transaction struct {
@@ -665,7 +680,7 @@ type Transaction struct {
 ```
 
 <a name="Transaction.Close"></a>
-### func \(\*Transaction\) Close
+### func \(\*Transaction\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L594>)
 
 ```go
 func (t *Transaction) Close()
@@ -674,43 +689,47 @@ func (t *Transaction) Close()
 Close terminates the transaction without committing any changes. It should be used in a 'defer' block to ensure resources are released.
 
 <a name="Transaction.CloseAsync"></a>
-### func \(\*Transaction\) CloseAsync
+### func \(\*Transaction\) [CloseAsync](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L607>)
 
 ```go
 func (t *Transaction) CloseAsync(onDone func(error))
 ```
 
-CloseAsync terminates the transaction without committing and returns without waiting for the checked TypeDB close to complete. If onDone is non\-nil and the checked close is queued, it is called exactly once when that close finishes. If the close queue is full, the transaction is dropped locally and onDone receives nil because no checked close result is available.
+CloseAsync terminates the transaction without committing and returns without waiting for the checked TypeDB close to complete. If onDone is non\-nil, it is called exactly once in every case:
+
+- if the checked close is queued, when that close finishes, with its result;
+- if the close queue is full, with nil, after the transaction is dropped locally \(no checked close result is available\);
+- if the transaction was already committed, rolled back, closed, or abandoned, with nil, before CloseAsync returns.
 
 <a name="Transaction.CloseChecked"></a>
-### func \(\*Transaction\) CloseChecked
+### func \(\*Transaction\) [CloseChecked](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L629>)
 
 ```go
 func (t *Transaction) CloseChecked() error
 ```
 
-CloseChecked terminates the transaction synchronously and returns the checked TypeDB close error, if any.
+CloseChecked terminates the transaction synchronously and returns the checked TypeDB close error, if any. It returns nil immediately when the transaction was already committed, rolled back, closed, or abandoned.
 
 <a name="Transaction.Commit"></a>
-### func \(\*Transaction\) Commit
+### func \(\*Transaction\) [Commit](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L536>)
 
 ```go
 func (t *Transaction) Commit() error
 ```
 
-Commit persists the changes made in the transaction to the database. Whether Commit succeeds or fails, the underlying Rust transaction handle is consumed and cannot be reused, rolled back, or closed again meaningfully.
+Commit persists the changes made in the transaction to the database. Whether Commit succeeds or fails, the underlying Rust transaction handle is consumed and cannot be reused, rolled back, or closed again meaningfully. Commit on a transaction abandoned by a cancelled QueryWithContext call returns ErrTransactionAbandoned immediately.
 
 <a name="Transaction.IsOpen"></a>
-### func \(\*Transaction\) IsOpen
+### func \(\*Transaction\) [IsOpen](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L315>)
 
 ```go
 func (t *Transaction) IsOpen() bool
 ```
 
-IsOpen returns true if the transaction is active and has not been committed, rolled back, or closed.
+IsOpen returns true if the transaction is active and has not been committed, rolled back, closed, or abandoned by a cancelled QueryWithContext call.
 
 <a name="Transaction.Query"></a>
-### func \(\*Transaction\) Query
+### func \(\*Transaction\) [Query](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L329>)
 
 ```go
 func (t *Transaction) Query(query string) ([]map[string]any, error)
@@ -719,24 +738,33 @@ func (t *Transaction) Query(query string) ([]map[string]any, error)
 Query executes a TypeQL query \(match, insert, delete, update\) within the transaction. It returns the results as a slice of maps, where each map represents a ConceptRow.
 
 <a name="Transaction.QueryWithContext"></a>
-### func \(\*Transaction\) QueryWithContext
+### func \(\*Transaction\) [QueryWithContext](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L424>)
 
 ```go
 func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map[string]any, error)
 ```
 
-QueryWithContext executes a TypeQL query with context cancellation support.
+QueryWithContext executes a TypeQL query with context cancellation support and default query options. It is equivalent to QueryWithContextAndOptions with nil options and rows; see that method for the cancellation semantics.
+
+<a name="Transaction.QueryWithContextAndOptions"></a>
+### func \(\*Transaction\) [QueryWithContextAndOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L448>)
+
+```go
+func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query string, opts *QueryOptions, rows *GivenRows) ([]map[string]any, error)
+```
+
+QueryWithContextAndOptions executes a TypeQL query with context cancellation support, query options, and optional typed input rows for a given stage. Nil opts and rows keep the driver defaults.
 
 Cancellation semantics are intentionally limited by the underlying Rust driver handle:
 
-- The transaction handle is single\-threaded, so every FFI call must hold t.mu for the duration of the synchronous C call.
-- If ctx is cancelled, only the caller's goroutine is released early with ctx.Err\(\). The in\-flight FFI call continues until the driver returns.
-- Commit, Rollback, and Close will block behind any in\-flight query until that synchronous FFI call finishes.
+- The transaction handle is single\-threaded, so every FFI call must hold the transaction mutex for the duration of the synchronous C call.
+- If ctx is cancelled, the caller is released early with ctx.Err\(\) and the transaction is abandoned. The in\-flight FFI call continues in the background until the driver returns, at which point the native handle is freed through the async close worker.
+- Once abandoned, Commit, Rollback, Close, CloseAsync, CloseChecked, and IsOpen return immediately \(with ErrTransactionAbandoned where an error is returned\) instead of blocking behind the in\-flight call, so a deferred Close after a cancelled query does not block.
 
-The goroutine exists only to let the caller stop waiting on a blocking FFI call. It does not make the underlying driver operation interruptible.
+If ctx is cancelled, the background call may keep using opts and rows until the driver returns; do not call opts.Close until the transaction's pending closes have drained \(see WaitForPendingCloses\).
 
 <a name="Transaction.QueryWithOptions"></a>
-### func \(\*Transaction\) QueryWithOptions
+### func \(\*Transaction\) [QueryWithOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L334>)
 
 ```go
 func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[string]any, error)
@@ -745,7 +773,7 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 QueryWithOptions executes a TypeQL query with specific QueryOptions.
 
 <a name="Transaction.QueryWithOptionsAndRows"></a>
-### func \(\*Transaction\) QueryWithOptionsAndRows
+### func \(\*Transaction\) [QueryWithOptionsAndRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L345>)
 
 ```go
 func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, rows *GivenRows) ([]map[string]any, error)
@@ -754,7 +782,7 @@ func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, 
 QueryWithOptionsAndRows executes a TypeQL query with query options and typed input rows for a given stage.
 
 <a name="Transaction.QueryWithRows"></a>
-### func \(\*Transaction\) QueryWithRows
+### func \(\*Transaction\) [QueryWithRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L339>)
 
 ```go
 func (t *Transaction) QueryWithRows(query string, rows *GivenRows) ([]map[string]any, error)
@@ -763,16 +791,16 @@ func (t *Transaction) QueryWithRows(query string, rows *GivenRows) ([]map[string
 QueryWithRows executes a TypeQL query with typed input rows for a given stage.
 
 <a name="Transaction.Rollback"></a>
-### func \(\*Transaction\) Rollback
+### func \(\*Transaction\) [Rollback](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L565>)
 
 ```go
 func (t *Transaction) Rollback() error
 ```
 
-Rollback discards all changes made within the transaction.
+Rollback discards all changes made within the transaction. Rollback on a transaction abandoned by a cancelled QueryWithContext call returns ErrTransactionAbandoned immediately.
 
 <a name="TransactionOptions"></a>
-## type TransactionOptions
+## type [TransactionOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L11-L13>)
 
 TransactionOptions provides configuration for tuning transaction behavior, such as timeouts and schema locking.
 
@@ -783,7 +811,7 @@ type TransactionOptions struct {
 ```
 
 <a name="NewTransactionOptions"></a>
-### func NewTransactionOptions
+### func [NewTransactionOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L16>)
 
 ```go
 func NewTransactionOptions() *TransactionOptions
@@ -792,7 +820,7 @@ func NewTransactionOptions() *TransactionOptions
 NewTransactionOptions creates a new set of transaction options with default values.
 
 <a name="TransactionOptions.Close"></a>
-### func \(\*TransactionOptions\) Close
+### func \(\*TransactionOptions\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L35>)
 
 ```go
 func (o *TransactionOptions) Close()
@@ -801,7 +829,7 @@ func (o *TransactionOptions) Close()
 Close releases the resources associated with the TransactionOptions object.
 
 <a name="TransactionOptions.SetSchemaLockTimeout"></a>
-### func \(\*TransactionOptions\) SetSchemaLockTimeout
+### func \(\*TransactionOptions\) [SetSchemaLockTimeout](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L29>)
 
 ```go
 func (o *TransactionOptions) SetSchemaLockTimeout(millis int64) *TransactionOptions
@@ -810,7 +838,7 @@ func (o *TransactionOptions) SetSchemaLockTimeout(millis int64) *TransactionOpti
 SetSchemaLockTimeout sets the timeout for acquiring a schema lock in milliseconds. This is relevant for Schema transactions.
 
 <a name="TransactionOptions.SetTimeout"></a>
-### func \(\*TransactionOptions\) SetTimeout
+### func \(\*TransactionOptions\) [SetTimeout](<https://github.com/CaliLuke/go-typeql/blob/main/driver/options.go#L22>)
 
 ```go
 func (o *TransactionOptions) SetTimeout(millis int64) *TransactionOptions
@@ -819,7 +847,7 @@ func (o *TransactionOptions) SetTimeout(millis int64) *TransactionOptions
 SetTimeout sets the overall transaction timeout in milliseconds. If the transaction exceeds this duration, it will be automatically rolled back.
 
 <a name="TransactionType"></a>
-## type TransactionType
+## type [TransactionType](<https://github.com/CaliLuke/go-typeql/blob/main/driver/driver.go#L27>)
 
 TransactionType specifies the intended mode of operation for a transaction.
 

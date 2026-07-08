@@ -130,6 +130,32 @@ err = txn.Commit()
 
 Transaction types: `Read` (0), `Write` (1), `Schema` (2).
 
+### Context Cancellation and Abandonment
+
+`QueryWithContext` (and `QueryWithContextAndOptions`, which also carries
+`*QueryOptions`/`*GivenRows`) returns `ctx.Err()` as soon as the context is
+cancelled, even while the FFI call is still running. The transaction is then
+**abandoned**: ownership of the native handle transfers to the in-flight call,
+which frees it in the background once the server returns. Subsequent
+`Commit`/`Rollback`/`Query*` calls return `ErrTransactionAbandoned`
+immediately, and `Close`/`CloseAsync` are instant no-ops — a deferred `Close`
+after a cancelled query never blocks behind a slow server. Bound the
+server-side work with `TransactionOptions.SetTimeout`; the abandoned call
+keeps consuming server resources until it finishes or times out. Don't
+`Close()` a `QueryOptions` passed to a cancelled call until pending closes
+drain (`WaitForPendingCloses`).
+
+Lifecycle guarantees: `CloseAsync(onDone)` invokes its callback exactly once
+in every path (queued, dropped, or already closed). Transactions that are
+garbage-collected while open are freed by a finalizer backstop that logs
+`typedb_go.tx.finalizer.leak` via `slog` — but rely on explicit
+`Commit`/`Rollback`/`Close`, not the finalizer. `Driver.Close()` closes any
+still-open transactions before releasing the driver handle.
+
+Concurrency: transaction opens, database-manager operations, and version
+checks run in parallel (the driver uses a read-write lock; only `Close` is
+exclusive). Individual transactions still serialize their own FFI calls.
+
 ### Given Rows
 
 TypeDB 3.12 adds the `given` stage for passing input rows separately from the
@@ -290,4 +316,5 @@ Driver-specific errors:
 
 - **ErrNotConnected** -- driver or transaction handle is nil
 - **ErrNilPointer** -- FFI returned a nil pointer without setting an error
+- **ErrTransactionAbandoned** -- transaction was abandoned after a cancelled context call
 - **DriverError** -- error message from the Rust driver
