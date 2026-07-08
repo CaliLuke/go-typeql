@@ -425,3 +425,28 @@ func TestCoerceDecimal_NamedTypes(t *testing.T) {
 		t.Error("expected error coercing decimal into int target, got nil")
 	}
 }
+
+// The live server (TypeDB 3.12.0) renders decimal values in Display form,
+// which carries the literal suffix: "99.99dec". Hydration must strip it for
+// both float and string targets.
+func TestCoerceDecimal_DecSuffix(t *testing.T) {
+	got, err := coerceDecimal("99.99dec", reflect.TypeOf(float64(0)))
+	if err != nil {
+		t.Fatalf("coerceDecimal failed: %v", err)
+	}
+	if v := got.(float64); v != 99.99 {
+		t.Errorf("got %v, want 99.99", v)
+	}
+
+	got, err = coerceDecimal("0.1dec", reflect.TypeOf(""))
+	if err != nil {
+		t.Fatalf("coerceDecimal failed: %v", err)
+	}
+	if v := got.(string); v != "0.1" {
+		t.Errorf("got %q, want \"0.1\"", v)
+	}
+
+	if _, err := coerceDecimal("notanumberdec", reflect.TypeOf(float64(0))); err == nil {
+		t.Error("expected error for unparseable suffixed value, got nil")
+	}
+}

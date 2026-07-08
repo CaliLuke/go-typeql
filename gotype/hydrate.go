@@ -6,6 +6,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -748,21 +749,22 @@ func float64ToInt64Checked(v float64) (int64, error) {
 }
 
 // coerceDecimal converts a raw decimal result value into the target Go type.
-// The Rust FFI driver transports TypeDB decimal values as strings (e.g.
-// "12.5"), so strings are the primary input; string targets receive the
-// digits verbatim (exact), float targets parse via strconv.ParseFloat
-// (lossy for non-representable fractions). Numeric inputs are accepted
-// defensively. The returned value has exactly targetType's dynamic type
-// (including named types).
+// The Rust FFI driver transports TypeDB decimal values as strings rendered by
+// the server's Display form, which carries the literal suffix (e.g.
+// "12.5dec" — verified against TypeDB 3.12.0); the suffix is stripped before
+// use. String targets receive the digits verbatim (exact), float targets
+// parse via strconv.ParseFloat (lossy for non-representable fractions).
+// Numeric inputs are accepted defensively. The returned value has exactly
+// targetType's dynamic type (including named types).
 func coerceDecimal(val any, targetType reflect.Type) (any, error) {
 	switch targetType.Kind() {
 	case reflect.String:
 		var s string
 		switch v := val.(type) {
 		case string:
-			s = v
+			s = strings.TrimSuffix(v, "dec")
 		case []byte:
-			s = string(v)
+			s = strings.TrimSuffix(string(v), "dec")
 		case float64:
 			s = strconv.FormatFloat(v, 'f', -1, 64)
 		case float32:
@@ -780,7 +782,7 @@ func coerceDecimal(val any, targetType reflect.Type) (any, error) {
 		var f64 float64
 		switch v := val.(type) {
 		case string:
-			parsed, err := strconv.ParseFloat(v, 64)
+			parsed, err := strconv.ParseFloat(strings.TrimSuffix(v, "dec"), 64)
 			if err != nil {
 				return nil, fmt.Errorf("cannot parse decimal value %q: %w", v, err)
 			}
