@@ -533,15 +533,28 @@ err = gotype.MigrateFromEmpty(ctx, db)
 
 The `SchemaDiff` struct contains:
 
-- `AddAttributes` -- new attribute types
-- `AddEntities` -- new entity types
-- `AddRelations` -- new relation types
-- `AddOwns` -- new attribute ownerships
-- `AddRelates` -- new role declarations
-- `RemoveOwns` -- ownerships in DB but not in code (warnings)
-- `RemoveTypes` -- types in DB but not in code (warnings)
+- `AddAttributes` / `AddEntities` / `AddRelations` -- new types
+- `AddOwns` / `AddRelates` / `AddPlays` -- new capabilities on existing types
+- `ModifyOwns` -- in-place `redefine`s (explicit `@card` changes)
+- `RemoveOwns` / `RemoveTypes` / `RemoveAttributes` -- destructive (need `WithForce`)
+- `Unsupported` -- detected but not automatable (value-type changes, `@key`/`@unique`
+  toggles, supertype/abstractness changes); check `HasBreakingChanges()`
 
-Only additive changes are applied automatically. Removals are flagged as warnings.
+Only additive changes are applied automatically; destructive changes need
+`SyncSchema(ctx, db, WithForce())`. All migration paths execute in a single schema
+transaction (atomic — no partial schema states), and the internal migration-tracking
+types are protected from removal. TypeDB refuses to undefine types that still have
+instances — delete data first.
+
+Preview before applying:
+
+```go
+plan, err := gotype.PlanSchema(ctx, db, gotype.WithForce())
+// plan.Statements (review), plan.Queries (what would execute atomically)
+```
+
+`WithSkipIfExists()` is a bootstrap guard: it skips the sync entirely when the
+database already contains user-defined types.
 
 ---
 
