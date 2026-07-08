@@ -1,6 +1,11 @@
 // Package tqlgen provides tools for parsing TypeQL schemas and generating Go code from them.
 package tqlgen
 
+import (
+	"fmt"
+	"strings"
+)
+
 // ParsedSchema holds all components extracted from a TypeQL schema file,
 // including attribute, entity, and relation definitions, as well as functions and structs.
 type ParsedSchema struct {
@@ -147,6 +152,8 @@ type OwnsSpec struct {
 	Unique bool
 	// Card specifies the cardinality of the ownership (e.g., "0..1", "1..5").
 	Card string
+	// IsList indicates a TypeQL 3.x ordered-list ownership (owns attr[]).
+	IsList bool
 	// Doc is the optional @doc annotation text.
 	Doc string
 	// Meta is the list of @meta annotations.
@@ -173,6 +180,8 @@ type RelatesSpec struct {
 	AsParent string
 	// Card specifies the cardinality of players allowed for this role.
 	Card string
+	// IsList indicates a TypeQL 3.x ordered-list role (relates role[]).
+	IsList bool
 	// Doc is the optional @doc annotation text.
 	Doc string
 	// Meta is the list of @meta annotations.
@@ -180,8 +189,11 @@ type RelatesSpec struct {
 }
 
 // AccumulateInheritance propagates owns/plays from parent entities/relations
-// to their children, so each child has the complete set of fields.
-func (s *ParsedSchema) AccumulateInheritance() {
+// to their children, so each child has the complete set of fields. It returns
+// an error when the schema declares an inheritance cycle (e.g. `a sub b` and
+// `b sub a`), which would otherwise recurse forever. Types whose parent is not
+// defined in the schema are left as-is.
+func (s *ParsedSchema) AccumulateInheritance() error {
 	// Build lookup maps
 	entityMap := make(map[string]*EntitySpec)
 	for i := range s.Entities {
@@ -192,60 +204,78 @@ func (s *ParsedSchema) AccumulateInheritance() {
 		relationMap[s.Relations[i].Name] = &s.Relations[i]
 	}
 
-	// Propagate entity inheritance
+	// Propagate entity inheritance. The state map memoizes finished types so
+	// each type is merged exactly once, and flags in-progress types so cycles
+	// surface as an error instead of infinite recursion.
+	entityState := make(map[string]visitState)
 	for i := range s.Entities {
-		e := &s.Entities[i]
-		if e.Parent == "" {
-			continue
+		if err := accumulateEntity(&s.Entities[i], entityMap, entityState, nil); err != nil {
+			return err
 		}
-		parent, ok := entityMap[e.Parent]
-		if !ok {
-			continue
-		}
-		// Recursively accumulate parent first
-		accumulateEntity(parent, entityMap)
-		e.Owns = mergeOwns(parent.Owns, e.Owns)
 	}
 
 	// Propagate relation inheritance
+	relationState := make(map[string]visitState)
 	for i := range s.Relations {
-		r := &s.Relations[i]
-		if r.Parent == "" {
-			continue
+		if err := accumulateRelation(&s.Relations[i], relationMap, relationState, nil); err != nil {
+			return err
 		}
-		parent, ok := relationMap[r.Parent]
-		if !ok {
-			continue
-		}
-		accumulateRelation(parent, relationMap)
-		r.Owns = mergeOwns(parent.Owns, r.Owns)
-		r.Relates = mergeRelates(parent.Relates, r.Relates)
 	}
+	return nil
 }
 
-func accumulateEntity(e *EntitySpec, m map[string]*EntitySpec) {
-	if e.Parent == "" {
-		return
-	}
-	parent, ok := m[e.Parent]
-	if !ok {
-		return
-	}
-	accumulateEntity(parent, m)
-	e.Owns = mergeOwns(parent.Owns, e.Owns)
+// visitState tracks inheritance traversal progress for cycle detection.
+type visitState int
+
+const (
+	visiting visitState = iota + 1
+	visited
+)
+
+// cycleError formats an inheritance-cycle error like "inheritance cycle: a -> b -> a".
+func cycleError(path []string, repeat string) error {
+	return fmt.Errorf("inheritance cycle: %s -> %s", strings.Join(path, " -> "), repeat)
 }
 
-func accumulateRelation(r *RelationSpec, m map[string]*RelationSpec) {
-	if r.Parent == "" {
-		return
+func accumulateEntity(e *EntitySpec, m map[string]*EntitySpec, state map[string]visitState, path []string) error {
+	switch state[e.Name] {
+	case visited:
+		return nil
+	case visiting:
+		return cycleError(path, e.Name)
 	}
-	parent, ok := m[r.Parent]
-	if !ok {
-		return
+	state[e.Name] = visiting
+	if e.Parent != "" {
+		if parent, ok := m[e.Parent]; ok {
+			if err := accumulateEntity(parent, m, state, append(path, e.Name)); err != nil {
+				return err
+			}
+			e.Owns = mergeOwns(parent.Owns, e.Owns)
+		}
 	}
-	accumulateRelation(parent, m)
-	r.Owns = mergeOwns(parent.Owns, r.Owns)
-	r.Relates = mergeRelates(parent.Relates, r.Relates)
+	state[e.Name] = visited
+	return nil
+}
+
+func accumulateRelation(r *RelationSpec, m map[string]*RelationSpec, state map[string]visitState, path []string) error {
+	switch state[r.Name] {
+	case visited:
+		return nil
+	case visiting:
+		return cycleError(path, r.Name)
+	}
+	state[r.Name] = visiting
+	if r.Parent != "" {
+		if parent, ok := m[r.Parent]; ok {
+			if err := accumulateRelation(parent, m, state, append(path, r.Name)); err != nil {
+				return err
+			}
+			r.Owns = mergeOwns(parent.Owns, r.Owns)
+			r.Relates = mergeRelates(parent.Relates, r.Relates)
+		}
+	}
+	state[r.Name] = visited
+	return nil
 }
 
 // mergeOwns combines parent and child owns, with child overriding parent.

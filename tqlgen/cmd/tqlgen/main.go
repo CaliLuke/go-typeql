@@ -54,7 +54,10 @@ func main() {
 	}
 
 	if *inherit {
-		schema.AccumulateInheritance()
+		if err := schema.AccumulateInheritance(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	var w *os.File

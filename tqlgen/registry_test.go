@@ -415,7 +415,9 @@ func TestRenderRegistry(t *testing.T) {
 				Owns: []OwnsSpec{{Attribute: "name"}}},
 		},
 	}
-	schema.AccumulateInheritance()
+	if err := schema.AccumulateInheritance(); err != nil {
+		t.Fatalf("AccumulateInheritance failed: %v", err)
+	}
 	data := BuildRegistryData(schema, RegistryConfig{
 		PackageName:  "graph",
 		SkipAbstract: true,
