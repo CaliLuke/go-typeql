@@ -130,9 +130,10 @@ func TestOr(t *testing.T) {
 	if len(patterns) != 1 {
 		t.Fatalf("expected 1 pattern, got %d", len(patterns))
 	}
-	assertContains(t, patterns[0], "or")
-	assertContains(t, patterns[0], `"Alice"`)
-	assertContains(t, patterns[0], `"Bob"`)
+	// Branch scope suffixes are deterministic: numbering starts at 1 per call.
+	want := `{ $e has name $e_o1__name; $e_o1__name == "Alice"; } or ` +
+		`{ $e has name $e_o2__name; $e_o2__name == "Bob"; };`
+	assertEqual(t, want, patterns[0])
 }
 
 func TestNot(t *testing.T) {
@@ -141,7 +142,8 @@ func TestNot(t *testing.T) {
 	if len(patterns) != 1 {
 		t.Fatalf("expected 1 pattern, got %d", len(patterns))
 	}
-	assertContains(t, patterns[0], "not {")
+	// Scope suffix is deterministic: numbering starts at 1 per call.
+	assertEqual(t, `not { $e has name $e_n1__name; $e_n1__name == "Alice"; };`, patterns[0])
 }
 
 func TestIn(t *testing.T) {

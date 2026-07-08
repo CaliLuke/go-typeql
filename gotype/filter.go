@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
@@ -499,9 +498,13 @@ func (f *AndFilter) Validate() error {
 
 // ToPatterns generates TypeQL patterns by concatenating all child filter patterns.
 func (f *AndFilter) ToPatterns(varName string) []string {
+	return f.toPatternsScoped(varName, &varScope{})
+}
+
+func (f *AndFilter) toPatternsScoped(varName string, scope *varScope) []string {
 	var patterns []string
 	for _, child := range f.Filters {
-		patterns = append(patterns, child.ToPatterns(varName)...)
+		patterns = append(patterns, filterPatterns(child, varName, scope)...)
 	}
 	return patterns
 }
@@ -531,14 +534,21 @@ func (f *OrFilter) Validate() error {
 }
 
 // ToPatterns generates TypeQL or-branch patterns with scoped variables.
+// Branch suffixes (_o1, _o2, ...) are allocated from a fresh per-call scope,
+// so the output is deterministic. Query builders instead thread one shared
+// scope through all filters of a query via filterPatterns, so sibling or/not
+// blocks never reuse a suffix within the same query.
 func (f *OrFilter) ToPatterns(varName string) []string {
+	return f.toPatternsScoped(varName, &varScope{})
+}
+
+func (f *OrFilter) toPatternsScoped(varName string, scope *varScope) []string {
 	var alternatives []string
 	for _, child := range f.Filters {
 		// Each Or branch gets a unique scope to avoid locally-scoped
 		// variable collisions (TypeDB 3.x constraint).
-		n := varScopeCounter.Add(1)
-		scopedVarName := fmt.Sprintf("%s_o%d", varName, n)
-		patterns := child.ToPatterns(varName)
+		scopedVarName := fmt.Sprintf("%s_o%d", varName, scope.next())
+		patterns := filterPatterns(child, varName, scope)
 		var scoped []string
 		for _, p := range patterns {
 			scoped = append(scoped, scopeLocalVars(p, varName, scopedVarName))
@@ -553,9 +563,45 @@ func Or(filters ...Filter) Filter {
 	return &OrFilter{Filters: filters}
 }
 
-// varScopeCounter generates unique suffixes for locally-scoped variables
-// to avoid collisions between or {} and not {} blocks (TypeDB 3.x constraint).
-var varScopeCounter atomic.Int64
+// varScope allocates unique suffixes for locally-scoped variables in or {}
+// and not {} blocks. TypeDB 3.x scopes variables locally to or/not branches,
+// but a name reused across two different blocks in the same conjunction
+// becomes a shared variable of the enclosing scope — so suffixes must be
+// unique across ALL or/not blocks of one query. Query builders create one
+// varScope per built query and thread it through filterPatterns; suffix
+// numbering therefore restarts at 1 for every query, making the generated
+// text deterministic.
+type varScope struct {
+	n int
+}
+
+// next returns the next unique suffix number within this scope.
+func (s *varScope) next() int {
+	s.n++
+	return s.n
+}
+
+// scopedPatternFilter is implemented by this package's composite filters so
+// that a single varScope can be threaded through an entire filter tree.
+//
+// Known limitation: a user-defined composite Filter that internally wraps an
+// OrFilter breaks the scope chain — filterPatterns falls back to its public
+// ToPatterns, so the inner Or numbers its branches from a fresh scope and
+// could collide with a sibling or/not block of the same query when both bind
+// the same attribute or variable name.
+type scopedPatternFilter interface {
+	toPatternsScoped(varName string, scope *varScope) []string
+}
+
+// filterPatterns generates the TypeQL patterns for f, threading scope through
+// filters that support per-query scoping (see scopedPatternFilter). External
+// Filter implementations fall back to f.ToPatterns(varName).
+func filterPatterns(f Filter, varName string, scope *varScope) []string {
+	if sf, ok := f.(scopedPatternFilter); ok {
+		return sf.toPatternsScoped(varName, scope)
+	}
+	return f.ToPatterns(varName)
+}
 
 // NotFilter negates a filter expression.
 type NotFilter struct {
@@ -568,12 +614,18 @@ func (f *NotFilter) Validate() error {
 }
 
 // ToPatterns generates TypeQL patterns wrapped in a not {} block.
+// The scope suffix (_n1, _n2, ...) is allocated from a fresh per-call scope,
+// so the output is deterministic; query builders thread one shared scope
+// through all filters of a query via filterPatterns (see varScope).
 func (f *NotFilter) ToPatterns(varName string) []string {
+	return f.toPatternsScoped(varName, &varScope{})
+}
+
+func (f *NotFilter) toPatternsScoped(varName string, scope *varScope) []string {
 	// Generate patterns with a scoped variable name to avoid collisions
 	// with locally-scoped variables in sibling or {} branches.
-	n := varScopeCounter.Add(1)
-	scopedVarName := fmt.Sprintf("%s_n%d", varName, n)
-	inner := f.Inner.ToPatterns(varName)
+	scopedVarName := fmt.Sprintf("%s_n%d", varName, scope.next())
+	inner := filterPatterns(f.Inner, varName, scope)
 	// Rename locally-introduced variables (e.g., $e__name → $e_n1__name)
 	// while keeping the entity variable ($e) unchanged.
 	var scoped []string
@@ -664,12 +716,16 @@ func (f *RolePlayerFilter) Validate() error {
 
 // ToPatterns generates TypeQL patterns linking a role player and applying inner filters.
 func (f *RolePlayerFilter) ToPatterns(varName string) []string {
+	return f.toPatternsScoped(varName, &varScope{})
+}
+
+func (f *RolePlayerFilter) toPatternsScoped(varName string, scope *varScope) []string {
 	roleVar := sanitizeVar(f.RoleName)
 	// Link the role player variable to the relation
 	linkPattern := fmt.Sprintf("$%s links (%s: $%s);", varName, f.RoleName, roleVar)
 
 	// Generate inner filter patterns using the role player variable
-	innerPatterns := f.Inner.ToPatterns(roleVar)
+	innerPatterns := filterPatterns(f.Inner, roleVar, scope)
 
 	patterns := []string{linkPattern}
 	patterns = append(patterns, innerPatterns...)

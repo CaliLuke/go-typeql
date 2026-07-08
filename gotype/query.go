@@ -182,8 +182,11 @@ func (q *Query[T]) buildMatchClause() (string, error) {
 	b.WriteString(q.mgr.info.TypeName)
 	b.WriteString(";")
 
+	// One varScope per built query: sibling or/not blocks — including ones in
+	// separate top-level filters — get unique, deterministic variable suffixes.
+	scope := &varScope{}
 	for _, f := range q.filters {
-		for _, pattern := range f.ToPatterns(varName) {
+		for _, pattern := range filterPatterns(f, varName, scope) {
 			b.WriteByte('\n')
 			b.WriteString(pattern)
 		}
@@ -430,8 +433,9 @@ func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error) {
 	varName := "e"
 	var patterns []string
 	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, aq.mgr.info.TypeName))
+	scope := &varScope{} // one scope per built query (see buildMatchClause)
 	for _, f := range aq.filters {
-		patterns = append(patterns, f.ToPatterns(varName)...)
+		patterns = append(patterns, filterPatterns(f, varName, scope)...)
 	}
 
 	attrVar := sanitizeVar(varName + "__" + aq.attr)
@@ -482,8 +486,9 @@ func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[s
 	varName := "e"
 	var patterns []string
 	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, q.mgr.info.TypeName))
+	scope := &varScope{} // one scope per built query (see buildMatchClause)
 	for _, f := range q.filters {
-		patterns = append(patterns, f.ToPatterns(varName)...)
+		patterns = append(patterns, filterPatterns(f, varName, scope)...)
 	}
 
 	// Build reduce assignments - one per spec
@@ -568,8 +573,9 @@ func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec
 	varName := "e"
 	var patterns []string
 	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, gq.mgr.info.TypeName))
+	scope := &varScope{} // one scope per built query (see buildMatchClause)
 	for _, f := range gq.filters {
-		patterns = append(patterns, f.ToPatterns(varName)...)
+		patterns = append(patterns, filterPatterns(f, varName, scope)...)
 	}
 
 	// Add has clause for the group-by attribute
