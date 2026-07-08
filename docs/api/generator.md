@@ -52,7 +52,19 @@ Given a TypeQL schema, tqlgen produces:
   unknown value types and `owns` of undefined attributes warn before defaulting to string
 - An error from `Render` when two schema labels map to the same Go name
   (e.g. `user-name` and `user_name` both becoming `UserName`)
-- `time` imports when emitted field types require them
+- `time` imports when emitted field types require them; the `gotype` import only
+  when entities or relations exist
+- Plain Go value structs from TypeQL `struct` definitions (optional fields →
+  pointers, struct-typed fields reference the generated structs); functions have
+  no codegen and are skipped with a warning
+- `// @regex(...)` / `// @range(...)` comments on owning fields; in registry mode,
+  `AttributeRegex` and `AttributeRange` maps
+- Enum constant names sanitized to valid Go (`"n/a"` → `GradeNA`), values emitted
+  as quoted string literals
+
+All output is gofmt-formatted; generation that would produce invalid Go fails with
+an error instead of writing a broken file. `PackageName` is required — `RenderDTO`,
+`RenderRegistry`, and `RenderLeafConstants` error when it is empty.
 - String constants from `@values` constraints (when `-enums=true`)
 - Go comments, `typedb_doc` tags, and `SchemaDoc()` methods from TypeDB `@doc`
   annotations
@@ -245,6 +257,10 @@ For each non-abstract relation `Bar`:
 - `BarCreate` — request with role player IDs and owned attributes
 
 Plus Go interfaces (`EntityOut`, `EntityCreate`, `EntityPatch`, `RelationOut`, `RelationCreate`) with `TypeName() string` methods.
+
+Multi-valued attributes (list syntax `owns x[]` or `@card` allowing more than one)
+are slice fields (`[]T`) in every DTO variant; base-struct Patch fields carry a
+single pointer level, never `**T`.
 
 ### DTO Configuration
 

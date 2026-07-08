@@ -716,6 +716,11 @@ The registry also generates convenience functions: `GetEntityKeys()`, `IsAbstrac
   `RenderConfig.WarnWriter`) before defaulting to string
 - `Render` errors when two schema labels map to the same Go name; roles nobody plays are
   emitted as `// TODO` comments instead of undefined Go types
+- All output is gofmt-formatted; invalid generated Go is a hard error. `PackageName` is
+  required for DTO/registry/leaf-constant rendering
+- TypeQL `struct` definitions become plain Go value structs; `@values` enum names are
+  sanitized (`"n/a"` → `GradeNA`); `@regex`/`@range` surface as field comments and as
+  registry `AttributeRegex`/`AttributeRange` maps
 - Generates string constants from `@values` constraints (`-enums`, on by default)
 - Decodes escaped TypeQL string literals in schema annotations, including `\uXXXX` and `\u{...}` forms in `@regex` and `@values`
 - Registry mode (`-registry`) outputs type constants, entity/relation maps, role schemas, abstract tracking, key attributes, schema hash
@@ -748,6 +753,9 @@ For each non-abstract entity `Foo`:
 - `FooOut` — response struct: `ID string`, `Type string`, all attribute fields
 - `FooCreate` — create request: required fields non-pointer (`@key`, `@unique`, `@card(1+)`), optional as `*T`
 - `FooPatch` — partial update: all fields as `*T` (nil = don't update)
+
+Multi-valued attributes (list syntax or `@card` max > 1) are slices (`[]T`, never
+`*[]T` or `**T`) in all DTO variants, including base-struct Patch fields.
 
 For each non-abstract relation `Bar`:
 
