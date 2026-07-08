@@ -334,10 +334,13 @@ func TestTypeQLSyntax_MigrationStatements(t *testing.T) {
 		ops := []Operation{
 			AddAttribute{Name: "email", ValueType: "string"},
 			AddEntity{Name: "person"},
+			AddEntity{Name: "manager", Parent: "person", Abstract: true},
 			AddRelation{Name: "employment"},
+			AddRelation{Name: "management", Parent: "employment", Abstract: true},
 			AddOwnership{Owner: "person", Attribute: "email"},
 			AddRole{Relation: "employment", Role: "employee"},
 			AddRolePlayer{Entity: "person", Relation: "employment", Role: "employee"},
+			ModifyOwnership{Owner: "person", Attribute: "email", OldAnnots: "@card(0..1)", NewAnnots: "@card(1..3)"},
 			RemoveAttribute{Name: "email"},
 			RemoveEntity{Name: "person"},
 			RemoveRelation{Name: "employment"},
@@ -352,4 +355,91 @@ func TestTypeQLSyntax_MigrationStatements(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("batched additive plan queries", func(t *testing.T) {
+		// The plan batches the whole additive statement stream — including
+		// inline plays clauses — into a single define block (issues #55, #34).
+		diff := DiffSchemaFromRegistry(&tqlgen.ParsedSchema{})
+		plan := diff.Plan()
+		if plan.IsEmpty() {
+			t.Fatal("expected a non-empty plan from an empty current schema")
+		}
+		for _, q := range plan.Queries {
+			assertTypeQL(t, "batched plan query", q, "")
+		}
+	})
+
+	t.Run("batched destructive plan queries", func(t *testing.T) {
+		diff := &SchemaDiff{
+			AddAttributes: []AttrChange{{Name: "fresh-attr", ValueType: "string"}},
+			ModifyOwns: []OwnsModify{
+				{TypeName: "person", Attribute: "email", OldAnnots: "@card(0..1)", NewAnnots: "@card(1..3)"},
+			},
+			RemoveOwns:       []OwnsChange{{TypeName: "person", Attribute: "old-attr"}},
+			RemoveTypes:      []string{"obsolete-entity", "obsolete-relation"},
+			RemoveAttributes: []string{"old-attr"},
+		}
+		plan := diff.Plan(WithDestructive())
+		if len(plan.Queries) != 3 {
+			t.Fatalf("expected define + redefine + undefine queries, got %d: %v", len(plan.Queries), plan.Queries)
+		}
+		for _, q := range plan.Queries {
+			assertTypeQL(t, "batched destructive plan query", q, "")
+		}
+	})
+
+	t.Run("plays generation for existing player types", func(t *testing.T) {
+		// An existing entity gaining a role in a new relation emits a
+		// standalone plays statement (issue #34).
+		diff := &SchemaDiff{
+			AddPlays: []PlaysChange{{TypeName: "person", Relation: "employment", Role: "employee"}},
+		}
+		for _, s := range diff.GenerateMigration() {
+			assertTypeQL(t, "plays migration statement", s, "")
+		}
+		for _, q := range diff.Plan().Queries {
+			assertTypeQL(t, "plays plan query", q, "")
+		}
+	})
+
+	t.Run("subtype define with annotations", func(t *testing.T) {
+		// Annotations must attach to the type name, with `sub <parent>` as a
+		// separate constraint — TypeDB 3.x rejects annotations placed after
+		// sub (issue #32).
+		diff := DiffSchema(&tqlgen.ParsedSchema{
+			Entities: []tqlgen.EntitySpec{
+				{Name: "base", Abstract: true},
+				{
+					Name:     "manager",
+					Parent:   "base",
+					Abstract: true,
+					Doc:      "A manager.",
+					Meta:     []tqlgen.MetaSpec{{Key: "owner", Value: "hr"}},
+					Plays:    []tqlgen.PlaysSpec{{Relation: "employment", Role: "employee"}},
+					Owns:     []tqlgen.OwnsSpec{{Attribute: "name", Key: true}},
+				},
+			},
+			Relations: []tqlgen.RelationSpec{
+				{Name: "base-rel", Abstract: true},
+				{
+					Name:    "employment",
+					Parent:  "base-rel",
+					Doc:     "An employment.",
+					Relates: []tqlgen.RelatesSpec{{Role: "employee", Card: "0..2"}},
+					Owns:    []tqlgen.OwnsSpec{{Attribute: "name"}},
+				},
+			},
+		}, &tqlgen.ParsedSchema{})
+		for _, q := range diff.Plan().Queries {
+			assertTypeQL(t, "subtype define query", q, "")
+		}
+	})
+}
+
+// TestTypeQLSyntax_MigrationStateQueries validates the queries the diff-based
+// migration state tracker emits, including the record insert that executes
+// inside the same schema transaction as the plan (issue #55).
+func TestTypeQLSyntax_MigrationStateQueries(t *testing.T) {
+	assertTypeQL(t, "migration tracking schema", migrationSchemaSQL, "")
+	assertTypeQL(t, "migration record insert", recordQuery("abc123", `add 1 attribute(s): "quoted"`), "")
 }
