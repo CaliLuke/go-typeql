@@ -203,8 +203,13 @@ func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) (
 }
 
 // GetByIID retrieves a single instance of T by its internal instance ID (IID).
-// It returns nil if no instance is found with the given IID.
+// It returns nil if no instance is found with the given IID. The IID must
+// match 0x[0-9a-fA-F]+; anything else is rejected with an error before any
+// query is sent.
 func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error) {
+	if err := validateIID(iid); err != nil {
+		return nil, fmt.Errorf("get_by_iid %s: %w", m.info.TypeName, err)
+	}
 	matchQuery := fmt.Sprintf("match\n$e isa %s, iid %s;", m.info.TypeName, iid)
 	fetchQuery, err := m.strategy.BuildFetchAll(m.info, "e")
 	if err != nil {
@@ -561,6 +566,9 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 
 // countByIID checks if an instance with the given IID exists.
 func (m *Manager[T]) countByIID(ctx context.Context, iid string) (int64, error) {
+	if err := validateIID(iid); err != nil {
+		return 0, err
+	}
 	query := fmt.Sprintf("match\n$e isa %s, iid %s;\nreduce $count = count($e);", m.info.TypeName, iid)
 	results, err := m.readQuery(ctx, query)
 	if err != nil {
@@ -631,6 +639,9 @@ func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, s
 	if err := checkCtx(ctx, "get_by_iid_polymorphic", m.info.TypeName); err != nil {
 		return nil, "", err
 	}
+	if err := validateIID(iid); err != nil {
+		return nil, "", fmt.Errorf("get_by_iid_polymorphic %s: %w", m.info.TypeName, err)
+	}
 
 	// Single query fetches type label + union of all subtype fields
 	matchQuery := fmt.Sprintf("match\n$e isa! $t, iid %s;\n$t sub %s;", iid, m.info.TypeName)
@@ -670,6 +681,9 @@ func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, s
 func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (any, string, error) {
 	if err := checkCtx(ctx, "get_by_iid_polymorphic_any", m.info.TypeName); err != nil {
 		return nil, "", err
+	}
+	if err := validateIID(iid); err != nil {
+		return nil, "", fmt.Errorf("get_by_iid_polymorphic_any %s: %w", m.info.TypeName, err)
 	}
 
 	// Single query fetches type label + union of all subtype fields
@@ -775,6 +789,11 @@ func (m *Manager[T]) buildFilteredMatch(varName string, filters map[string]any) 
 	// Sort attribute names so identical logical filters always produce
 	// identical query text (map iteration order is randomized).
 	for _, attr := range slices.Sorted(maps.Keys(filters)) {
+		// Attribute names are interpolated raw into the query, so reject
+		// anything that is not a plain TypeQL identifier (issue #45).
+		if err := validateAttrName(attr); err != nil {
+			return "", err
+		}
 		b.WriteString(",\nhas ")
 		b.WriteString(attr)
 		b.WriteByte(' ')

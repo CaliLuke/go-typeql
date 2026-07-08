@@ -183,6 +183,67 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 	})
 }
 
+// TestTypeQLSyntax_FilterEmissions validates the query text produced by the
+// filter combinators changed in the filters & validation cluster (issues
+// #46, #48, #85): scoped Or/Not branches over role players and computed
+// variables, escaped Startswith prefixes, and the empty-In contradiction.
+func TestTypeQLSyntax_FilterEmissions(t *testing.T) {
+	runFiltered := func(t *testing.T, label string, filters ...Filter) {
+		t.Helper()
+		registerMultiValueTypes(t)
+		readTx := &mockTx{}
+		conn := &mockConn{txs: []*mockTx{readTx}}
+		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
+		if _, err := mgr.Query().Filter(filters...).All(context.Background()); err != nil {
+			t.Fatalf("%s query failed: %v", label, err)
+		}
+		for _, q := range readTx.queries {
+			assertTypeQL(t, label, q, "")
+		}
+	}
+
+	t.Run("empty In contradiction", func(t *testing.T) {
+		runFiltered(t, "empty In query", In("name", nil))
+	})
+
+	t.Run("empty IIDIn contradiction", func(t *testing.T) {
+		runFiltered(t, "empty IIDIn query", IIDIn())
+	})
+
+	t.Run("startswith with regex metacharacters", func(t *testing.T) {
+		runFiltered(t, "startswith query", Startswith("email", "j.smith@corp.com"))
+	})
+
+	t.Run("or of computed filters", func(t *testing.T) {
+		runFiltered(t, "or-computed query",
+			Or(
+				And(Gt("age", 0), Computed("doubled", ArithmeticExpr("e", "age", "*", "age"), ">", 100)),
+				And(Gt("age", 0), Computed("doubled", ArithmeticExpr("e", "age", "*", "age"), "<", 10)),
+			))
+	})
+
+	t.Run("not of empty In", func(t *testing.T) {
+		runFiltered(t, "not-empty-in query", Not(In("name", nil)))
+	})
+
+	t.Run("or of role players", func(t *testing.T) {
+		registerMultiValueTypes(t)
+		readTx := &mockTx{}
+		conn := &mockConn{txs: []*mockTx{readTx}}
+		mgr := MustNewManager[testTeam](NewDatabase(conn, "test_db"))
+		f := Or(
+			RolePlayer("member", Eq("name", "Alice")),
+			RolePlayer("member", Eq("name", "Bob")),
+		)
+		if _, err := mgr.Query().Filter(f).All(context.Background()); err != nil {
+			t.Fatalf("or-roleplayer query failed: %v", err)
+		}
+		for _, q := range readTx.queries {
+			assertTypeQL(t, "or-roleplayer query", q, "")
+		}
+	})
+}
+
 // TestTypeQLSyntax_DatetimeInsert validates the datetime literal shape the
 // Manager emits for time.Time fields (issues #53/#66): naive UTC datetime
 // literals, including midnight and non-UTC sub-second values.

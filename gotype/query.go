@@ -168,6 +168,12 @@ func (q *Query[T]) countThenWrite(ctx context.Context, op, countQuery, writeQuer
 // --- Query building ---
 
 func (q *Query[T]) buildMatchClause() (string, error) {
+	// Surface filter construction errors (invalid attribute names, malformed
+	// IIDs, non-scalar comparison values) as build errors instead of injected
+	// query text or execution-time panics (issues #45, #50).
+	if err := validateFilters(q.filters...); err != nil {
+		return "", err
+	}
 	varName := "e"
 	var b strings.Builder
 	b.WriteString("match\n$")
@@ -202,6 +208,10 @@ func (q *Query[T]) buildQuery() (string, error) {
 	// Sort
 	if len(q.orderBy) > 0 {
 		for _, o := range q.orderBy {
+			// Order-by attribute names are interpolated raw (issue #45).
+			if err := validateAttrName(o.Attr); err != nil {
+				return "", err
+			}
 			attrVar := sanitizeVar("e__" + o.Attr)
 			// Ensure we have a has pattern for the sort attribute
 			b.WriteString("\n$e has ")
@@ -349,6 +359,10 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 	var tryDeletes []string
 	var insHas []string
 	for i, attr := range slices.Sorted(maps.Keys(updates)) {
+		// Update attribute names are interpolated raw (issue #45).
+		if err := validateAttrName(attr); err != nil {
+			return 0, fmt.Errorf("bulk_update %s: %w", q.mgr.info.TypeName, err)
+		}
 		tryMatches = append(tryMatches, fmt.Sprintf("try { $e has %s $old%d; };", attr, i))
 		tryDeletes = append(tryDeletes, fmt.Sprintf("try { $old%d of $e; };", i))
 		insHas = append(insHas, fmt.Sprintf("has %s %s", attr, FormatValue(updates[attr])))
@@ -407,6 +421,12 @@ func (q *Query[T]) Variance(attr string) *AggregateQuery[T] {
 
 // Execute runs the aggregate query and returns the result as float64.
 func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error) {
+	if err := validateFilters(aq.filters...); err != nil {
+		return 0, fmt.Errorf("%s %s.%s: %w", aq.fn, aq.mgr.info.TypeName, aq.attr, err)
+	}
+	if err := validateAttrName(aq.attr); err != nil {
+		return 0, fmt.Errorf("%s %s: %w", aq.fn, aq.mgr.info.TypeName, err)
+	}
 	varName := "e"
 	var patterns []string
 	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, aq.mgr.info.TypeName))
@@ -448,6 +468,14 @@ type AggregateSpec struct {
 func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[string]float64, error) {
 	if len(specs) == 0 {
 		return nil, nil
+	}
+	if err := validateFilters(q.filters...); err != nil {
+		return nil, fmt.Errorf("aggregate %s: %w", q.mgr.info.TypeName, err)
+	}
+	for _, spec := range specs {
+		if err := validateAttrName(spec.Attr); err != nil {
+			return nil, fmt.Errorf("aggregate %s: %w", q.mgr.info.TypeName, err)
+		}
 	}
 
 	// Build match patterns
@@ -524,6 +552,17 @@ func (q *Query[T]) GroupBy(attr string) *GroupByQuery[T] {
 func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[string]map[string]float64, error) {
 	if len(specs) == 0 {
 		return nil, nil
+	}
+	if err := validateFilters(gq.filters...); err != nil {
+		return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
+	}
+	if err := validateAttrName(gq.groupBy); err != nil {
+		return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
+	}
+	for _, spec := range specs {
+		if err := validateAttrName(spec.Attr); err != nil {
+			return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
+		}
 	}
 
 	varName := "e"
