@@ -115,7 +115,10 @@ func TestPaginatedSearchTemplate(t *testing.T) {
 	if !strings.Contains(query, "{ $n isa user_story; } or { $n isa task; }") {
 		t.Fatalf("expected type alternatives, got:\n%s", query)
 	}
-	if !strings.Contains(query, "sort $n.name desc;") {
+	if !strings.Contains(query, "$n has name $sort_name;") {
+		t.Fatalf("expected sort attribute binding, got:\n%s", query)
+	}
+	if !strings.Contains(query, "sort $sort_name desc;") {
 		t.Fatalf("expected descending sort, got:\n%s", query)
 	}
 	if !strings.Contains(query, "offset 10;") {

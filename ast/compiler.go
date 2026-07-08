@@ -504,7 +504,9 @@ func (c *Compiler) compileFetchItem(item any) (string, error) {
 		return `"` + fi.Key + `": ` + fi.FuncName + "(" + fi.Var + ")", nil
 
 	case FetchWildcard:
-		return `"` + fi.Key + `": ` + fi.Var + ".*", nil
+		// Attribute wildcards are only valid inside an object per the TypeQL
+		// grammar, so the braced form is the only parseable emission.
+		return `"` + fi.Key + `": { ` + fi.Var + ".* }", nil
 
 	case FetchNestedWildcard:
 		return `"` + fi.Key + `": { ` + fi.Var + ".* }", nil

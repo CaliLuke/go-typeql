@@ -15,10 +15,16 @@ import (
 // These define the TypeQL schema grammar using struct tags.
 // The grammar handles attribute, entity, relation, struct, and function definitions.
 
-// AttrDef parses: attribute name [,] value type [@constraint(...)];
+// AttrDef parses: attribute name [sub parent] [annotations] [,] [value type] [@constraint(...)];
+// The value clause is optional: abstract attribute supertypes omit it, and
+// subtyped attributes inherit it from their parent chain (resolved in
+// convertAST).
 type AttrDef struct {
-	Name      string       `parser:"'attribute' @Ident ','?"`
-	ValueType string       `parser:"'value' @Ident"`
+	Name      string       `parser:"'attribute' @Ident"`
+	Parent    *SubClause   `parser:"@@?"`
+	PreAnnots []Annotation `parser:"@@*"`
+	Comma     string       `parser:"','?"`
+	ValueType string       `parser:"('value' @Ident)?"`
 	Annots    []Annotation `parser:"@@*"`
 	Semi      string       `parser:"';'"`
 }
@@ -208,24 +214,25 @@ type SimpleDef struct {
 	Fun       *FunDef      `parser:"| @@"`
 }
 
-// FunDef parses: fun name <body tokens until next fun or EOF>
+// FunDef parses: fun name <body tokens until the next top-level definition or EOF>
 // The body is captured as a flat list of tokens for signature extraction.
 type FunDef struct {
-	Name string       `parser:"FunKW @Ident"`
+	Name string       `parser:"'fun' @Ident"`
 	Body []FunBodyTok `parser:"@@*"`
 }
 
-// FunBodyTok matches every token type EXCEPT FunKW. When the parser hits the
-// next `fun`, it exits the current FunDef and starts a new one.
+// FunBodyTok matches any token except the keywords that open a new top-level
+// definition (or another fun), so the parser exits the function body at the
+// next definition instead of swallowing the rest of the file. Limitation: a
+// function body using one of these words as a bare label (e.g. `$t sub entity`)
+// ends the body early at that word.
 type FunBodyTok struct {
-	Tok string `parser:"@(Ident | Keyword | Punct | String | CardExpr | AnnotKW | Var | Arrow | Operator)"`
+	Tok string `parser:"(?! 'entity' | 'relation' | 'attribute' | 'struct' | 'fun' ) @(Ident | Punct | String | CardExpr | AnnotKW | Var | Arrow | Operator)"`
 }
 
 var simpleLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Comment", Pattern: `#[^\n]*`},
 	{Name: "Whitespace", Pattern: `[\s]+`},
-	{Name: "FunKW", Pattern: `\bfun\b`},
-	{Name: "Keyword", Pattern: `\b(define|given|attribute|entity|relation|sub|value|owns|plays|relates|as|struct|match|return|isa|has|not|or|in|is|count|sum|max|min|mean|median|std|group)\b`},
 	{Name: "AnnotKW", Pattern: `@(key|unique|abstract|cascade|independent|distinct|card|regex|values|range|subkey|doc|meta)`},
 	{Name: "String", Pattern: `"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`},
 	{Name: "Var", Pattern: `\$[a-zA-Z_][a-zA-Z0-9_-]*`},
@@ -357,7 +364,33 @@ func convertAST(file *TQLFileSimple) *ParsedSchema {
 		}
 	}
 
+	resolveAttrValueTypes(schema)
 	return schema
+}
+
+// resolveAttrValueTypes fills the value type of subtyped attributes that omit
+// an explicit `value` clause by walking the parent chain (with a cycle guard).
+// Abstract roots with no value type anywhere in the chain keep an empty
+// ValueType.
+func resolveAttrValueTypes(schema *ParsedSchema) {
+	byName := make(map[string]*AttributeSpec, len(schema.Attributes))
+	for i := range schema.Attributes {
+		byName[schema.Attributes[i].Name] = &schema.Attributes[i]
+	}
+	for i := range schema.Attributes {
+		a := &schema.Attributes[i]
+		seen := map[string]bool{a.Name: true}
+		parent := a.Parent
+		for a.ValueType == "" && parent != "" && !seen[parent] {
+			seen[parent] = true
+			p, ok := byName[parent]
+			if !ok {
+				break
+			}
+			a.ValueType = p.ValueType
+			parent = p.Parent
+		}
+	}
 }
 
 func convertStruct(s *StructDefP) StructSpec {
@@ -386,8 +419,14 @@ func convertAttr(a *AttrDef) AttributeSpec {
 		Name:      a.Name,
 		ValueType: a.ValueType,
 	}
-	applyDocMeta(a.Annots, &spec.Doc, &spec.Meta)
-	for _, ann := range a.Annots {
+	annots := append(append([]Annotation{}, a.PreAnnots...), a.Annots...)
+	if a.Parent != nil {
+		spec.Parent = a.Parent.Parent
+		annots = append(annots, a.Parent.Annots...)
+	}
+	spec.Abstract = hasAbstract(annots)
+	applyDocMeta(annots, &spec.Doc, &spec.Meta)
+	for _, ann := range annots {
 		if ann.Regex != nil {
 			spec.Regex = unquote(ann.Regex.Pattern)
 		}

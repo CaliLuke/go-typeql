@@ -32,12 +32,21 @@ golangci-lint run ./...         # Comprehensive linter (50+ checks)
 # Full quality gates — runs the lint trio plus goimports, tidy drift, and tests
 ./check.sh                      # or: make check
 ./check.sh --fix                # auto-format (goimports -w, golangci --fix)
+
+# Official TypeQL syntax checker (one-time install; used by the syntax test gates)
+make install-typeql-check
 ```
 
 The `check.sh` script is the single entry point for pre-push verification. Scope is unit
-packages (`ast/`, `gotype/`, `tqlgen/`, `cmd/`) — `driver/` needs CGo + a built Rust lib
-and is covered by `make test-integration` and `/release-checks`. Non-blocking reports
+packages (`ast/`, `gotype/`, `tqlgen/`, `cmd/`, `internal/`) — `driver/` needs CGo + a built
+Rust lib and is covered by `make test-integration` and `/release-checks`. Non-blocking reports
 (`dupl`, `gocyclo`) print at the end as tracked metrics, not gates.
+
+**TypeQL syntax gates:** generated TypeQL is validated with the official `typeql-check` CLI
+(soft dependency — see `internal/typeqlcheck` and docs/TESTING.md). When emitting new or changed
+TypeQL, add it to the `typeql_syntax_test.go` battery in the package. Known-invalid outputs are
+marked with `knownIssue` skips tied to open issues; when fixing one of those issues, remove the
+marker — the test fails loudly once the output becomes valid.
 
 ## Code Quality Standards
 
@@ -63,7 +72,7 @@ Four packages with deliberate CGo isolation:
 
 - **`ast/`** — TypeQL AST nodes + compiler. Pure Go, zero dependencies. Type-switch dispatch.
 - **`gotype/`** — ORM core. Models, CRUD, queries, filters, migration. **No CGo.** Decoupled from driver via `Conn`/`Tx` interfaces.
-- **`tqlgen/`** — Code generator. TypeQL schema → Go structs. Participle-based parser handles `define` blocks (attributes, entities, relations, structs) directly via grammar. Functions are stripped by a character-level scanner (string/comment-aware) and extracted separately via regex.
+- **`tqlgen/`** — Code generator. TypeQL schema → Go structs. Participle-based parser handles `define` blocks (attributes, entities, relations, structs, functions) directly via grammar; function bodies are captured as flat token lists for signature extraction and end at the next top-level definition keyword.
 - **`driver/`** — Rust FFI bindings. **All files gated with `//go:build cgo && typedb`**. Integration tests additionally gated with `integration`.
 
 The key decoupling: `gotype/session.go` defines `Conn` and `Tx` interfaces that the driver satisfies. This means `gotype/` compiles, tests, and works without CGo — unit tests use `mockTx`/`mockConn`.

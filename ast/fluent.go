@@ -98,9 +98,6 @@ func (s fluentState) nodes() []QueryNode {
 	if len(s.insertStatements) > 0 {
 		nodes = append(nodes, Insert(s.insertStatements...))
 	}
-	if len(s.fetchItems) > 0 {
-		nodes = append(nodes, Fetch(s.fetchItems...))
-	}
 	if len(s.selectVars) > 0 {
 		nodes = append(nodes, Select(s.selectVars...))
 	}
@@ -112,6 +109,10 @@ func (s fluentState) nodes() []QueryNode {
 	}
 	if s.limitClause != nil {
 		nodes = append(nodes, *s.limitClause)
+	}
+	// Fetch must be the terminal pipeline stage in TypeQL 3.x.
+	if len(s.fetchItems) > 0 {
+		nodes = append(nodes, Fetch(s.fetchItems...))
 	}
 	return nodes
 }
@@ -530,7 +531,12 @@ func PaginatedSearch(types []string, opts PaginatedSearchOptions) (string, error
 			direction = "desc"
 			sortAttr = strings.TrimPrefix(sortAttr, "-")
 		}
-		s := Sort(v+"."+sortAttr, direction)
+		// Sort operands must be plain variables, so bind the attribute first
+		// ($n has <attr> $sort_<attr>) and sort on the bound variable.
+		sortVar := "$sort_" + strings.ReplaceAll(sortAttr, "-", "_")
+		state.matchPatterns = append(state.matchPatterns,
+			HasPattern{ThingVar: v, AttrType: sortAttr, AttrVar: sortVar})
+		s := Sort(sortVar, direction)
 		state.sortClause = &s
 	}
 	if opts.Offset > 0 {

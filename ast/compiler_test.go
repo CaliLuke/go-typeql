@@ -384,7 +384,7 @@ func TestCompiler_FetchClause(t *testing.T) {
 				},
 			},
 			want: `fetch {
-  "attrs": $p.*
+  "attrs": { $p.* }
 };`,
 		},
 		{

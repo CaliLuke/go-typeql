@@ -1,0 +1,186 @@
+package ast
+
+import (
+	"testing"
+
+	"github.com/CaliLuke/go-typeql/internal/typeqlcheck"
+)
+
+// assertTypeQL validates a generated query with the official typeql-check CLI
+// (soft dependency — see internal/typeqlcheck). knownIssue marks output that
+// is currently invalid because of an open bug: the case is skipped while the
+// bug exists and fails loudly once the output becomes valid, so the marker
+// must be removed when the issue is fixed.
+func assertTypeQL(t *testing.T, label, query, knownIssue string) {
+	t.Helper()
+	if knownIssue == "" {
+		typeqlcheck.AssertValid(t, label, query)
+		return
+	}
+	if !typeqlcheck.Available() {
+		return
+	}
+	if err := typeqlcheck.Validate(query); err != nil {
+		t.Skipf("%s: known invalid output (%s): %v", label, knownIssue, err)
+	}
+	t.Errorf("%s: output is now valid TypeQL — %s appears fixed, remove the knownIssue marker", label, knownIssue)
+}
+
+// TestTypeQLSyntax_Compiler pipes representative compiler output through
+// typeql-check so syntax regressions fail here instead of at a live server.
+func TestTypeQLSyntax_Compiler(t *testing.T) {
+	c := &Compiler{}
+
+	cases := []struct {
+		name       string
+		nodes      []QueryNode
+		knownIssue string
+	}{
+		{
+			name: "match entity with constraints",
+			nodes: []QueryNode{Match(
+				Entity("$p", "person",
+					Has("name", Str("Alice")),
+					Has("age", Long(30)),
+				),
+			)},
+		},
+		{
+			name: "match with escaped string value",
+			nodes: []QueryNode{Match(
+				Entity("$p", "person", Has("bio", Str("line1\nhe said \"hi\" \\ done"))),
+			)},
+		},
+		{
+			name: "match relation with role players",
+			nodes: []QueryNode{Match(
+				Entity("$p", "person"),
+				Entity("$c", "company"),
+				Relation("$e", "employment", []RolePlayer{
+					Role("employee", "$p"),
+					Role("employer", "$c"),
+				}),
+			)},
+		},
+		{
+			name: "match iid and strict isa",
+			nodes: []QueryNode{Match(
+				Entity("$p", "person", Iid("0x1e00000000000000000000")),
+			)},
+		},
+		{
+			name: "match value comparison",
+			nodes: []QueryNode{
+				Match(
+					Entity("$p", "person", Has("age", "$a")),
+					Cmp("$a", ">", Long(18)),
+				),
+			},
+		},
+		{
+			name: "match select sort offset limit",
+			nodes: []QueryNode{
+				Match(Entity("$p", "person", Has("name", "$n"))),
+				Select("$p", "$n"),
+				Sort("$n", "asc"),
+				Offset(10),
+				Limit(5),
+			},
+		},
+		{
+			name: "match fetch attributes",
+			nodes: []QueryNode{
+				Match(Entity("$p", "person")),
+				Fetch(
+					FetchAttr("name", "$p", "name"),
+					FetchVar("entity", "$p"),
+				),
+			},
+		},
+		{
+			name: "match reduce count",
+			nodes: []QueryNode{
+				Match(Entity("$p", "person")),
+				ReduceClause{Assignments: []ReduceAssignment{
+					{Variable: "$c", Expression: FuncCall("count", "$p")},
+				}},
+			},
+		},
+		{
+			name: "insert entity with attributes",
+			nodes: []QueryNode{Insert(
+				IsaStmt("$p", "person"),
+				HasStmt("$p", "name", Str("Bob")),
+				HasStmt("$p", "age", Long(41)),
+			)},
+		},
+		{
+			name: "match delete has",
+			nodes: []QueryNode{
+				Match(
+					Entity("$p", "person", Has("name", Str("Bob"))),
+					Entity("$a", "age"),
+				),
+				Delete(DeleteHas("$a", "$p")),
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			query, err := c.CompileBatch(tc.nodes, "\n")
+			if err != nil {
+				t.Fatalf("compile error: %v", err)
+			}
+			assertTypeQL(t, tc.name, query, tc.knownIssue)
+		})
+	}
+}
+
+// TestTypeQLSyntax_Fluent validates the fluent layer's full-query output.
+func TestTypeQLSyntax_Fluent(t *testing.T) {
+	t.Run("match fetch (terminal)", func(t *testing.T) {
+		q, err := FluentMatch("p", "person").
+			Has("name", "Alice").
+			Fetch("p", "name", "email").
+			Build()
+		if err != nil {
+			t.Fatalf("build error: %v", err)
+		}
+		assertTypeQL(t, "fluent match+fetch", q, "")
+	})
+
+	t.Run("update attribute template", func(t *testing.T) {
+		q, err := UpdateAttribute("n", "user-story", "status", "done")
+		if err != nil {
+			t.Fatalf("build error: %v", err)
+		}
+		assertTypeQL(t, "UpdateAttribute", q, "")
+	})
+
+	t.Run("fetch before sort/limit", func(t *testing.T) {
+		q, err := FluentMatch("p", "person").
+			Has("name", "Alice").
+			Fetch("p", "name").
+			Sort("name", "asc").
+			Limit(10).
+			Build()
+		if err != nil {
+			t.Fatalf("build error: %v", err)
+		}
+		assertTypeQL(t, "fluent fetch+sort+limit", q, "")
+	})
+
+	t.Run("paginated search with sort", func(t *testing.T) {
+		q, err := PaginatedSearch([]string{"person"}, PaginatedSearchOptions{
+			VarName: "n",
+			Sort:    "-name",
+			Limit:   10,
+			Offset:  5,
+		})
+		if err != nil {
+			t.Fatalf("build error: %v", err)
+		}
+		assertTypeQL(t, "PaginatedSearch", q, "")
+	})
+}

@@ -89,6 +89,12 @@ type AttributeSpec struct {
 	Values []string
 	// RangeOp is an optional range constraint (e.g., "1..5").
 	RangeOp string
+
+	// Parent is the parent attribute type name when the attribute is declared
+	// with `sub` (attribute subtyping). Empty for root attributes.
+	Parent string
+	// Abstract indicates whether the attribute type is declared @abstract.
+	Abstract bool
 }
 
 // EntitySpec describes a TypeQL entity definition.
