@@ -135,7 +135,7 @@ func applyTagOption(ft *FieldTag, part string, isFirst bool) error {
 func parseCardinality(s string) (min *int, max *int, err error) {
 	// Handle shorthand: "0+" means 0..unbounded
 	if strings.HasSuffix(s, "+") {
-		minV, err := strconv.Atoi(strings.TrimSuffix(s, "+"))
+		minV, err := strconv.Atoi(strings.TrimSuffix(s, "+")) //nolint:staticcheck // SA4006 false positive: minV is used by new(minV); golangci's vendored staticcheck predates Go 1.26 new(val)
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid min value: %w", err)
 		}
@@ -151,7 +151,7 @@ func parseCardinality(s string) (min *int, max *int, err error) {
 		return nil, nil, fmt.Errorf("expected format M..N or M.., got %q", s)
 	}
 
-	minV, err := strconv.Atoi(parts[0])
+	minV, err := strconv.Atoi(parts[0]) //nolint:staticcheck // SA4006 false positive: minV is used by new(minV); golangci's vendored staticcheck predates Go 1.26 new(val)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid min value: %w", err)
 	}
@@ -163,7 +163,7 @@ func parseCardinality(s string) (min *int, max *int, err error) {
 		return new(minV), nil, nil // unbounded max
 	}
 
-	maxV, err := strconv.Atoi(parts[1])
+	maxV, err := strconv.Atoi(parts[1]) //nolint:staticcheck // SA4006 false positive: maxV is used by new(maxV); golangci's vendored staticcheck predates Go 1.26 new(val)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid max value: %w", err)
 	}
