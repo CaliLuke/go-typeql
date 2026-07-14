@@ -590,7 +590,7 @@ pub extern "C" fn typedb_driver_is_open(driver: *const TypeDBDriver) -> bool {
     )
 }
 
-/// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.12.0"}.
+/// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.12.1"}.
 /// Caller must free with typedb_free_string.
 #[no_mangle]
 pub extern "C" fn typedb_driver_server_version(
