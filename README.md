@@ -3,11 +3,11 @@
 [![Go Version](https://img.shields.io/github/v/tag/CaliLuke/go-typeql?label=version)](https://pkg.go.dev/github.com/CaliLuke/go-typeql)
 [![Go Reference](https://pkg.go.dev/badge/github.com/CaliLuke/go-typeql.svg)](https://pkg.go.dev/github.com/CaliLuke/go-typeql)
 
-A Go ORM for [TypeDB](https://typedb.com/) 3.x. Define your graph schema as Go structs, and get type-safe CRUD, queries, migrations, and code generation.
+A Go ORM for [TypeDB](https://typedb.com/) 3.x. It maps a graph schema to Go structs. It provides type-safe CRUD, queries, migrations, and code generation.
 
 ## Why
 
-TypeDB has no official Go driver. This project wraps the Rust 3.x driver via CGo and layers a full ORM on top — so you can work with TypeDB entities and relations as regular Go structs instead of writing raw TypeQL.
+TypeDB has no official Go driver. This project wraps the Rust 3.x driver through CGo. Its ORM maps TypeDB entities and relations to Go structs. You do not have to write raw TypeQL.
 
 ## TypeDB in 30 seconds
 
@@ -19,7 +19,7 @@ TypeDB is a strongly-typed database that organizes data into three primitives:
 
 TypeDB uses its own query language, TypeQL. go-typeql generates TypeQL for you from Go structs, so you rarely need to write it by hand.
 
-## What it looks like
+## Example
 
 ```go
 // Define models with struct tags
@@ -61,7 +61,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 - **Query builder** — chainable filters, sorting, pagination, aggregations (sum, count, min, max, mean, median, std, variance, group by)
 - **Schema migration** — diff Go structs against a live database, apply changes, track migration state
 - **Code generator** — `tqlgen` generates Go structs, DTOs, and a typed registry from TypeQL schema files
-- **Rust FFI driver** — wraps `typedb-driver` 3.x via CGo; the ORM packages compile and test without it
+- **Rust FFI driver** — wraps `typedb-driver` 3.x through CGo. The ORM packages compile without it. Their tests also run without it.
 
 ## Packages
 
@@ -80,9 +80,14 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 go get github.com/CaliLuke/go-typeql@v1.14.2
 ```
 
-The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package targets TypeDB `3.12.1` with the `typedb-driver` `3.12.1` and `typeql` `3.12.0` Rust crates. Stay on the `v1.10.x` line for TypeDB `3.10.x`.
+The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package targets TypeDB `3.12.1` with the `typedb-driver` `3.12.1` and `typeql` `3.12.0` Rust crates. If you use TypeDB `3.10.x`, use go-typeql `v1.10.x`.
 
-The `driver/` package requires the Rust FFI static library. `go get` only downloads the source tree; it does not build or provision `libtypedb_go_ffi.a` for you. Before building or testing code that imports `driver/`, you must either build the Rust library from source in the module tree or install a prebuilt archive.
+The `driver/` package requires the static library for the Rust FFI. `go get` downloads only the source tree. It does not build or install `libtypedb_go_ffi.a`.
+
+Before you build code that imports `driver/`, choose one method:
+
+- Build the Rust library from source in the repository.
+- Install a prebuilt archive.
 
 ### Prebuilt FFI library
 
@@ -113,9 +118,11 @@ go test -tags "cgo,typedb" ./...
 
 On Apple Silicon with Homebrew, `typedb_prebuilt` also searches `/opt/homebrew/lib`. If you do not want to install into a linker search path, use Option B instead.
 
-If your platform does not have a published archive yet, build from source with `make build-rust` in the checked-out module before `go build` or `go test -tags "cgo,typedb" ...`. This matters even when the module comes from the Go proxy or module cache, because the Rust archive is not generated automatically during `go get`.
+If your platform has no published archive, clone the repository. Then run `make build-rust` before `go build` or `go test -tags "cgo,typedb" ...`.
 
-For a complete runnable example covering connect, schema, and CRUD, see the [Getting Started walkthrough](docs/GETTING_STARTED.md).
+NOTE: `go get` does not generate the Rust archive. This restriction also applies to modules from the Go proxy or module cache.
+
+The [Getting Started walkthrough](docs/GETTING_STARTED.md) is a complete runnable example. It covers connection, schema definition, and CRUD operations.
 
 ## Running tests
 
@@ -138,13 +145,15 @@ See the dedicated guide: [Debugging Hangs](docs/DEBUGGING_HANGS.md).
 - [Testing Guide](docs/TESTING.md) — test strategy, mocks, integration test infrastructure
 - [Debugging Hangs](docs/DEBUGGING_HANGS.md) — debug flags, log keys, startup-hang diagnostics
 - [API Reference](docs/api/README.md) — models, CRUD, queries, filters, schema, migration, code generator
-- TypeQL agent skill — maintained externally in [`CaliLuke/skills/skills/typedb`](https://github.com/CaliLuke/skills/tree/main/skills/typedb) (not vendored here; verify syntax with `typeql-check` instead)
+- **TypeQL agent skill** — The TypeQL team maintains the [skill](https://github.com/typedb/typeql-evals/blob/master/SKILL.md) in the `typedb/typeql-evals` repository. This repository does not vendor it.
+
+  Use `typeql-check` to make sure that TypeQL syntax is correct.
 
 ## Requirements
 
-- Go 1.27 RC2+ (Go 1.27.0 once generally available; macOS 13+ on Darwin)
-- Rust 1.97+ (1.97.1 pinned; only for the edition 2024 driver)
-- TypeDB 3.x (only for integration tests)
+- The project requires Go 1.27 RC2+, or Go 1.27.0 after its general release. Darwin also requires macOS 13+.
+- Only the edition 2024 driver requires Rust 1.97+. The repository pins version 1.97.1.
+- Integration tests require TypeDB 3.x.
 
 ## License
 
