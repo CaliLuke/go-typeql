@@ -142,8 +142,8 @@ See the dedicated guide: [Debugging Hangs](docs/DEBUGGING_HANGS.md).
 
 ## Requirements
 
-- Go 1.26.2+
-- Rust toolchain (only for the driver)
+- Go 1.27 RC2+ (Go 1.27.0 once generally available; macOS 13+ on Darwin)
+- Rust 1.97+ (1.97.1 pinned; only for the edition 2024 driver)
 - TypeDB 3.x (only for integration tests)
 
 ## License

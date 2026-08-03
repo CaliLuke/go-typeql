@@ -13,14 +13,14 @@ import (
 	"time"
 )
 
-var txCounter uint64
-var activeTxOpen int64
-var activeTxQuery int64
-var activeTxOpenHighWater int64
-var activeTxQueryHighWater int64
+var txCounter atomic.Uint64
+var activeTxOpen atomic.Int64
+var activeTxQuery atomic.Int64
+var activeTxOpenHighWater atomic.Int64
+var activeTxQueryHighWater atomic.Int64
 
 func nextTxID() uint64 {
-	return atomic.AddUint64(&txCounter, 1)
+	return txCounter.Add(1)
 }
 
 func debugEnabled() bool {
@@ -85,13 +85,13 @@ func queryFingerprint(query string) string {
 	return fmt.Sprintf("%016x", h.Sum64())
 }
 
-func updateHighWater(current int64, highWater *int64) int64 {
+func updateHighWater(current int64, highWater *atomic.Int64) int64 {
 	for {
-		existing := atomic.LoadInt64(highWater)
+		existing := highWater.Load()
 		if current <= existing {
 			return existing
 		}
-		if atomic.CompareAndSwapInt64(highWater, existing, current) {
+		if highWater.CompareAndSwap(existing, current) {
 			return current
 		}
 	}
@@ -108,19 +108,19 @@ func logInFlight(name string, current int64, highWater int64, threshold int64, a
 	}
 }
 
-func incrementInFlight(counter *int64, highWater *int64, threshold int64, name string, attrs ...any) {
-	current := atomic.AddInt64(counter, 1)
+func incrementInFlight(counter *atomic.Int64, highWater *atomic.Int64, threshold int64, name string, attrs ...any) {
+	current := counter.Add(1)
 	high := updateHighWater(current, highWater)
 	logInFlight(name, current, high, threshold, attrs...)
 }
 
-func decrementInFlight(counter *int64, highWater *int64, threshold int64, name string, attrs ...any) {
-	current := atomic.AddInt64(counter, -1)
+func decrementInFlight(counter *atomic.Int64, highWater *atomic.Int64, threshold int64, name string, attrs ...any) {
+	current := counter.Add(-1)
 	if current < 0 {
-		atomic.StoreInt64(counter, 0)
+		counter.Store(0)
 		current = 0
 	}
-	high := atomic.LoadInt64(highWater)
+	high := highWater.Load()
 	logInFlight(name, current, high, threshold, attrs...)
 }
 

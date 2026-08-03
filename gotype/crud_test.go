@@ -79,6 +79,46 @@ func (m *mockConn) IsOpen() bool                               { return true }
 
 // --- Tests ---
 
+func TestDatabaseManagerFactories(t *testing.T) {
+	registerTestTypes(t)
+	db := NewDatabase(&mockConn{}, "test_db")
+
+	mgr, err := db.Manager[testPerson]()
+	if err != nil {
+		t.Fatalf("Manager failed: %v", err)
+	}
+	if mgr.db != db || mgr.tx != nil {
+		t.Fatal("database manager was not bound to the database")
+	}
+
+	mustMgr := db.MustManager[testPerson]()
+	if mustMgr.db != db || mustMgr.tx != nil {
+		t.Fatal("must database manager was not bound to the database")
+	}
+}
+
+func TestTransactionContextManagerFactories(t *testing.T) {
+	registerTestTypes(t)
+	tx := &mockTx{}
+	tc := &TransactionContext{
+		db: NewDatabase(&mockConn{}, "test_db"),
+		tx: tx,
+	}
+
+	mgr, err := tc.Manager[testPerson]()
+	if err != nil {
+		t.Fatalf("Manager failed: %v", err)
+	}
+	if mgr.db != tc.db || mgr.tx != tx {
+		t.Fatal("transaction manager was not bound to the transaction")
+	}
+
+	mustMgr := tc.MustManager[testPerson]()
+	if mustMgr.db != tc.db || mustMgr.tx != tx {
+		t.Fatal("must transaction manager was not bound to the transaction")
+	}
+}
+
 func TestManager_Insert(t *testing.T) {
 	registerTestTypes(t)
 	// Mock tx: single query = insert+fetch returns IID

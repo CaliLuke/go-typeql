@@ -14,6 +14,7 @@ cd "$ROOT"
 
 UNIT_PKGS=(./ast/... ./gotype/... ./tqlgen/... ./cmd/... ./internal/...)
 PKG_DIRS=$(go list -f '{{.Dir}}' "${UNIT_PKGS[@]}" | tr '\n' ' ')
+STATICCHECK_BIN="${STATICCHECK_BIN:-$HOME/go/bin/staticcheck}"
 
 # TypeQL syntax gate: the test suites validate generated TypeQL with the
 # official typeql-check CLI (typedb/typedb-tools) when it is installed.
@@ -77,7 +78,7 @@ else
   run_gate "golangci-lint" golangci-lint run
 fi
 
-run_gate "staticcheck" "$HOME/go/bin/staticcheck" "${UNIT_PKGS[@]}"
+run_gate "staticcheck" "$STATICCHECK_BIN" "${UNIT_PKGS[@]}"
 
 run_gate "go test (-race)" go test -race "${UNIT_PKGS[@]}" -timeout 180s
 

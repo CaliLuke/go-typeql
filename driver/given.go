@@ -5,7 +5,7 @@ package driver
 // #include "typedb_ffi.h"
 import "C"
 import (
-	"encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 	"unsafe"
 )

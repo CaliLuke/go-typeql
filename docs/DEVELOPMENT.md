@@ -2,10 +2,24 @@
 
 ## Prerequisites
 
-- **Go 1.26.2+**
-- **Rust toolchain** (for the FFI driver) — install via [rustup](https://rustup.rs/)
+- **Go 1.27 RC2+** (Go 1.27.0 once generally available; macOS 13+ on Darwin)
+- **Rust 1.97+** (1.97.1 is pinned for the edition 2024 FFI driver) — install via [rustup](https://rustup.rs/)
 - **TypeDB 3.x server** (for integration tests) — run via Docker Compose or install directly
 - **Colima with Docker Compose** (optional, for running TypeDB in tests on this machine)
+
+Go-aware development tools must also be built with Go 1.27 to parse generic
+methods and the new export-data format. During the RC period, rebuild the
+current tool versions with RC2. Staticcheck 2026.1 does not support Go 1.27's
+export data, so use the tested upstream revision until its next release:
+
+```bash
+GOTOOLCHAIN=go1.27rc2 go install golang.org/x/tools/cmd/goimports@v0.48.0
+GOTOOLCHAIN=go1.27rc2 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+GOTOOLCHAIN=go1.27rc2 go install honnef.co/go/tools/cmd/staticcheck@d69e7ee19e2d
+```
+
+`check.sh` uses `~/go/bin/staticcheck` by default. Set `STATICCHECK_BIN` to
+select another compatible binary without replacing the default installation.
 
 ## Project Structure
 
@@ -57,7 +71,7 @@ The `driver/` package requires a compiled Rust static library. The Rust crate in
 # Build the static library (driver/rust/target/release/libtypedb_go_ffi.a)
 make build-rust
 
-# This runs: cd driver/rust && cargo build --release
+# On macOS this sets MACOSX_DEPLOYMENT_TARGET=13.0 to match Go 1.27.
 ```
 
 `go get` only downloads the source tree. It does not create the Rust archive inside the checked out module or module cache. If you want to compile or test packages that import `driver/`, you must run `make build-rust` in that module tree first, or use a prebuilt archive with the `typedb_prebuilt` build tag. Release archives are published for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`.

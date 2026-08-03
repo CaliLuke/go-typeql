@@ -3,7 +3,7 @@
 package driver
 
 import (
-	"encoding/json"
+	json "encoding/json/v2"
 	"strings"
 	"testing"
 )
@@ -30,6 +30,16 @@ func TestGivenRowsJSONRequiresVariables(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "at least one variable") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGivenRowsJSONEncodesEmptyRowsAsArray(t *testing.T) {
+	data, err := NewGivenRows("name").json()
+	if err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if !strings.Contains(string(data), `"rows":[]`) {
+		t.Fatalf("expected empty rows array, got %s", data)
 	}
 }
 

@@ -27,7 +27,7 @@ make build-rust
 # Linting (MUST pass before committing)
 go vet ./...                    # Built-in static analysis
 golangci-lint run ./...         # Comprehensive linter (50+ checks)
-~/go/bin/staticcheck ./...      # Standalone staticcheck (supports Go 1.26 new(val))
+~/go/bin/staticcheck ./...      # Standalone staticcheck (use a Go 1.27-compatible build)
 
 # Full quality gates — runs the lint trio plus goimports, tidy drift, and tests
 ./check.sh                      # or: make check

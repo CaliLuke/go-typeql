@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -129,7 +128,7 @@ define
 	// fires, and a heavier/longer variant OOM-killed the compose container.
 	txOpts := NewTransactionOptions().SetTimeout(5_000)
 	defer txOpts.Close()
-	baselineOpen := atomic.LoadInt64(&activeTxOpen)
+	baselineOpen := activeTxOpen.Load()
 	tx, err := conn.TransactionWithOptions(dbName, Read, txOpts)
 	if err != nil {
 		t.Fatalf("open read tx: %v", err)
@@ -169,7 +168,7 @@ reduce $count = count;
 	// activeTxOpen falls back to its baseline when the abandoned handle is
 	// detached, and the enqueued close job then drains through the worker.
 	deadline := time.Now().Add(60 * time.Second)
-	for atomic.LoadInt64(&activeTxOpen) > baselineOpen {
+	for activeTxOpen.Load() > baselineOpen {
 		if time.Now().After(deadline) {
 			t.Fatal("abandoned transaction handle was never freed by the background goroutine")
 		}
@@ -236,7 +235,7 @@ func TestDriverCloseClosesOpenTransactions(t *testing.T) {
 func TestTransactionFinalizerFreesLeakedHandle(t *testing.T) {
 	conn, dbName := setupLifecycleDB(t, "")
 
-	baseline := atomic.LoadInt64(&activeTxOpen)
+	baseline := activeTxOpen.Load()
 
 	func() {
 		tx, err := conn.Transaction(dbName, Read)
@@ -249,7 +248,7 @@ func TestTransactionFinalizerFreesLeakedHandle(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		runtime.GC()
-		if atomic.LoadInt64(&activeTxOpen) <= baseline {
+		if activeTxOpen.Load() <= baseline {
 			drainCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := WaitForPendingCloses(drainCtx); err != nil {
@@ -281,9 +280,7 @@ func TestConcurrentDriverOperations(t *testing.T) {
 	errCh := make(chan error, workers*iterations*2)
 
 	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := 0; i < iterations; i++ {
 				tx, err := conn.Transaction(dbName, Read)
 				if err != nil {
@@ -303,7 +300,7 @@ func TestConcurrentDriverOperations(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errCh)

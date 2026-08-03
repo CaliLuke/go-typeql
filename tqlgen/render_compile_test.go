@@ -56,7 +56,7 @@ func compileGenerated(t *testing.T, source string) {
 	if err := os.WriteFile(filepath.Join(dir, "models_gen.go"), []byte(source), 0o644); err != nil {
 		t.Fatalf("write generated source: %v", err)
 	}
-	goMod := "module rendercompiletest\n\ngo 1.26.2\n\n" +
+	goMod := "module rendercompiletest\n\ngo 1.27rc2\n\n" +
 		"require github.com/CaliLuke/go-typeql v0.0.0\n\n" +
 		"replace github.com/CaliLuke/go-typeql => " + repoRoot + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {

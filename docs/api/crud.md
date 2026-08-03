@@ -8,10 +8,13 @@ The `Manager[T]` generic type provides Insert, Get, Update, Delete, Put (upsert)
 
 ```go
 db := gotype.NewDatabase(conn, "my_db")
-persons := gotype.MustNewManager[Person](db)
+persons := db.MustManager[Person]()
 ```
 
-`NewManager` panics if type `T` has not been registered via `Register[T]()`.
+`MustManager` panics if type `T` has not been registered via `Register[T]()`. Use
+`db.Manager[T]()` when registration failures should be returned as errors. The
+package-level `NewManager` and `MustNewManager` functions remain available for
+compatibility.
 
 ## Insert
 
@@ -51,7 +54,7 @@ Other retrieval methods:
 
 ```go
 // Get relations with role players populated
-jobs := gotype.MustNewManager[Employment](db)
+jobs := db.MustManager[Employment]()
 results, err := jobs.GetWithRoles(ctx, nil)
 // results[0].Employee is populated with the Person data
 // results[0].Employer is populated with the Company data
@@ -97,8 +100,8 @@ For explicit transaction control across multiple managers, use `TransactionConte
 tc, err := db.Begin(gotype.WriteTransaction)
 defer tc.Close()
 
-persons := gotype.MustNewManagerWithTx[Person](tc)
-companies := gotype.MustNewManagerWithTx[Company](tc)
+persons := tc.MustManager[Person]()
+companies := tc.MustManager[Company]()
 
 persons.Insert(ctx, &Person{Name: "Alice"})
 companies.Insert(ctx, &Company{Name: "Acme"})

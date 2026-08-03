@@ -66,9 +66,9 @@ func main() {
     }
 
     // 6. CRUD via Manager[T].
-    persons := gotype.MustNewManager[Person](db)
-    companies := gotype.MustNewManager[Company](db)
-    employments := gotype.MustNewManager[Employment](db)
+    persons := db.MustManager[Person]()
+    companies := db.MustManager[Company]()
+    employments := db.MustManager[Employment]()
 
     // Insert
     alice := &Person{Name: "Alice", Email: "alice@example.com"}

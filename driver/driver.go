@@ -11,7 +11,7 @@ package driver
 import "C"
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 	"net"
 	"os"

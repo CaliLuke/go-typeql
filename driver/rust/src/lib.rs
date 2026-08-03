@@ -18,13 +18,13 @@
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::ffi::{c_char, CStr, CString};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::ffi::{CStr, CString, c_char};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr::null_mut;
 use std::str::FromStr;
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
     Mutex, MutexGuard, Once, OnceLock,
+    atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
 
@@ -33,14 +33,14 @@ use serde::Deserialize;
 use serde_json::json;
 
 use typedb_driver::{
-    answer::QueryAnswer,
-    concept::{
-        value::{Decimal, Duration as TypeDBDuration, TimeZone, ValueType},
-        Concept, Value,
-    },
-    given::{GivenRowEntry, GivenRows},
     Addresses, Credentials, DriverOptions, DriverTlsConfig, Promise, QueryOptions, Transaction,
     TransactionOptions, TransactionType, TypeDBDriver,
+    answer::QueryAnswer,
+    concept::{
+        Concept, Value,
+        value::{Decimal, Duration as TypeDBDuration, TimeZone, ValueType},
+    },
+    given::{GivenRowEntry, GivenRows},
 };
 
 static NEXT_CONCEPT_HANDLE: AtomicU64 = AtomicU64::new(1);
@@ -121,7 +121,7 @@ fn get_registered_concept(handle: &str) -> Result<Concept, String> {
 }
 
 /// Release a single registered concept handle. Unknown handles are ignored.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_concept_drop(handle: *const c_char) {
     ffi_call_unit(|| {
         if let Ok(handle) = c_str(handle) {
@@ -131,7 +131,7 @@ pub extern "C" fn typedb_concept_drop(handle: *const c_char) {
 }
 
 /// Release every concept handle registered by this process.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_concepts_drop_all() {
     ffi_call_unit(|| {
         registry_lock().clear();
@@ -265,15 +265,20 @@ fn addresses_from_ffi(
 
     let private = c_string_slice(private_addresses, count)?;
     let mut translation = HashMap::with_capacity(count);
-    for (public, private) in public.into_iter().zip(private.into_iter()) {
+    for (public, private) in public.into_iter().zip(private) {
         translation.insert(public, private);
     }
     Addresses::try_from_translation_str(translation).map_err(|e| e.to_string())
 }
 
 /// Free a string returned by this library.
-#[no_mangle]
-pub extern "C" fn typedb_free_string(s: *mut c_char) {
+///
+/// # Safety
+///
+/// `s` must be null or a live pointer returned by this library that has not
+/// already been freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_free_string(s: *mut c_char) {
     ffi_call_unit(|| {
         if !s.is_null() {
             unsafe { drop(CString::from_raw(s)) }
@@ -283,8 +288,13 @@ pub extern "C" fn typedb_free_string(s: *mut c_char) {
 
 /// Free a byte buffer returned by query functions.
 /// The caller must pass both the pointer and the length that were returned.
-#[no_mangle]
-pub extern "C" fn typedb_free_bytes(ptr: *mut u8, len: usize) {
+///
+/// # Safety
+///
+/// `ptr` must be null or a live buffer returned by this library, `len` must
+/// be the original buffer length, and the buffer must not already be freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_free_bytes(ptr: *mut u8, len: usize) {
     ffi_call_unit(|| {
         if !ptr.is_null() && len > 0 {
             unsafe {
@@ -304,7 +314,7 @@ pub extern "C" fn typedb_free_bytes(ptr: *mut u8, len: usize) {
 /// the underlying typedb-driver crate become visible. The filter is read from
 /// the TYPEDB_GO_RUST_LOG environment variable, falling back to RUST_LOG.
 /// When neither is set, logging stays off.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_init_logging() {
     ffi_call_unit(|| {
         static INIT: Once = Once::new();
@@ -386,7 +396,7 @@ fn query_fingerprint(query: &str) -> String {
 
 /// Create credentials. Returns null and sets err_out on invalid input.
 /// Caller must free with typedb_credentials_drop.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_credentials_new(
     username: *const c_char,
     password: *const c_char,
@@ -402,8 +412,13 @@ pub extern "C" fn typedb_credentials_new(
 }
 
 /// Free credentials.
-#[no_mangle]
-pub extern "C" fn typedb_credentials_drop(creds: *mut Credentials) {
+///
+/// # Safety
+///
+/// `creds` must be null or a live pointer returned by
+/// `typedb_credentials_new` that has not already been freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_credentials_drop(creds: *mut Credentials) {
     ffi_call_unit(|| {
         if !creds.is_null() {
             unsafe { drop(Box::from_raw(creds)) }
@@ -416,7 +431,7 @@ pub extern "C" fn typedb_credentials_drop(creds: *mut Credentials) {
 // ---------------------------------------------------------------------------
 
 /// Create driver options. tls_root_ca can be null. Caller must free with typedb_driver_options_drop.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_driver_options_new(
     is_tls_enabled: bool,
     tls_root_ca: *const c_char,
@@ -436,7 +451,7 @@ pub extern "C" fn typedb_driver_options_new(
 }
 
 /// Set driver request timeout in milliseconds.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_driver_options_set_request_timeout(
     opts: *mut DriverOptions,
     timeout_millis: i64,
@@ -449,7 +464,7 @@ pub extern "C" fn typedb_driver_options_set_request_timeout(
 }
 
 /// Set primary failover retry count.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_driver_options_set_primary_failover_retries(
     opts: *mut DriverOptions,
     retries: usize,
@@ -462,8 +477,13 @@ pub extern "C" fn typedb_driver_options_set_primary_failover_retries(
 }
 
 /// Free driver options.
-#[no_mangle]
-pub extern "C" fn typedb_driver_options_drop(opts: *mut DriverOptions) {
+///
+/// # Safety
+///
+/// `opts` must be null or a live pointer returned by
+/// `typedb_driver_options_new` that has not already been freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_driver_options_drop(opts: *mut DriverOptions) {
     ffi_call_unit(|| {
         if !opts.is_null() {
             unsafe { drop(Box::from_raw(opts)) }
@@ -495,7 +515,7 @@ fn open_driver(
 /// server advertises an address that differs from the one clients dial.
 ///
 /// Caller must free with typedb_driver_close.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_driver_open(
     address: *const c_char,
     credentials: *const Credentials,
@@ -539,7 +559,7 @@ pub extern "C" fn typedb_driver_open(
 /// Open a connection to TypeDB with one or more addresses.
 /// If private_addresses is non-null, it must have the same length as public_addresses
 /// and is used as the driver's address translation map.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_driver_open_addresses(
     public_addresses: *const *const c_char,
     private_addresses: *const *const c_char,
@@ -581,7 +601,7 @@ pub extern "C" fn typedb_driver_open_addresses(
 }
 
 /// Check if driver is open.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_driver_is_open(driver: *const TypeDBDriver) -> bool {
     ffi_call(
         null_mut(),
@@ -592,7 +612,7 @@ pub extern "C" fn typedb_driver_is_open(driver: *const TypeDBDriver) -> bool {
 
 /// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.12.1"}.
 /// Caller must free with typedb_free_string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_driver_server_version(
     driver: *mut TypeDBDriver,
     err_out: *mut *mut c_char,
@@ -611,8 +631,13 @@ pub extern "C" fn typedb_driver_server_version(
 }
 
 /// Close and free the driver.
-#[no_mangle]
-pub extern "C" fn typedb_driver_close(driver: *mut TypeDBDriver) {
+///
+/// # Safety
+///
+/// `driver` must be null or a live pointer returned by a driver-open function
+/// that has not already been closed or freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_driver_close(driver: *mut TypeDBDriver) {
     ffi_call_unit(|| {
         if !driver.is_null() {
             let d = unsafe { Box::from_raw(driver) };
@@ -627,7 +652,7 @@ pub extern "C" fn typedb_driver_close(driver: *mut TypeDBDriver) {
 
 /// List all databases. Returns a JSON array string: ["db1","db2",...].
 /// Caller must free with typedb_free_string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_databases_all(
     driver: *mut TypeDBDriver,
     err_out: *mut *mut c_char,
@@ -643,7 +668,7 @@ pub extern "C" fn typedb_databases_all(
 }
 
 /// Create a database.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_databases_create(
     driver: *mut TypeDBDriver,
     name: *const c_char,
@@ -662,7 +687,7 @@ pub extern "C" fn typedb_databases_create(
 }
 
 /// Check if a database exists.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_databases_contains(
     driver: *mut TypeDBDriver,
     name: *const c_char,
@@ -682,7 +707,7 @@ pub extern "C" fn typedb_databases_contains(
 
 /// Get database schema. Returns a TypeQL define query string.
 /// Caller must free with typedb_free_string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_database_schema(
     driver: *mut TypeDBDriver,
     name: *const c_char,
@@ -697,7 +722,7 @@ pub extern "C" fn typedb_database_schema(
 }
 
 /// Delete a database.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_database_delete(
     driver: *mut TypeDBDriver,
     name: *const c_char,
@@ -719,7 +744,7 @@ pub extern "C" fn typedb_database_delete(
 // ---------------------------------------------------------------------------
 
 /// Create default transaction options. Caller must free with typedb_transaction_options_drop.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_transaction_options_new() -> *mut TransactionOptions {
     ffi_call(null_mut(), null_mut, || {
         Ok(Box::into_raw(Box::new(TransactionOptions::new())))
@@ -727,7 +752,7 @@ pub extern "C" fn typedb_transaction_options_new() -> *mut TransactionOptions {
 }
 
 /// Set transaction timeout in milliseconds.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_transaction_options_set_timeout(
     opts: *mut TransactionOptions,
     timeout_millis: i64,
@@ -740,7 +765,7 @@ pub extern "C" fn typedb_transaction_options_set_timeout(
 }
 
 /// Set schema lock acquire timeout in milliseconds.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_transaction_options_set_schema_lock_timeout(
     opts: *mut TransactionOptions,
     timeout_millis: i64,
@@ -754,8 +779,13 @@ pub extern "C" fn typedb_transaction_options_set_schema_lock_timeout(
 }
 
 /// Free transaction options.
-#[no_mangle]
-pub extern "C" fn typedb_transaction_options_drop(opts: *mut TransactionOptions) {
+///
+/// # Safety
+///
+/// `opts` must be null or a live pointer returned by
+/// `typedb_transaction_options_new` that has not already been freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_transaction_options_drop(opts: *mut TransactionOptions) {
     ffi_call_unit(|| {
         if !opts.is_null() {
             unsafe { drop(Box::from_raw(opts)) }
@@ -768,7 +798,7 @@ pub extern "C" fn typedb_transaction_options_drop(opts: *mut TransactionOptions)
 // ---------------------------------------------------------------------------
 
 /// Create default query options. Caller must free with typedb_query_options_drop.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_query_options_new() -> *mut QueryOptions {
     ffi_call(null_mut(), null_mut, || {
         Ok(Box::into_raw(Box::new(QueryOptions::new())))
@@ -776,7 +806,7 @@ pub extern "C" fn typedb_query_options_new() -> *mut QueryOptions {
 }
 
 /// Set include_instance_types option.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_query_options_set_include_instance_types(
     opts: *mut QueryOptions,
     include: bool,
@@ -789,7 +819,7 @@ pub extern "C" fn typedb_query_options_set_include_instance_types(
 }
 
 /// Set prefetch_size option.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_query_options_set_prefetch_size(opts: *mut QueryOptions, size: i64) {
     ffi_call_unit(|| {
         if let Ok(o) = deref_mut(opts, "query options") {
@@ -799,8 +829,13 @@ pub extern "C" fn typedb_query_options_set_prefetch_size(opts: *mut QueryOptions
 }
 
 /// Free query options.
-#[no_mangle]
-pub extern "C" fn typedb_query_options_drop(opts: *mut QueryOptions) {
+///
+/// # Safety
+///
+/// `opts` must be null or a live pointer returned by
+/// `typedb_query_options_new` that has not already been freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_query_options_drop(opts: *mut QueryOptions) {
     ffi_call_unit(|| {
         if !opts.is_null() {
             unsafe { drop(Box::from_raw(opts)) }
@@ -824,7 +859,7 @@ fn to_transaction_type(t: i32) -> TransactionType {
 /// Open a transaction. Returns null on error.
 /// transaction_type: 0=Read, 1=Write, 2=Schema
 /// Caller must free with typedb_transaction_close.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_transaction_open(
     driver: *mut TypeDBDriver,
     database_name: *const c_char,
@@ -880,7 +915,7 @@ pub extern "C" fn typedb_transaction_open(
 }
 
 /// Check if transaction is open.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_transaction_is_open(txn: *const Transaction) -> bool {
     ffi_call(
         null_mut(),
@@ -896,7 +931,7 @@ pub extern "C" fn typedb_transaction_is_open(txn: *const Transaction) -> bool {
 /// in typedb_ffi.h). out_len receives the byte length of the buffer.
 /// Returns null on error or for OK answers (out_len set to 0).
 /// Caller must free with typedb_free_bytes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_transaction_query(
     txn: *mut Transaction,
     query: *const c_char,
@@ -920,7 +955,7 @@ pub extern "C" fn typedb_transaction_query(
 }
 
 /// Execute a query with given rows and return results as a MessagePack-encoded byte buffer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn typedb_transaction_query_with_rows(
     txn: *mut Transaction,
     query: *const c_char,
@@ -1177,7 +1212,7 @@ fn collect_answer_to_values(
                                 obj.insert(name.clone(), serde_json::Value::Null);
                             }
                             Err(e) => return Err(e.to_string()),
-                        }
+                        };
                     }
                     docs.push(serde_json::Value::Object(obj));
                 }
@@ -1191,8 +1226,16 @@ fn collect_answer_to_values(
 }
 
 /// Commit the transaction and free it.
-#[no_mangle]
-pub extern "C" fn typedb_transaction_commit(txn: *mut Transaction, err_out: *mut *mut c_char) {
+///
+/// # Safety
+///
+/// `txn` must be null or a live transaction pointer that has not already been
+/// ended. `err_out` must be null or point to writable storage for an error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_transaction_commit(
+    txn: *mut Transaction,
+    err_out: *mut *mut c_char,
+) {
     ffi_call(
         err_out,
         || (),
@@ -1227,8 +1270,16 @@ pub extern "C" fn typedb_transaction_commit(txn: *mut Transaction, err_out: *mut
 }
 
 /// Rollback the transaction.
-#[no_mangle]
-pub extern "C" fn typedb_transaction_rollback(txn: *const Transaction, err_out: *mut *mut c_char) {
+///
+/// # Safety
+///
+/// `txn` must be null or point to a live transaction for the duration of this
+/// call. `err_out` must be null or point to writable storage for an error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_transaction_rollback(
+    txn: *const Transaction,
+    err_out: *mut *mut c_char,
+) {
     ffi_call(
         err_out,
         || (),
@@ -1263,8 +1314,16 @@ pub extern "C" fn typedb_transaction_rollback(txn: *const Transaction, err_out: 
 }
 
 /// Close and free the transaction without committing.
-#[no_mangle]
-pub extern "C" fn typedb_transaction_close(txn: *mut Transaction, err_out: *mut *mut c_char) {
+///
+/// # Safety
+///
+/// `txn` must be null or a live transaction pointer that has not already been
+/// ended. `err_out` must be null or point to writable storage for an error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_transaction_close(
+    txn: *mut Transaction,
+    err_out: *mut *mut c_char,
+) {
     ffi_call(
         err_out,
         || (),
@@ -1300,8 +1359,13 @@ pub extern "C" fn typedb_transaction_close(txn: *mut Transaction, err_out: *mut 
 }
 
 /// Drop the transaction locally without waiting for the checked close result.
-#[no_mangle]
-pub extern "C" fn typedb_transaction_drop(txn: *mut Transaction) {
+///
+/// # Safety
+///
+/// `txn` must be null or a live transaction pointer that has not already been
+/// ended or freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_transaction_drop(txn: *mut Transaction) {
     ffi_call_unit(|| {
         let start = Instant::now();
         rust_debug_log("ffi.typedb_transaction_drop.enter", vec![]);
@@ -1332,7 +1396,7 @@ mod tests {
         let msg = unsafe { CStr::from_ptr(err) }
             .to_string_lossy()
             .into_owned();
-        typedb_free_string(err);
+        unsafe { typedb_free_string(err) };
         msg
     }
 

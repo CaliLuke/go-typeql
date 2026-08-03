@@ -513,7 +513,7 @@ func TestConnPool_IdleTimeout(t *testing.T) {
 		pool.Put(conn3)
 
 		// Advance the fake clock through the idle timeout and cleaner tick.
-		time.Sleep(200 * time.Millisecond)
+		synctest.Sleep(200 * time.Millisecond)
 		synctest.Wait()
 
 		stats := pool.Stats()

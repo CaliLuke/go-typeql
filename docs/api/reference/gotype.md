@@ -144,6 +144,8 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
   - [func \(db \*Database\) ExecuteSchema\(ctx context.Context, query string\) error](<#Database.ExecuteSchema>)
   - [func \(db \*Database\) ExecuteWrite\(ctx context.Context, query string\) \(\[\]map\[string\]any, error\)](<#Database.ExecuteWrite>)
   - [func \(db \*Database\) GetConn\(\) Conn](<#Database.GetConn>)
+  - [func \(db \*Database\) Manager\[T any\]\(\) \(\*Manager\[T\], error\)](<#Database.Manager>)
+  - [func \(db \*Database\) MustManager\[T any\]\(\) \*Manager\[T\]](<#Database.MustManager>)
   - [func \(db \*Database\) Name\(\) string](<#Database.Name>)
   - [func \(db \*Database\) Schema\(ctx context.Context\) \(string, error\)](<#Database.Schema>)
   - [func \(db \*Database\) Transaction\(txType TransactionType\) \(Tx, error\)](<#Database.Transaction>)
@@ -407,6 +409,8 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
 - [type TransactionContext](<#TransactionContext>)
   - [func \(tc \*TransactionContext\) Close\(\)](<#TransactionContext.Close>)
   - [func \(tc \*TransactionContext\) Commit\(\) error](<#TransactionContext.Commit>)
+  - [func \(tc \*TransactionContext\) Manager\[T any\]\(\) \(\*Manager\[T\], error\)](<#TransactionContext.Manager>)
+  - [func \(tc \*TransactionContext\) MustManager\[T any\]\(\) \*Manager\[T\]](<#TransactionContext.MustManager>)
   - [func \(tc \*TransactionContext\) Rollback\(\) error](<#TransactionContext.Rollback>)
   - [func \(tc \*TransactionContext\) Tx\(\) Tx](<#TransactionContext.Tx>)
 - [type TransactionType](<#TransactionType>)
@@ -1485,6 +1489,24 @@ func (db *Database) GetConn() Conn
 
 GetConn returns the underlying Conn implementation.
 
+<a name="Database.Manager"></a>
+### func \(\*Database\) [Manager](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L26>)
+
+```go
+func (db *Database) Manager[T any]() (*Manager[T], error)
+```
+
+Manager creates a Manager for model type T bound to db. T must be a struct that has been registered via Register\[T\]\(\).
+
+<a name="Database.MustManager"></a>
+### func \(\*Database\) [MustManager](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L33>)
+
+```go
+func (db *Database) MustManager[T any]() *Manager[T]
+```
+
+MustManager creates a Manager for model type T bound to db and panics if the type has not been registered. Prefer Manager when the caller needs to handle registration failures explicitly.
+
 <a name="Database.Name"></a>
 ### func \(\*Database\) [Name](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L147>)
 
@@ -1522,7 +1544,7 @@ func (db *Database) TransactionContext(ctx context.Context, txType TransactionTy
 TransactionContext opens a new transaction of the specified type and lets context\-aware Conn implementations honor cancellation while acquiring it.
 
 <a name="DeleteOption"></a>
-## type [DeleteOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L327>)
+## type [DeleteOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L352>)
 
 DeleteOption configures delete behavior.
 
@@ -1531,7 +1553,7 @@ type DeleteOption func(*deleteConfig)
 ```
 
 <a name="WithStrict"></a>
-### func [WithStrict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L334>)
+### func [WithStrict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L359>)
 
 ```go
 func WithStrict() DeleteOption
@@ -1897,7 +1919,7 @@ func Startswith(attr string, prefix string) Filter
 Startswith creates a filter that checks if a string attribute starts with a literal prefix. The prefix is treated as data: regex metacharacters are escaped before it is compiled into the underlying TypeQL "like" pattern. Use Like or Regex for raw regex matching.
 
 <a name="FunctionQuery"></a>
-## type [FunctionQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L728-L732>)
+## type [FunctionQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L12-L16>)
 
 FunctionQuery builds and executes a TypeDB schema function call. TypeDB functions are defined with \`fun\` in the schema and called via match/return patterns.
 
@@ -1908,7 +1930,7 @@ type FunctionQuery struct {
 ```
 
 <a name="NewFunctionQuery"></a>
-### func [NewFunctionQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L736>)
+### func [NewFunctionQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L20>)
 
 ```go
 func NewFunctionQuery(db *Database, funcName string) *FunctionQuery
@@ -1917,7 +1939,7 @@ func NewFunctionQuery(db *Database, funcName string) *FunctionQuery
 NewFunctionQuery creates a query for a TypeDB schema function. funcName is the function name as defined in the schema.
 
 <a name="FunctionQuery.Arg"></a>
-### func \(\*FunctionQuery\) [Arg](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L742>)
+### func \(\*FunctionQuery\) [Arg](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L26>)
 
 ```go
 func (fq *FunctionQuery) Arg(value any) *FunctionQuery
@@ -1926,7 +1948,7 @@ func (fq *FunctionQuery) Arg(value any) *FunctionQuery
 Arg adds an argument to the function call. The value is formatted using FormatValue.
 
 <a name="FunctionQuery.ArgRaw"></a>
-### func \(\*FunctionQuery\) [ArgRaw](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L748>)
+### func \(\*FunctionQuery\) [ArgRaw](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L32>)
 
 ```go
 func (fq *FunctionQuery) ArgRaw(expr string) *FunctionQuery
@@ -1935,7 +1957,7 @@ func (fq *FunctionQuery) ArgRaw(expr string) *FunctionQuery
 ArgRaw adds a pre\-formatted argument string \(e.g., a variable reference\).
 
 <a name="FunctionQuery.Build"></a>
-### func \(\*FunctionQuery\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L754>)
+### func \(\*FunctionQuery\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L38>)
 
 ```go
 func (fq *FunctionQuery) Build() string
@@ -1944,7 +1966,7 @@ func (fq *FunctionQuery) Build() string
 Build returns the TypeQL query string for calling the function.
 
 <a name="FunctionQuery.Execute"></a>
-### func \(\*FunctionQuery\) [Execute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L760>)
+### func \(\*FunctionQuery\) [Execute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L44>)
 
 ```go
 func (fq *FunctionQuery) Execute(ctx context.Context) ([]map[string]any, error)
@@ -2162,7 +2184,7 @@ type Manager[T any] struct {
 ```
 
 <a name="MustNewManager"></a>
-### func [MustNewManager](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L41>)
+### func [MustNewManager](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L66>)
 
 ```go
 func MustNewManager[T any](db *Database) *Manager[T]
@@ -2171,7 +2193,7 @@ func MustNewManager[T any](db *Database) *Manager[T]
 MustNewManager creates a new Manager for the model type T and panics if the type has not been registered. Prefer NewManager when the caller needs to handle registration failures explicitly.
 
 <a name="MustNewManagerWithTx"></a>
-### func [MustNewManagerWithTx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L66>)
+### func [MustNewManagerWithTx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L91>)
 
 ```go
 func MustNewManagerWithTx[T any](tc *TransactionContext) *Manager[T]
@@ -2180,7 +2202,7 @@ func MustNewManagerWithTx[T any](tc *TransactionContext) *Manager[T]
 MustNewManagerWithTx creates a Manager bound to an existing transaction context and panics if the model type has not been registered.
 
 <a name="NewManager"></a>
-### func [NewManager](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L26>)
+### func [NewManager](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L51>)
 
 ```go
 func NewManager[T any](db *Database) (*Manager[T], error)
@@ -2189,7 +2211,7 @@ func NewManager[T any](db *Database) (*Manager[T], error)
 NewManager creates a new Manager for the model type T. T must be a struct that has been registered via Register\[T\]\(\).
 
 <a name="NewManagerWithTx"></a>
-### func [NewManagerWithTx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L51>)
+### func [NewManagerWithTx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L76>)
 
 ```go
 func NewManagerWithTx[T any](tc *TransactionContext) (*Manager[T], error)
@@ -2198,7 +2220,7 @@ func NewManagerWithTx[T any](tc *TransactionContext) (*Manager[T], error)
 NewManagerWithTx creates a Manager bound to an existing transaction context. All operations performed by this manager will use the provided transaction.
 
 <a name="Manager[T].All"></a>
-### func \(\*Manager\[T\]\) [All](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L177>)
+### func \(\*Manager\[T\]\) [All](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L202>)
 
 ```go
 func (m *Manager[T]) All(ctx context.Context) ([]*T, error)
@@ -2207,7 +2229,7 @@ func (m *Manager[T]) All(ctx context.Context) ([]*T, error)
 All retrieves all instances of the model type T from the database.
 
 <a name="Manager[T].Delete"></a>
-### func \(\*Manager\[T\]\) [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L339>)
+### func \(\*Manager\[T\]\) [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L364>)
 
 ```go
 func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOption) error
@@ -2216,7 +2238,7 @@ func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOpti
 Delete deletes an instance by IID.
 
 <a name="Manager[T].DeleteMany"></a>
-### func \(\*Manager\[T\]\) [DeleteMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L382>)
+### func \(\*Manager\[T\]\) [DeleteMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L407>)
 
 ```go
 func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...DeleteOption) error
@@ -2225,7 +2247,7 @@ func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...Del
 DeleteMany deletes multiple instances in a single transaction.
 
 <a name="Manager[T].Get"></a>
-### func \(\*Manager\[T\]\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L138>)
+### func \(\*Manager\[T\]\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L163>)
 
 ```go
 func (m *Manager[T]) Get(ctx context.Context, filters map[string]any) ([]*T, error)
@@ -2234,7 +2256,7 @@ func (m *Manager[T]) Get(ctx context.Context, filters map[string]any) ([]*T, err
 Get retrieves instances of T that match the specified attribute filters. filters is a map where keys are TypeDB attribute names and values are the target values.
 
 <a name="Manager[T].GetByIID"></a>
-### func \(\*Manager\[T\]\) [GetByIID](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L209>)
+### func \(\*Manager\[T\]\) [GetByIID](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L234>)
 
 ```go
 func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error)
@@ -2243,7 +2265,7 @@ func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error)
 GetByIID retrieves a single instance of T by its internal instance ID \(IID\). It returns nil if no instance is found with the given IID. The IID must match 0x\[0\-9a\-fA\-F\]\+; anything else is rejected with an error before any query is sent.
 
 <a name="Manager[T].GetByIIDPolymorphic"></a>
-### func \(\*Manager\[T\]\) [GetByIIDPolymorphic](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L639>)
+### func \(\*Manager\[T\]\) [GetByIIDPolymorphic](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L664>)
 
 ```go
 func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, string, error)
@@ -2252,7 +2274,7 @@ func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, s
 GetByIIDPolymorphic fetches a single instance by IID with polymorphic type resolution. It resolves the actual stored type and fetches all of that type's attributes, so subtype\-specific fields are preserved when the concrete type is registered. Returns the instance hydrated as \*T \(base type fields only\), the type label, and an error if any. Use GetByIIDPolymorphicAny for full subtype hydration. Returns nil, "", nil if not found.
 
 <a name="Manager[T].GetByIIDPolymorphicAny"></a>
-### func \(\*Manager\[T\]\) [GetByIIDPolymorphicAny](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L682>)
+### func \(\*Manager\[T\]\) [GetByIIDPolymorphicAny](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L707>)
 
 ```go
 func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (any, string, error)
@@ -2261,7 +2283,7 @@ func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (an
 GetByIIDPolymorphicAny fetches a single instance by IID and hydrates it as the actual concrete subtype. Unlike GetByIIDPolymorphic which always returns \*T, this returns any \(the concrete type pointer\) so subtype\-specific fields are preserved. The concrete subtype must be registered via Register\[ConcreteType\]\(\). Returns nil, "", nil if not found.
 
 <a name="Manager[T].GetOne"></a>
-### func \(\*Manager\[T\]\) [GetOne](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L161>)
+### func \(\*Manager\[T\]\) [GetOne](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L186>)
 
 ```go
 func (m *Manager[T]) GetOne(ctx context.Context, filters map[string]any) (*T, error)
@@ -2270,7 +2292,7 @@ func (m *Manager[T]) GetOne(ctx context.Context, filters map[string]any) (*T, er
 GetOne retrieves exactly one instance of T matching the specified attribute filters. It returns a \*NotFoundError when no instance matches and a \*NotUniqueError when more than one instance matches, so callers can distinguish those cases with errors.As.
 
 <a name="Manager[T].GetWithRoles"></a>
-### func \(\*Manager\[T\]\) [GetWithRoles](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L183>)
+### func \(\*Manager\[T\]\) [GetWithRoles](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L208>)
 
 ```go
 func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) ([]*T, error)
@@ -2279,7 +2301,7 @@ func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) (
 GetWithRoles retrieves instances of T and populates their role players. This is primarily used for relation models.
 
 <a name="Manager[T].Insert"></a>
-### func \(\*Manager\[T\]\) [Insert](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L92>)
+### func \(\*Manager\[T\]\) [Insert](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L117>)
 
 ```go
 func (m *Manager[T]) Insert(ctx context.Context, instance *T) error
@@ -2288,7 +2310,7 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error
 Insert adds a new instance of T to the database. If T has key fields, the instance's internal IID will be populated upon success. Key attributes must be set to non\-zero values; a missing key returns a \*KeyAttributeError instead of silently inserting a zero\-value key.
 
 <a name="Manager[T].InsertMany"></a>
-### func \(\*Manager\[T\]\) [InsertMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L585>)
+### func \(\*Manager\[T\]\) [InsertMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L610>)
 
 ```go
 func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error
@@ -2297,7 +2319,7 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error
 InsertMany inserts multiple instances in a single transaction.
 
 <a name="Manager[T].Put"></a>
-### func \(\*Manager\[T\]\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L459>)
+### func \(\*Manager\[T\]\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L484>)
 
 ```go
 func (m *Manager[T]) Put(ctx context.Context, instance *T) error
@@ -2306,7 +2328,7 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error
 Put upserts an instance \(insert or update\). After a successful put, the instance's IID is populated \(if it has key fields\). Key attributes must be set to non\-zero values; a missing key returns a \*KeyAttributeError since the upsert match is meaningless without it.
 
 <a name="Manager[T].PutMany"></a>
-### func \(\*Manager\[T\]\) [PutMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L505>)
+### func \(\*Manager\[T\]\) [PutMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L530>)
 
 ```go
 func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error
@@ -2324,7 +2346,7 @@ func (m *Manager[T]) Query() *Query[T]
 Query returns a new chainable query builder for this model.
 
 <a name="Manager[T].Update"></a>
-### func \(\*Manager\[T\]\) [Update](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L237>)
+### func \(\*Manager\[T\]\) [Update](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L262>)
 
 ```go
 func (m *Manager[T]) Update(ctx context.Context, instance *T) error
@@ -2333,7 +2355,7 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error
 Update modifies an existing instance of T in the database. The instance must have its IID populated \(typically from a prior Get or Insert\).
 
 <a name="Manager[T].UpdateMany"></a>
-### func \(\*Manager\[T\]\) [UpdateMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L430>)
+### func \(\*Manager\[T\]\) [UpdateMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L455>)
 
 ```go
 func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error
@@ -4230,6 +4252,24 @@ func (tc *TransactionContext) Commit() error
 ```
 
 Commit persists changes in the scoped transaction.
+
+<a name="TransactionContext.Manager"></a>
+### func \(\*TransactionContext\) [Manager](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L39>)
+
+```go
+func (tc *TransactionContext) Manager[T any]() (*Manager[T], error)
+```
+
+Manager creates a Manager for model type T bound to tc's transaction. All operations performed by this manager use the existing transaction.
+
+<a name="TransactionContext.MustManager"></a>
+### func \(\*TransactionContext\) [MustManager](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L45>)
+
+```go
+func (tc *TransactionContext) MustManager[T any]() *Manager[T]
+```
+
+MustManager creates a Manager for model type T bound to tc's transaction and panics if the type has not been registered.
 
 <a name="TransactionContext.Rollback"></a>
 ### func \(\*TransactionContext\) [Rollback](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L272>)

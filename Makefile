@@ -5,9 +5,9 @@
 TYPEQL_CHECK_VERSION ?= 3.12.0
 
 # Build the Rust FFI static library
-# MACOSX_DEPLOYMENT_TARGET=11.0 matches Go's -mmacosx-version-min=11.0
+# MACOSX_DEPLOYMENT_TARGET=13.0 matches Go 1.27's minimum supported macOS.
 build-rust:
-	cd driver/rust && MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --release
+	cd driver/rust && MACOSX_DEPLOYMENT_TARGET=13.0 cargo build --release
 
 # Install the official typeql-check CLI into ~/go/bin (used by the TypeQL
 # syntax test gates; see internal/typeqlcheck and docs/TESTING.md).

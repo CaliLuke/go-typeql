@@ -21,6 +21,31 @@ type Manager[T any] struct {
 	tx       Tx // non-nil when bound to a specific transaction
 }
 
+// Manager creates a Manager for model type T bound to db.
+// T must be a struct that has been registered via Register[T]().
+func (db *Database) Manager[T any]() (*Manager[T], error) {
+	return NewManager[T](db)
+}
+
+// MustManager creates a Manager for model type T bound to db and panics if
+// the type has not been registered. Prefer Manager when the caller needs to
+// handle registration failures explicitly.
+func (db *Database) MustManager[T any]() *Manager[T] {
+	return MustNewManager[T](db)
+}
+
+// Manager creates a Manager for model type T bound to tc's transaction.
+// All operations performed by this manager use the existing transaction.
+func (tc *TransactionContext) Manager[T any]() (*Manager[T], error) {
+	return NewManagerWithTx[T](tc)
+}
+
+// MustManager creates a Manager for model type T bound to tc's transaction
+// and panics if the type has not been registered.
+func (tc *TransactionContext) MustManager[T any]() *Manager[T] {
+	return MustNewManagerWithTx[T](tc)
+}
+
 // NewManager creates a new Manager for the model type T.
 // T must be a struct that has been registered via Register[T]().
 func NewManager[T any](db *Database) (*Manager[T], error) {
