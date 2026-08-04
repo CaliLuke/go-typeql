@@ -2,8 +2,9 @@
 //
 // Design: All functions use opaque pointers. Errors are returned via
 // out-parameters (*mut *mut c_char) that receive error message strings.
-// Query results are returned as a single MessagePack-encoded byte buffer
-// via typedb_transaction_query().
+// Query results are returned as MessagePack, either as one buffer through
+// typedb_transaction_query() or as bounded pull chunks through the query
+// stream functions.
 //
 // Safety: every exported function wraps its body in catch_unwind (see
 // ffi_call / ffi_call_unit). A Rust panic never unwinds across the C
@@ -18,7 +19,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr::null_mut;
 use std::str::FromStr;
@@ -29,15 +30,21 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize, Serializer,
+    ser::{Error as _, SerializeMap, SerializeSeq},
+};
 use serde_json::json;
 
 use typedb_driver::{
     Addresses, Credentials, DriverOptions, DriverTlsConfig, Promise, QueryOptions, Transaction,
     TransactionOptions, TransactionType, TypeDBDriver,
-    answer::QueryAnswer,
+    answer::{
+        ConceptDocument, ConceptRow, QueryAnswer,
+        concept_document::{Leaf, Node},
+    },
     concept::{
-        Concept, Value,
+        Concept, Kind, Value,
         value::{Decimal, Duration as TypeDBDuration, TimeZone, ValueType},
     },
     given::{GivenRowEntry, GivenRows},
@@ -46,54 +53,236 @@ use typedb_driver::{
 static NEXT_CONCEPT_HANDLE: AtomicU64 = AtomicU64::new(1);
 static CONCEPT_REGISTRY: OnceLock<Mutex<HashMap<String, Concept>>> = OnceLock::new();
 
-/// Convert a TypeDB Concept to a clean JSON value instead of Rust Debug strings.
-///
-/// When register_handle is true, entity/relation instances are registered in
-/// the process-global concept registry and the resulting object carries a
-/// "_concept_handle" key. The caller owns that handle and must release it via
-/// typedb_concept_drop / typedb_concepts_drop_all.
-fn concept_to_json(concept: &Concept, register_handle: bool) -> serde_json::Value {
-    // Attributes & Values → extract the actual typed value
-    if let Some(value) = concept.try_get_value() {
-        return match value.get_type() {
-            ValueType::Boolean => json!(value.get_boolean().unwrap()),
-            ValueType::Integer => json!(value.get_integer().unwrap()),
-            ValueType::Double => json!(value.get_double().unwrap()),
-            ValueType::String => json!(value.get_string().unwrap()),
-            ValueType::Decimal => json!(format!("{}", value.get_decimal().unwrap())),
-            ValueType::Date => json!(format!("{}", value.get_date().unwrap())),
-            ValueType::Datetime => json!(format!("{}", value.get_datetime().unwrap())),
-            ValueType::DatetimeTZ => json!(format!("{}", value.get_datetime_tz().unwrap())),
-            ValueType::Duration => json!(format!("{}", value.get_duration().unwrap())),
-            ValueType::Struct(_) => json!(format!("{:?}", value.get_struct().unwrap())),
-        };
-    }
-    // Entity/Relation instances → structured object with kind, type, iid
-    if let Some(iid) = concept.try_get_iid() {
-        let mut obj = serde_json::Map::new();
-        obj.insert(
-            "_kind".into(),
-            json!(concept.get_category().name().to_lowercase()),
-        );
-        obj.insert("_type".into(), json!(concept.get_label()));
-        obj.insert("_iid".into(), json!(format!("{}", iid)));
-        if register_handle {
-            obj.insert("_concept_handle".into(), json!(register_concept(concept)));
+struct QueryResultStream {
+    answer: QueryAnswer,
+    register_concepts: bool,
+    finished: bool,
+    pending: Option<QueryStreamResult>,
+}
+
+enum QueryStreamResult {
+    Document(ConceptDocument),
+    Row(ConceptRow),
+}
+
+/// Serialize a row concept directly to MessagePack without first building a
+/// serde_json::Value tree.
+struct RowConcept<'a> {
+    concept: &'a Concept,
+    register_handle: bool,
+}
+
+impl Serialize for RowConcept<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if let Some(value) = self.concept.try_get_value() {
+            return RowValue(value).serialize(serializer);
         }
-        return serde_json::Value::Object(obj);
+        if let Some(iid) = self.concept.try_get_iid() {
+            let mut map =
+                serializer.serialize_map(Some(if self.register_handle { 4 } else { 3 }))?;
+            map.serialize_entry("_kind", concept_category_name(self.concept))?;
+            map.serialize_entry("_type", self.concept.get_label())?;
+            map.serialize_entry("_iid", &iid.to_string())?;
+            if self.register_handle {
+                map.serialize_entry("_concept_handle", &register_concept(self.concept))?;
+            }
+            return map.end();
+        }
+        if self.concept.is_type() {
+            let mut map = serializer.serialize_map(Some(2))?;
+            map.serialize_entry("_kind", concept_category_name(self.concept))?;
+            map.serialize_entry("_label", self.concept.get_label())?;
+            return map.end();
+        }
+        serializer.serialize_str(&format!("{:?}", self.concept))
     }
-    // Types (EntityType, RelationType, etc.)
-    if concept.is_type() {
-        let mut obj = serde_json::Map::new();
-        obj.insert(
-            "_kind".into(),
-            json!(concept.get_category().name().to_lowercase()),
-        );
-        obj.insert("_label".into(), json!(concept.get_label()));
-        return serde_json::Value::Object(obj);
+}
+
+struct RowValue<'a>(&'a Value);
+
+impl Serialize for RowValue<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.0 {
+            Value::Boolean(value) => serializer.serialize_bool(*value),
+            Value::Integer(value) => serializer.serialize_i64(*value),
+            Value::Double(value) => serializer.serialize_f64(*value),
+            Value::String(value) => serializer.serialize_str(value),
+            Value::Decimal(value) => serializer.serialize_str(&value.to_string()),
+            Value::Date(value) => serializer.serialize_str(&value.to_string()),
+            Value::Datetime(value) => serializer.serialize_str(&value.to_string()),
+            Value::DatetimeTZ(value) => serializer.serialize_str(&value.to_string()),
+            Value::Duration(value) => serializer.serialize_str(&value.to_string()),
+            Value::Struct(value, _) => serializer.serialize_str(&format!("{:?}", value)),
+        }
     }
-    // Fallback
-    json!(format!("{:?}", concept))
+}
+
+/// Serialize a fetch document directly from the driver's node tree. Calling
+/// ConceptDocument::into_json would allocate a second recursive tree first.
+struct Document<'a>(&'a ConceptDocument);
+
+impl Serialize for Document<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.0.root.as_ref() {
+            Some(root) => DocumentNode(root).serialize(serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
+struct DocumentNode<'a>(&'a Node);
+
+impl Serialize for DocumentNode<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.0 {
+            Node::Map(values) => {
+                let mut map = serializer.serialize_map(Some(values.len()))?;
+                for (name, value) in values {
+                    map.serialize_entry(name, &DocumentNode(value))?;
+                }
+                map.end()
+            }
+            Node::List(values) => {
+                let mut sequence = serializer.serialize_seq(Some(values.len()))?;
+                for value in values {
+                    sequence.serialize_element(&DocumentNode(value))?;
+                }
+                sequence.end()
+            }
+            Node::Leaf(value) => match value {
+                Some(value) => DocumentLeaf(value).serialize(serializer),
+                None => serializer.serialize_none(),
+            },
+        }
+    }
+}
+
+struct DocumentLeaf<'a>(&'a Leaf);
+
+impl Serialize for DocumentLeaf<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.0 {
+            Leaf::Empty => serializer.serialize_none(),
+            Leaf::Concept(concept) => serialize_document_concept(concept, serializer),
+            Leaf::ValueType(value_type) => serializer.serialize_str(value_type.name()),
+            Leaf::Kind(kind) => serializer.serialize_str(kind.name()),
+        }
+    }
+}
+
+fn serialize_document_concept<S>(concept: &Concept, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match concept {
+        Concept::EntityType(type_) => {
+            serialize_document_type(Kind::Entity, type_.label(), serializer)
+        }
+        Concept::RelationType(type_) => {
+            serialize_document_type(Kind::Relation, type_.label(), serializer)
+        }
+        Concept::RoleType(type_) => serialize_document_type(Kind::Role, type_.label(), serializer),
+        Concept::AttributeType(type_) => {
+            let mut map = serializer.serialize_map(Some(3))?;
+            map.serialize_entry("kind", Kind::Attribute.name())?;
+            map.serialize_entry("label", type_.label())?;
+            map.serialize_entry(
+                "valueType",
+                type_.value_type().map_or("none", ValueType::name),
+            )?;
+            map.end()
+        }
+        Concept::Attribute(_) | Concept::Value(_) => {
+            DocumentValue(concept.try_get_value().expect("value concept")).serialize(serializer)
+        }
+        Concept::Entity(_) | Concept::Relation(_) => Err(S::Error::custom(
+            "unexpected entity or relation concept in fetch response",
+        )),
+    }
+}
+
+fn serialize_document_type<S>(kind: Kind, label: &str, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("kind", kind.name())?;
+    map.serialize_entry("label", label)?;
+    map.end()
+}
+
+struct DocumentValue<'a>(&'a Value);
+
+impl Serialize for DocumentValue<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.0 {
+            Value::Boolean(value) => serializer.serialize_bool(*value),
+            // Keep the typedb-driver JSON representation, which converts
+            // document integers to JSON numbers before MessagePack encoding.
+            Value::Integer(value) => serializer.serialize_f64(*value as f64),
+            Value::Double(value) => serializer.serialize_f64(*value),
+            Value::String(value) => serializer.serialize_str(value),
+            Value::Decimal(_)
+            | Value::Date(_)
+            | Value::Datetime(_)
+            | Value::DatetimeTZ(_)
+            | Value::Duration(_) => serializer.serialize_str(&self.0.to_string()),
+            Value::Struct(value, name) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry(name, &DocumentStruct(value))?;
+                map.end()
+            }
+        }
+    }
+}
+
+struct DocumentStruct<'a>(&'a typedb_driver::concept::value::Struct);
+
+impl Serialize for DocumentStruct<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.0.fields().len()))?;
+        for (name, value) in self.0.fields() {
+            match value {
+                Some(value) => map.serialize_entry(name, &DocumentValue(value))?,
+                None => map.serialize_entry(name, &Option::<()>::None)?,
+            }
+        }
+        map.end()
+    }
+}
+
+fn concept_category_name(concept: &Concept) -> &'static str {
+    match concept {
+        Concept::EntityType(_) => "entitytype",
+        Concept::RelationType(_) => "relationtype",
+        Concept::RoleType(_) => "roletype",
+        Concept::AttributeType(_) => "attributetype",
+        Concept::Entity(_) => "entity",
+        Concept::Relation(_) => "relation",
+        Concept::Attribute(_) => "attribute",
+        Concept::Value(_) => "value",
+    }
 }
 
 /// Lock the concept registry, recovering from poisoning instead of panicking.
@@ -980,6 +1169,77 @@ pub extern "C" fn typedb_transaction_query_with_rows(
     })
 }
 
+/// Start a query and return a pull-based result stream.
+/// The caller must release the stream with typedb_query_stream_drop.
+///
+/// # Safety
+/// txn, query, options, and err_out must follow the pointer contracts in typedb_ffi.h.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_transaction_query_stream_open(
+    txn: *mut Transaction,
+    query: *const c_char,
+    options: *const QueryOptions,
+    register_concepts: bool,
+    err_out: *mut *mut c_char,
+) -> *mut c_void {
+    ffi_call(err_out, null_mut, || {
+        let query_text = c_str(query)?;
+        let answer = execute_query(txn, query_text, options, None)?;
+        Ok(Box::into_raw(Box::new(QueryResultStream {
+            answer,
+            register_concepts,
+            finished: false,
+            pending: None,
+        })) as *mut c_void)
+    })
+}
+
+/// Pull at most max_rows results from a query stream as a MessagePack array.
+/// The returned buffer must be released with typedb_free_bytes.
+///
+/// # Safety
+/// stream and all output pointers must follow the pointer contracts in typedb_ffi.h.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_query_stream_next(
+    stream: *mut c_void,
+    max_rows: usize,
+    out_row_count: *mut usize,
+    out_done: *mut bool,
+    out_len: *mut usize,
+    err_out: *mut *mut c_char,
+) -> *mut u8 {
+    if !out_row_count.is_null() {
+        unsafe { *out_row_count = 0 };
+    }
+    if !out_done.is_null() {
+        unsafe { *out_done = false };
+    }
+    ffi_call(err_out, null_mut, || {
+        let stream = deref_mut(stream.cast::<QueryResultStream>(), "query result stream")?;
+        let (bytes, row_count, done) = stream.next_chunk(max_rows)?;
+        if !out_row_count.is_null() {
+            unsafe { *out_row_count = row_count };
+        }
+        if !out_done.is_null() {
+            unsafe { *out_done = done };
+        }
+        Ok(vec_to_raw(bytes, out_len))
+    })
+}
+
+/// Release a pull-based query result stream.
+///
+/// # Safety
+/// stream must be null or a pointer returned by typedb_transaction_query_stream_open.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn typedb_query_stream_drop(stream: *mut c_void) {
+    ffi_call_unit(|| {
+        if !stream.is_null() {
+            drop(unsafe { Box::from_raw(stream.cast::<QueryResultStream>()) });
+        }
+    });
+}
+
 /// Shared query execution path with enter/exit debug logging.
 fn run_logged_query(
     event: &str,
@@ -1160,60 +1420,137 @@ fn collect_answer_to_msgpack(
     answer: QueryAnswer,
     register_concepts: bool,
 ) -> Result<Vec<u8>, String> {
-    if answer.is_ok() {
-        return Ok(vec![]);
-    }
-
     let mut bytes = msgpack_array_buffer();
     let mut row_count = 0u32;
 
-    if answer.is_document_stream() {
-        for doc_result in answer.into_documents() {
-            match doc_result {
-                Ok(doc) => {
-                    append_msgpack_row(&mut bytes, &doc.into_json())?;
-                    row_count = row_count
-                        .checked_add(1)
-                        .ok_or_else(|| "query returned more than u32::MAX rows".to_string())?;
-                }
-                Err(e) => return Err(e.to_string()),
+    match answer {
+        QueryAnswer::Ok(_) => return Ok(vec![]),
+        QueryAnswer::ConceptDocumentStream(_, stream) => {
+            for doc_result in stream {
+                append_document_msgpack(&mut bytes, doc_result.map_err(|e| e.to_string())?)?;
+                row_count = increment_row_count(row_count)?;
             }
         }
-        return finish_msgpack_array(bytes, row_count);
-    }
-
-    if answer.is_row_stream() {
-        for row_result in answer.into_rows() {
-            match row_result {
-                Ok(row) => {
-                    let col_names = row.get_column_names();
-                    if col_names.len() != row.row.len() {
-                        return Err(format!(
-                            "query row has {} columns but {} values",
-                            col_names.len(),
-                            row.row.len()
-                        ));
-                    }
-                    append_msgpack_map_header(&mut bytes, col_names.len())?;
-                    for (name, concept) in col_names.iter().zip(&row.row) {
-                        append_msgpack_row(&mut bytes, name)?;
-                        let value = concept
-                            .as_ref()
-                            .map(|concept| concept_to_json(concept, register_concepts))
-                            .unwrap_or(serde_json::Value::Null);
-                        append_msgpack_row(&mut bytes, &value)?;
-                    }
-                    row_count = row_count
-                        .checked_add(1)
-                        .ok_or_else(|| "query returned more than u32::MAX rows".to_string())?;
-                }
-                Err(e) => return Err(e.to_string()),
+        QueryAnswer::ConceptRowStream(_, stream) => {
+            for row_result in stream {
+                append_concept_row_msgpack(
+                    &mut bytes,
+                    row_result.map_err(|e| e.to_string())?,
+                    register_concepts,
+                )?;
+                row_count = increment_row_count(row_count)?;
             }
         }
-        return finish_msgpack_array(bytes, row_count);
+    }
+    finish_msgpack_array(bytes, row_count)
+}
+
+impl QueryResultStream {
+    fn next_chunk(&mut self, max_rows: usize) -> Result<(Vec<u8>, usize, bool), String> {
+        if max_rows == 0 {
+            return Err("query stream chunk size must be greater than zero".to_string());
+        }
+        if self.finished {
+            return Ok((vec![], 0, true));
+        }
+
+        let mut bytes = msgpack_array_buffer();
+        let mut row_count = 0u32;
+        let chunk_limit = u32::try_from(max_rows).unwrap_or(u32::MAX);
+        while row_count < chunk_limit {
+            let Some(result) = self.take_next_result()? else {
+                break;
+            };
+            append_query_stream_result(&mut bytes, result, self.register_concepts)?;
+            row_count = increment_row_count(row_count)?;
+        }
+
+        if !self.finished && row_count == chunk_limit {
+            self.pending = self.next_result()?;
+        }
+
+        let done = self.finished;
+        let bytes = finish_msgpack_array(bytes, row_count)?;
+        Ok((bytes, row_count as usize, done))
     }
 
-    Ok(vec![])
+    fn take_next_result(&mut self) -> Result<Option<QueryStreamResult>, String> {
+        if let Some(result) = self.pending.take() {
+            return Ok(Some(result));
+        }
+        self.next_result()
+    }
+
+    fn next_result(&mut self) -> Result<Option<QueryStreamResult>, String> {
+        let result = match &mut self.answer {
+            QueryAnswer::Ok(_) => None,
+            QueryAnswer::ConceptDocumentStream(_, stream) => stream
+                .next()
+                .transpose()
+                .map_err(|e| e.to_string())?
+                .map(QueryStreamResult::Document),
+            QueryAnswer::ConceptRowStream(_, stream) => stream
+                .next()
+                .transpose()
+                .map_err(|e| e.to_string())?
+                .map(QueryStreamResult::Row),
+        };
+        if result.is_none() {
+            self.finished = true;
+        }
+        Ok(result)
+    }
+}
+
+fn append_query_stream_result(
+    bytes: &mut Vec<u8>,
+    result: QueryStreamResult,
+    register_concepts: bool,
+) -> Result<(), String> {
+    match result {
+        QueryStreamResult::Document(document) => append_document_msgpack(bytes, document),
+        QueryStreamResult::Row(row) => append_concept_row_msgpack(bytes, row, register_concepts),
+    }
+}
+
+fn increment_row_count(row_count: u32) -> Result<u32, String> {
+    row_count
+        .checked_add(1)
+        .ok_or_else(|| "query returned more than u32::MAX rows".to_string())
+}
+
+fn append_document_msgpack(bytes: &mut Vec<u8>, document: ConceptDocument) -> Result<(), String> {
+    append_msgpack_row(bytes, &Document(&document))
+}
+
+fn append_concept_row_msgpack(
+    bytes: &mut Vec<u8>,
+    row: ConceptRow,
+    register_concepts: bool,
+) -> Result<(), String> {
+    let col_names = row.get_column_names();
+    if col_names.len() != row.row.len() {
+        return Err(format!(
+            "query row has {} columns but {} values",
+            col_names.len(),
+            row.row.len()
+        ));
+    }
+    append_msgpack_map_header(bytes, col_names.len())?;
+    for (name, concept) in col_names.iter().zip(&row.row) {
+        append_msgpack_row(bytes, name)?;
+        match concept {
+            Some(concept) => append_msgpack_row(
+                bytes,
+                &RowConcept {
+                    concept,
+                    register_handle: register_concepts,
+                },
+            )?,
+            None => append_msgpack_row(bytes, &Option::<()>::None)?,
+        }
+    }
+    Ok(())
 }
 
 const MSGPACK_ARRAY32_HEADER_LEN: usize = 5;
@@ -1409,6 +1746,14 @@ pub unsafe extern "C" fn typedb_transaction_drop(txn: *mut Transaction) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use typedb_driver::{
+        Result as TypeDBResult,
+        answer::{
+            QueryType, concept_document::ConceptDocumentHeader, concept_row::ConceptRowHeader,
+        },
+        box_stream,
+    };
 
     fn take_error(err: *mut c_char) -> String {
         assert!(!err.is_null(), "expected an error message");
@@ -1497,6 +1842,47 @@ mod tests {
     }
 
     #[test]
+    fn null_query_stream_operations_return_error_not_crash() {
+        let query = CString::new("match $x isa thing;").unwrap();
+        let mut err: *mut c_char = null_mut();
+        let stream = unsafe {
+            typedb_transaction_query_stream_open(
+                null_mut(),
+                query.as_ptr(),
+                std::ptr::null(),
+                false,
+                &mut err,
+            )
+        };
+        assert!(stream.is_null());
+        let msg = take_error(err);
+        assert!(msg.contains("null transaction pointer"), "got: {}", msg);
+
+        let mut row_count = 0;
+        let mut done = false;
+        let mut out_len = 0;
+        let mut err: *mut c_char = null_mut();
+        let bytes = unsafe {
+            typedb_query_stream_next(
+                null_mut(),
+                1,
+                &mut row_count,
+                &mut done,
+                &mut out_len,
+                &mut err,
+            )
+        };
+        assert!(bytes.is_null());
+        let msg = take_error(err);
+        assert!(
+            msg.contains("null query result stream pointer"),
+            "got: {}",
+            msg
+        );
+        unsafe { typedb_query_stream_drop(null_mut()) };
+    }
+
+    #[test]
     fn null_driver_database_ops_return_error_not_crash() {
         let name = CString::new("db").unwrap();
         let mut err: *mut c_char = null_mut();
@@ -1558,5 +1944,108 @@ mod tests {
         let decoded: HashMap<String, serde_json::Value> = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(decoded["name"], json!("Alice"));
         assert_eq!(decoded["age"], json!(30));
+    }
+
+    #[test]
+    fn document_serializer_matches_driver_json() {
+        let header = Arc::new(ConceptDocumentHeader {
+            query_type: QueryType::ReadQuery,
+        });
+        let root = Node::Map(HashMap::from([
+            (
+                "integer".to_string(),
+                Node::Leaf(Some(Leaf::Concept(Concept::Value(Value::Integer(42))))),
+            ),
+            (
+                "datetime".to_string(),
+                Node::Leaf(Some(Leaf::Concept(Concept::Value(Value::Datetime(
+                    NaiveDateTime::parse_from_str(
+                        "2024-06-01T13:04:05.123456789",
+                        "%Y-%m-%dT%H:%M:%S%.f",
+                    )
+                    .unwrap(),
+                ))))),
+            ),
+            (
+                "items".to_string(),
+                Node::List(vec![
+                    Node::Leaf(Some(Leaf::Concept(Concept::Value(Value::String(
+                        "value".to_string(),
+                    ))))),
+                    Node::Leaf(None),
+                ]),
+            ),
+            (
+                "value-type".to_string(),
+                Node::Leaf(Some(Leaf::ValueType(ValueType::DatetimeTZ))),
+            ),
+        ]));
+        let document = ConceptDocument::new(header, Some(root));
+
+        let expected_bytes = rmp_serde::to_vec(&document.clone().into_json()).unwrap();
+        let expected: serde_json::Value = rmp_serde::from_slice(&expected_bytes).unwrap();
+        let mut actual_bytes = Vec::new();
+        append_document_msgpack(&mut actual_bytes, document).unwrap();
+        let actual: serde_json::Value = rmp_serde::from_slice(&actual_bytes).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn query_result_stream_splits_rows_into_bounded_chunks() {
+        let header = Arc::new(ConceptRowHeader {
+            column_names: vec!["value".to_string()],
+            query_type: QueryType::ReadQuery,
+            query_structure: None,
+        });
+        let mut rows: Vec<TypeDBResult<ConceptRow>> = Vec::with_capacity(130);
+        for _ in 0..130 {
+            rows.push(Ok(ConceptRow::new(header.clone(), vec![None], None)));
+        }
+        let answer = QueryAnswer::ConceptRowStream(header, box_stream(rows.into_iter()));
+        let mut stream = QueryResultStream {
+            answer,
+            register_concepts: false,
+            finished: false,
+            pending: None,
+        };
+
+        let (first, first_count, first_done) = stream.next_chunk(128).unwrap();
+        let first_rows: Vec<HashMap<String, serde_json::Value>> =
+            rmp_serde::from_slice(&first).unwrap();
+        assert_eq!(first_count, 128);
+        assert_eq!(first_rows.len(), 128);
+        assert!(!first_done);
+
+        let (second, second_count, second_done) = stream.next_chunk(128).unwrap();
+        let second_rows: Vec<HashMap<String, serde_json::Value>> =
+            rmp_serde::from_slice(&second).unwrap();
+        assert_eq!(second_count, 2);
+        assert_eq!(second_rows.len(), 2);
+        assert!(second_done);
+    }
+
+    #[test]
+    fn query_result_stream_marks_an_exact_chunk_done() {
+        let header = Arc::new(ConceptRowHeader {
+            column_names: vec!["value".to_string()],
+            query_type: QueryType::ReadQuery,
+            query_structure: None,
+        });
+        let mut rows: Vec<TypeDBResult<ConceptRow>> = Vec::with_capacity(128);
+        for _ in 0..128 {
+            rows.push(Ok(ConceptRow::new(header.clone(), vec![None], None)));
+        }
+        let answer = QueryAnswer::ConceptRowStream(header, box_stream(rows.into_iter()));
+        let mut stream = QueryResultStream {
+            answer,
+            register_concepts: false,
+            finished: false,
+            pending: None,
+        };
+
+        let (_, row_count, done) = stream.next_chunk(128).unwrap();
+        assert_eq!(row_count, 128);
+        assert!(done);
     }
 }

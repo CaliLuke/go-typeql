@@ -358,6 +358,8 @@ func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, l
 
 type queryDecoder func(buf *C.uchar, outLen C.size_t) (int, error)
 
+const queryStreamChunkRows = 256
+
 func (t *Transaction) queryDecoded(
 	query string,
 	opts *QueryOptions,
@@ -436,9 +438,97 @@ func (t *Transaction) queryDecoded(
 	return nil
 }
 
+func (t *Transaction) queryEach(
+	query string,
+	fn func(rowCount int, row map[string]any) error,
+	logExtra ...any,
+) error {
+	start := time.Now()
+	queryOp := queryOperation(query)
+	queryFP := queryFingerprint(query)
+	logFields := append([]any{"row_consumer", true}, logExtra...)
+
+	if t.isAbandoned() {
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrTransactionAbandoned, logFields...)
+		return ErrTransactionAbandoned
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.ptr == nil {
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrNotConnected, logFields...)
+		return ErrNotConnected
+	}
+
+	cQuery := C.CString(query)
+	defer C.free(unsafe.Pointer(cQuery))
+
+	incActiveTxQuery("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_op", queryOp, "query_fingerprint", queryFP, "reason", "start")
+	defer decActiveTxQuery("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_op", queryOp, "query_fingerprint", queryFP, "reason", "finish")
+
+	var queryErr *C.char
+	stream := C.typedb_transaction_query_stream_open(t.ptr, cQuery, nil, false, &queryErr)
+	if stream == nil {
+		err := withQuery(getError(queryErr), query)
+		if err == nil {
+			err = withQuery(ErrNilPointer, query)
+		}
+		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, logFields...)
+		return err
+	}
+	defer C.typedb_query_stream_drop(stream)
+
+	rowCount := 0
+	byteCount := 0
+	for {
+		var chunkRows C.size_t
+		var done C.bool
+		var outLen C.size_t
+		var nextErr *C.char
+		buf := C.typedb_query_stream_next(
+			stream,
+			C.size_t(queryStreamChunkRows),
+			&chunkRows,
+			&done,
+			&outLen,
+			&nextErr,
+		)
+		if err := withQuery(getError(nextErr), query); err != nil {
+			t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, err, logFields...)
+			return err
+		}
+
+		if buf != nil {
+			decodedRows, err := decodeMsgpackEach(buf, outLen, fn)
+			C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
+			if err != nil {
+				err = withQuery(err, query)
+				t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, err, logFields...)
+				return err
+			}
+			if decodedRows != int(chunkRows) {
+				err := withQuery(fmt.Errorf("driver: decoded %d rows from a %d-row query chunk", decodedRows, uint64(chunkRows)), query)
+				t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, err, logFields...)
+				return err
+			}
+			rowCount += decodedRows
+			byteCount += int(outLen)
+		} else if outLen != 0 || chunkRows != 0 {
+			err := withQuery(ErrNilPointer, query)
+			t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, err, logFields...)
+			return err
+		}
+
+		if bool(done) {
+			t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, nil, logFields...)
+			return nil
+		}
+	}
+}
+
 // QueryEachWithContext executes a TypeQL query and calls fn for each result.
-// The rowCount argument is the total number of results and is the same for
-// every call. The driver reuses the row map, so fn must not retain it.
+// The rowCount argument is the number of results in the current stream chunk.
+// The driver reuses the row map, so fn must not retain it.
 func (t *Transaction) QueryEachWithContext(
 	ctx context.Context,
 	query string,
@@ -465,9 +555,7 @@ func (t *Transaction) QueryEachWithContext(
 		return fn(rowCount, row)
 	}
 	run := func(logExtra ...any) error {
-		return t.queryDecoded(query, nil, nil, func(buf *C.uchar, outLen C.size_t) (int, error) {
-			return decodeMsgpackEach(buf, outLen, consume)
-		}, logExtra...)
+		return t.queryEach(query, consume, logExtra...)
 	}
 	if ctx.Done() == nil {
 		return run()

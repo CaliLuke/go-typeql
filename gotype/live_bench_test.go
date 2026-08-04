@@ -34,6 +34,8 @@ type liveBenchEmployment struct {
 	Since    int64             `typedb:"since"`
 }
 
+const liveBenchPersonCount = 256
+
 type liveBenchDriverAdapter struct {
 	drv *driver.Driver
 }
@@ -195,7 +197,7 @@ func (f *liveBenchFixture) seed(ctx context.Context) error {
 	}
 	f.company = companies[0]
 
-	for i := 0; i < 25; i++ {
+	for i := range liveBenchPersonCount {
 		p := &liveBenchPerson{
 			Name:  fmt.Sprintf("person-%02d", i),
 			Email: fmt.Sprintf("person-%02d@example.test", i),
