@@ -18,6 +18,29 @@ type mockTx struct {
 	commitErr error
 }
 
+type rowMockTx struct {
+	*mockTx
+	eachCalls int
+}
+
+func (m *rowMockTx) QueryEachWithContext(
+	ctx context.Context,
+	query string,
+	fn func(rowCount int, row map[string]any) error,
+) error {
+	m.eachCalls++
+	rows, err := m.QueryWithContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := fn(len(rows), row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *mockTx) Query(query string) ([]map[string]any, error) {
 	m.queries = append(m.queries, query)
 	if m.idx < len(m.responses) {
@@ -94,6 +117,30 @@ func TestDatabaseManagerFactories(t *testing.T) {
 	mustMgr := db.MustManager[testPerson]()
 	if mustMgr.db != db || mustMgr.tx != nil {
 		t.Fatal("must database manager was not bound to the database")
+	}
+}
+
+func TestManagerReadHydratedConsumesRows(t *testing.T) {
+	registerTestTypes(t)
+	streamTx := &rowMockTx{mockTx: &mockTx{responses: [][]map[string]any{{
+		{"_iid": "0x01", "name": "Alice", "email": "alice@example.com"},
+		{"_iid": "0x02", "name": "Bob", "email": "bob@example.com"},
+	}}}}
+	info, ok := LookupType(typeOf[testPerson]())
+	if !ok {
+		t.Fatal("test person was not registered")
+	}
+	mgr := &Manager[testPerson]{info: info, tx: streamTx}
+
+	got, err := mgr.readHydrated(context.Background(), "match $e isa test-person;")
+	if err != nil {
+		t.Fatalf("read hydrated: %v", err)
+	}
+	if streamTx.eachCalls != 1 {
+		t.Fatalf("row consumer calls: got %d, want 1", streamTx.eachCalls)
+	}
+	if len(got) != 2 || got[0].Name != "Alice" || got[1].Name != "Bob" {
+		t.Fatalf("unexpected hydrated results: %#v", got)
 	}
 }
 

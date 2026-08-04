@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 	"time"
 	"unsafe"
@@ -246,4 +247,90 @@ func TestDecodeMsgpackBytesRoundTrip(t *testing.T) {
 	if err == nil && empty != nil {
 		t.Fatalf("nil input should not decode to rows: %#v", empty)
 	}
+}
+
+func TestDecodeMsgpackEachBytes(t *testing.T) {
+	want := []map[string]any{
+		{"name": "Alice", "age": int8(30)},
+		{"name": "Bob", "age": int8(31)},
+	}
+	data, err := msgpack.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+
+	var names []string
+	rowCount, err := decodeMsgpackEachBytes(data, func(total int, row map[string]any) error {
+		if total != len(want) {
+			t.Fatalf("callback row count: got %d, want %d", total, len(want))
+		}
+		names = append(names, row["name"].(string))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("decode each: %v", err)
+	}
+	if rowCount != len(want) {
+		t.Fatalf("row count: got %d, want %d", rowCount, len(want))
+	}
+	if !slices.Equal(names, []string{"Alice", "Bob"}) {
+		t.Fatalf("names: got %v", names)
+	}
+
+	wantErr := errors.New("stop")
+	_, err = decodeMsgpackEachBytes(data, func(_ int, _ map[string]any) error {
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("callback error: got %v, want %v", err, wantErr)
+	}
+
+	if _, err := decodeMsgpackEachBytes([]byte{0xc1}, func(_ int, _ map[string]any) error {
+		return nil
+	}); err == nil {
+		t.Fatal("invalid msgpack input must return an error")
+	}
+}
+
+var decodeBenchmarkSink int
+
+func BenchmarkDecodeMsgpackRows(b *testing.B) {
+	rows := make([]map[string]any, 1000)
+	for i := range rows {
+		rows[i] = map[string]any{
+			"_iid":  "0xABC123",
+			"name":  "Person Name",
+			"email": "person@example.com",
+			"age":   int64(30),
+			"city":  "San Francisco",
+			"score": int64(95),
+		}
+	}
+	data, err := msgpack.Marshal(rows)
+	if err != nil {
+		b.Fatalf("marshal fixture: %v", err)
+	}
+
+	b.Run("Materialize", func(b *testing.B) {
+		for b.Loop() {
+			decoded, err := decodeMsgpackBytes(data)
+			if err != nil {
+				b.Fatal(err)
+			}
+			decodeBenchmarkSink = len(decoded)
+		}
+	})
+	b.Run("Consume", func(b *testing.B) {
+		for b.Loop() {
+			count := 0
+			_, err := decodeMsgpackEachBytes(data, func(_ int, _ map[string]any) error {
+				count++
+				return nil
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+			decodeBenchmarkSink = count
+		}
+	})
 }

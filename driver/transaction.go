@@ -347,6 +347,24 @@ func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, 
 }
 
 func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, logExtra ...any) ([]map[string]any, error) {
+	var results []map[string]any
+	err := t.queryDecoded(query, opts, rows, func(buf *C.uchar, outLen C.size_t) (int, error) {
+		var decodeErr error
+		results, decodeErr = decodeMsgpack(buf, outLen)
+		return len(results), decodeErr
+	}, logExtra...)
+	return results, err
+}
+
+type queryDecoder func(buf *C.uchar, outLen C.size_t) (int, error)
+
+func (t *Transaction) queryDecoded(
+	query string,
+	opts *QueryOptions,
+	rows *GivenRows,
+	decode queryDecoder,
+	logExtra ...any,
+) error {
 	start := time.Now()
 	queryOp := queryOperation(query)
 	queryFP := queryFingerprint(query)
@@ -354,7 +372,7 @@ func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, l
 
 	if t.isAbandoned() {
 		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrTransactionAbandoned, logFields...)
-		return nil, ErrTransactionAbandoned
+		return ErrTransactionAbandoned
 	}
 
 	var rowsJSON []byte
@@ -364,7 +382,7 @@ func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, l
 		if err != nil {
 			err = withQuery(err, query)
 			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, logFields...)
-			return nil, err
+			return err
 		}
 	}
 
@@ -373,7 +391,7 @@ func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, l
 
 	if t.ptr == nil {
 		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrNotConnected, logFields...)
-		return nil, ErrNotConnected
+		return ErrNotConnected
 	}
 
 	cQuery := C.CString(query)
@@ -402,20 +420,81 @@ func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, l
 	if buf == nil {
 		if err := withQuery(getError(queryErr), query); err != nil {
 			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, logFields...)
-			return nil, err
+			return err
 		}
 		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, nil, logFields...)
-		return nil, nil
+		return nil
 	}
 	defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
-	results, err := decodeMsgpack(buf, outLen)
+	rowCount, err := decode(buf, outLen)
 	err = withQuery(err, query)
 	if err != nil {
 		t.logQueryDuration(start, query, queryOp, queryFP, 0, int(outLen), err, logFields...)
-		return nil, err
+		return err
 	}
-	t.logQueryDuration(start, query, queryOp, queryFP, len(results), int(outLen), nil, logFields...)
-	return results, nil
+	t.logQueryDuration(start, query, queryOp, queryFP, rowCount, int(outLen), nil, logFields...)
+	return nil
+}
+
+// QueryEachWithContext executes a TypeQL query and calls fn for each result.
+// The rowCount argument is the total number of results and is the same for
+// every call. The driver reuses the row map, so fn must not retain it.
+func (t *Transaction) QueryEachWithContext(
+	ctx context.Context,
+	query string,
+	fn func(rowCount int, row map[string]any) error,
+) error {
+	if fn == nil {
+		return fmt.Errorf("driver: row function must not be nil")
+	}
+	queryOp := queryOperation(query)
+	queryFP := queryFingerprint(query)
+	if deadline, ok := ctx.Deadline(); ok {
+		logFFIDebug("tx.query_each_with_context.start", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "deadline_remaining_ms", time.Until(deadline).Milliseconds())
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var callbackMu sync.Mutex
+	consume := func(rowCount int, row map[string]any) error {
+		callbackMu.Lock()
+		defer callbackMu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return fn(rowCount, row)
+	}
+	run := func(logExtra ...any) error {
+		return t.queryDecoded(query, nil, nil, func(buf *C.uchar, outLen C.size_t) (int, error) {
+			return decodeMsgpackEach(buf, outLen, consume)
+		}, logExtra...)
+	}
+	if ctx.Done() == nil {
+		return run()
+	}
+	if !t.beginContextCall() {
+		return ErrTransactionAbandoned
+	}
+
+	ch := make(chan error, 1)
+	go func() {
+		err := run("with_context", true, "row_consumer", true)
+		t.finishContextCall()
+		ch <- err
+	}()
+
+	select {
+	case <-ctx.Done():
+		t.abandon()
+		// Wait for an active callback. Later callbacks observe the cancelled
+		// context before they call user code.
+		callbackMu.Lock()
+		callbackMu.Unlock()
+		logFFIDebug("tx.query_each_with_context.cancelled", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "error", ctx.Err().Error())
+		return ctx.Err()
+	case err := <-ch:
+		return err
+	}
 }
 
 // QueryWithContext executes a TypeQL query with context cancellation support
@@ -505,6 +584,21 @@ func decodeMsgpack(buf *C.uchar, outLen C.size_t) ([]map[string]any, error) {
 	return decodeMsgpackBytes(view)
 }
 
+func decodeMsgpackEach(
+	buf *C.uchar,
+	outLen C.size_t,
+	fn func(rowCount int, row map[string]any) error,
+) (int, error) {
+	if err := checkMsgpackBufferLen(uint64(outLen)); err != nil {
+		return 0, err
+	}
+	var view []byte
+	if buf != nil && outLen > 0 {
+		view = unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(outLen))
+	}
+	return decodeMsgpackEachBytes(view, fn)
+}
+
 func checkMsgpackBufferLen(n uint64) error {
 	if n > math.MaxInt {
 		return &DriverError{Message: fmt.Sprintf("query result buffer of %d bytes exceeds the maximum decodable size", n)}
@@ -526,6 +620,47 @@ func decodeMsgpackBytes(data []byte) ([]map[string]any, error) {
 		return nil, &DriverError{Message: "failed to decode msgpack query results: " + err.Error()}
 	}
 	return results, nil
+}
+
+func decodeMsgpackEachBytes(
+	data []byte,
+	fn func(rowCount int, row map[string]any) error,
+) (int, error) {
+	var reader bytes.Reader
+	reader.Reset(data)
+
+	dec := msgpackDecoderPool.Get().(*msgpack.Decoder)
+	defer msgpackDecoderPool.Put(dec)
+	dec.Reset(&reader)
+	dec.UseLooseInterfaceDecoding(true)
+
+	rowCount, err := dec.DecodeArrayLen()
+	if err != nil {
+		return 0, &DriverError{Message: "failed to decode msgpack query results: " + err.Error()}
+	}
+	row := make(map[string]any)
+	for range rowCount {
+		clear(row)
+		fieldCount, err := dec.DecodeMapLen()
+		if err != nil {
+			return 0, &DriverError{Message: "failed to decode msgpack query result: " + err.Error()}
+		}
+		for range fieldCount {
+			key, err := dec.DecodeString()
+			if err != nil {
+				return 0, &DriverError{Message: "failed to decode msgpack query result key: " + err.Error()}
+			}
+			value, err := dec.DecodeInterfaceLoose()
+			if err != nil {
+				return 0, &DriverError{Message: "failed to decode msgpack query result value: " + err.Error()}
+			}
+			row[key] = value
+		}
+		if err := fn(rowCount, row); err != nil {
+			return 0, err
+		}
+	}
+	return rowCount, nil
 }
 
 // Commit persists the changes made in the transaction to the database.

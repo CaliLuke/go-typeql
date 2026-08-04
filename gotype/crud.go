@@ -171,12 +171,11 @@ func (m *Manager[T]) Get(ctx context.Context, filters map[string]any) ([]*T, err
 	}
 	query := matchQuery + "\n" + fetchQuery
 
-	results, err := m.readQuery(ctx, query)
+	instances, err := m.readHydrated(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", m.info.TypeName, err)
 	}
-
-	return m.hydrateResults(results)
+	return instances, nil
 }
 
 // GetOne retrieves exactly one instance of T matching the specified attribute
@@ -219,12 +218,11 @@ func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) (
 	}
 	query := matchQuery + "\n" + fetchQuery
 
-	results, err := m.readQuery(ctx, query)
+	instances, err := m.readHydrated(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("get_with_roles %s: %w", m.info.TypeName, err)
 	}
-
-	return m.hydrateResults(results)
+	return instances, nil
 }
 
 // GetByIID retrieves a single instance of T by its internal instance ID (IID).
@@ -242,14 +240,9 @@ func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error) {
 	}
 	query := matchQuery + "\n" + fetchQuery
 
-	results, err := m.readQuery(ctx, query)
+	instances, err := m.readHydrated(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("get_by_iid %s: %w", m.info.TypeName, err)
-	}
-
-	instances, err := m.hydrateResults(results)
-	if err != nil {
-		return nil, err
 	}
 	if len(instances) == 0 {
 		return nil, nil
@@ -798,6 +791,51 @@ func (m *Manager[T]) readQuery(ctx context.Context, query string) ([]map[string]
 		return m.tx.QueryWithContext(ctx, query)
 	}
 	return m.db.ExecuteRead(ctx, query)
+}
+
+// readHydrated consumes rows directly when the transaction supports it.
+// Other transaction implementations keep the existing materialized path.
+func (m *Manager[T]) readHydrated(ctx context.Context, query string) ([]*T, error) {
+	if m.tx != nil {
+		return m.hydrateQueryRows(ctx, m.tx, query)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("read: context cancelled: %w", err)
+	}
+	tx, err := m.db.openTransaction(ctx, ReadTransaction)
+	if err != nil {
+		return nil, fmt.Errorf("open read transaction: %w", err)
+	}
+	defer tx.Close()
+	return m.hydrateQueryRows(ctx, tx, query)
+}
+
+func (m *Manager[T]) hydrateQueryRows(ctx context.Context, tx Tx, query string) ([]*T, error) {
+	rowTx, ok := tx.(rowQueryTx)
+	if !ok {
+		rows, err := tx.QueryWithContext(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		return m.hydrateResults(rows)
+	}
+
+	var instances []*T
+	err := rowTx.QueryEachWithContext(ctx, query, func(rowCount int, row map[string]any) error {
+		if instances == nil {
+			instances = make([]*T, 0, rowCount)
+		}
+		instance, err := hydrateNewWithInfo[T](m.info, row)
+		if err != nil {
+			return fmt.Errorf("hydrate %s: %w", m.info.TypeName, err)
+		}
+		instances = append(instances, instance)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return instances, nil
 }
 
 // --- Internal helpers ---

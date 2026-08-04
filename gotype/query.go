@@ -78,11 +78,11 @@ func (q *Query[T]) Execute(ctx context.Context) ([]*T, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query %s: build: %w", q.mgr.info.TypeName, err)
 	}
-	results, err := q.mgr.readQuery(ctx, query)
+	results, err := q.mgr.readHydrated(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query %s: %w", q.mgr.info.TypeName, err)
 	}
-	return q.mgr.hydrateResults(results)
+	return results, nil
 }
 
 // First executes the query with a limit of 1 and returns the first result, or nil if none found.

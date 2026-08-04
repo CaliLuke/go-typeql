@@ -648,6 +648,26 @@ func (pt *pooledTx) QueryWithContext(ctx context.Context, query string) ([]map[s
 	return pt.tx.QueryWithContext(ctx, query)
 }
 
+func (pt *pooledTx) QueryEachWithContext(
+	ctx context.Context,
+	query string,
+	fn func(rowCount int, row map[string]any) error,
+) error {
+	if tx, ok := pt.tx.(rowQueryTx); ok {
+		return tx.QueryEachWithContext(ctx, query, fn)
+	}
+	rows, err := pt.tx.QueryWithContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := fn(len(rows), row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (pt *pooledTx) Commit() error {
 	err := pt.tx.Commit()
 	pt.once.Do(func() { pt.pool.Put(pt.conn) })

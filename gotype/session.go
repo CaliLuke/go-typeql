@@ -56,6 +56,16 @@ type Tx interface {
 	IsOpen() bool
 }
 
+// rowQueryTx is an optional transaction capability for result consumers that
+// process one row at a time. The row map is valid only during the callback.
+type rowQueryTx interface {
+	QueryEachWithContext(
+		ctx context.Context,
+		query string,
+		fn func(rowCount int, row map[string]any) error,
+	) error
+}
+
 // Conn is the interface for a TypeDB connection.
 type Conn interface {
 	// Transaction opens a new transaction on the specified database.
