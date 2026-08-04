@@ -29,7 +29,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use typedb_driver::{
@@ -1160,69 +1160,80 @@ fn collect_answer_to_msgpack(
     answer: QueryAnswer,
     register_concepts: bool,
 ) -> Result<Vec<u8>, String> {
-    let rows = collect_answer_to_values(answer, register_concepts)?;
-    if rows.is_empty() {
-        return Ok(vec![]);
-    }
-    rmp_serde::to_vec(&rows).map_err(|e| format!("msgpack encode error: {}", e))
-}
-
-/// Helper: collect query answer into Vec<serde_json::Value>.
-fn collect_answer_to_values(
-    answer: QueryAnswer,
-    register_concepts: bool,
-) -> Result<Vec<serde_json::Value>, String> {
     if answer.is_ok() {
         return Ok(vec![]);
     }
 
+    let mut bytes = msgpack_array_buffer();
+    let mut row_count = 0u32;
+
     if answer.is_document_stream() {
-        let mut docs: Vec<serde_json::Value> = Vec::new();
         for doc_result in answer.into_documents() {
             match doc_result {
                 Ok(doc) => {
-                    // Structural conversion via serde: single traversal, no
-                    // intermediate JSON string round trip.
-                    let val = serde_json::to_value(doc.into_json())
-                        .map_err(|e| format!("document conversion error: {}", e))?;
-                    docs.push(val);
+                    append_msgpack_row(&mut bytes, &doc.into_json())?;
+                    row_count = row_count
+                        .checked_add(1)
+                        .ok_or_else(|| "query returned more than u32::MAX rows".to_string())?;
                 }
                 Err(e) => return Err(e.to_string()),
             }
         }
-        return Ok(docs);
+        return finish_msgpack_array(bytes, row_count);
     }
 
     if answer.is_row_stream() {
-        let mut docs: Vec<serde_json::Value> = Vec::new();
         for row_result in answer.into_rows() {
             match row_result {
                 Ok(row) => {
-                    let col_names = row.get_column_names().to_vec();
-                    let mut obj = serde_json::Map::new();
-                    for (i, name) in col_names.iter().enumerate() {
-                        match row.get_index(i) {
-                            Ok(Some(concept)) => {
-                                obj.insert(
-                                    name.clone(),
-                                    concept_to_json(concept, register_concepts),
-                                );
-                            }
-                            Ok(None) => {
-                                obj.insert(name.clone(), serde_json::Value::Null);
-                            }
-                            Err(e) => return Err(e.to_string()),
-                        };
+                    let col_names = row.get_column_names();
+                    if col_names.len() != row.row.len() {
+                        return Err(format!(
+                            "query row has {} columns but {} values",
+                            col_names.len(),
+                            row.row.len()
+                        ));
                     }
-                    docs.push(serde_json::Value::Object(obj));
+                    let mut obj = HashMap::with_capacity(col_names.len());
+                    for (name, concept) in col_names.iter().zip(&row.row) {
+                        let value = concept
+                            .as_ref()
+                            .map(|concept| concept_to_json(concept, register_concepts))
+                            .unwrap_or(serde_json::Value::Null);
+                        obj.insert(name.clone(), value);
+                    }
+                    append_msgpack_row(&mut bytes, &obj)?;
+                    row_count = row_count
+                        .checked_add(1)
+                        .ok_or_else(|| "query returned more than u32::MAX rows".to_string())?;
                 }
                 Err(e) => return Err(e.to_string()),
             }
         }
-        return Ok(docs);
+        return finish_msgpack_array(bytes, row_count);
     }
 
     Ok(vec![])
+}
+
+const MSGPACK_ARRAY32_HEADER_LEN: usize = 5;
+
+fn msgpack_array_buffer() -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(4096);
+    bytes.extend_from_slice(&[0xdd, 0, 0, 0, 0]);
+    bytes
+}
+
+fn append_msgpack_row<T: Serialize>(bytes: &mut Vec<u8>, row: &T) -> Result<(), String> {
+    rmp_serde::encode::write(bytes, row).map_err(|e| format!("msgpack encode error: {}", e))
+}
+
+fn finish_msgpack_array(mut bytes: Vec<u8>, row_count: u32) -> Result<Vec<u8>, String> {
+    if row_count == 0 {
+        return Ok(vec![]);
+    }
+    bytes[1..MSGPACK_ARRAY32_HEADER_LEN].copy_from_slice(&row_count.to_be_bytes());
+    Ok(bytes)
 }
 
 /// Commit the transaction and free it.
@@ -1507,5 +1518,23 @@ mod tests {
     fn init_logging_is_idempotent_and_contained() {
         typedb_init_logging();
         typedb_init_logging();
+    }
+
+    #[test]
+    fn msgpack_array_encodes_rows_incrementally() {
+        let rows = vec![json!({"name": "Alice"}), json!({"name": "Bob"})];
+        let mut bytes = msgpack_array_buffer();
+        for row in &rows {
+            append_msgpack_row(&mut bytes, row).unwrap();
+        }
+        let bytes = finish_msgpack_array(bytes, rows.len() as u32).unwrap();
+        let decoded: Vec<serde_json::Value> = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(decoded, rows);
+    }
+
+    #[test]
+    fn msgpack_array_keeps_empty_results_empty() {
+        let bytes = finish_msgpack_array(msgpack_array_buffer(), 0).unwrap();
+        assert!(bytes.is_empty());
     }
 }
