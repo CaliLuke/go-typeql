@@ -1194,15 +1194,15 @@ fn collect_answer_to_msgpack(
                             row.row.len()
                         ));
                     }
-                    let mut obj = HashMap::with_capacity(col_names.len());
+                    append_msgpack_map_header(&mut bytes, col_names.len())?;
                     for (name, concept) in col_names.iter().zip(&row.row) {
+                        append_msgpack_row(&mut bytes, name)?;
                         let value = concept
                             .as_ref()
                             .map(|concept| concept_to_json(concept, register_concepts))
                             .unwrap_or(serde_json::Value::Null);
-                        obj.insert(name.clone(), value);
+                        append_msgpack_row(&mut bytes, &value)?;
                     }
-                    append_msgpack_row(&mut bytes, &obj)?;
                     row_count = row_count
                         .checked_add(1)
                         .ok_or_else(|| "query returned more than u32::MAX rows".to_string())?;
@@ -1224,8 +1224,16 @@ fn msgpack_array_buffer() -> Vec<u8> {
     bytes
 }
 
-fn append_msgpack_row<T: Serialize>(bytes: &mut Vec<u8>, row: &T) -> Result<(), String> {
+fn append_msgpack_row<T: Serialize + ?Sized>(bytes: &mut Vec<u8>, row: &T) -> Result<(), String> {
     rmp_serde::encode::write(bytes, row).map_err(|e| format!("msgpack encode error: {}", e))
+}
+
+fn append_msgpack_map_header(bytes: &mut Vec<u8>, field_count: usize) -> Result<(), String> {
+    let field_count = u32::try_from(field_count)
+        .map_err(|_| "query row returned more than u32::MAX fields".to_string())?;
+    bytes.push(0xdf);
+    bytes.extend_from_slice(&field_count.to_be_bytes());
+    Ok(())
 }
 
 fn finish_msgpack_array(mut bytes: Vec<u8>, row_count: u32) -> Result<Vec<u8>, String> {
@@ -1536,5 +1544,19 @@ mod tests {
     fn msgpack_array_keeps_empty_results_empty() {
         let bytes = finish_msgpack_array(msgpack_array_buffer(), 0).unwrap();
         assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn msgpack_map_encodes_fields_incrementally() {
+        let mut bytes = Vec::new();
+        append_msgpack_map_header(&mut bytes, 2).unwrap();
+        append_msgpack_row(&mut bytes, "name").unwrap();
+        append_msgpack_row(&mut bytes, "Alice").unwrap();
+        append_msgpack_row(&mut bytes, "age").unwrap();
+        append_msgpack_row(&mut bytes, &30).unwrap();
+
+        let decoded: HashMap<String, serde_json::Value> = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(decoded["name"], json!("Alice"));
+        assert_eq!(decoded["age"], json!(30));
     }
 }
