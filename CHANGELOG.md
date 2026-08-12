@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.15.0-alpha.2 - 2026-08-12
 
 - Removed the deprecated create-only `RenameAttribute` operation. Use `RenameAttributeType` with `RenameMigration`.
 

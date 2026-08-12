@@ -17,7 +17,7 @@ Go ORM for TypeDB 3.x. Wraps the Rust driver via CGo FFI. Module: `github.com/Ca
 ## Commands
 
 ```bash
-# Unit tests (659 tests, no DB or CGo needed)
+# Unit tests (658 tests, no DB or CGo needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Single test
