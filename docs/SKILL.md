@@ -597,7 +597,7 @@ Run the explicit rename before you run a schema diff with new-label models.
 Do not run old-label models after the rename.
 `DiffSchema` does not infer rename pairs.
 
-`RenameAttribute` is deprecated and keeps its create-only behavior.
+The old create-only `RenameAttribute` operation was removed.
 Use `RenameAttributeType` for a native attribute rename.
 
 ---

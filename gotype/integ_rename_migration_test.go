@@ -80,6 +80,10 @@ $r isa employment, links (worker: $p, employer: $c);`); err != nil {
 	}
 	assertIntegrationQueryFails(t, db, `match $p isa old-person; select $p;`)
 	assertIntegrationQueryFails(t, db, `match $p isa person, has old-email $e; select $p;`)
+	assertIntegrationQueryHasRows(t, db, `match $t sub! base-person; $t label person; select $t;`)
+	if _, err := db.ExecuteWrite(ctx, `insert $p isa person, has email "alice@example.com";`); err == nil {
+		t.Error("key annotation did not follow the renamed ownership: duplicate email insert succeeded")
+	}
 
 	if _, err := gotype.RollbackSequentialMigration(ctx, db, []gotype.SequentialMigration{migration}, 1); err != nil {
 		t.Fatalf("roll back rename migration: %v", err)

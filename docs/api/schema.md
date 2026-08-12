@@ -253,12 +253,11 @@ type Operation interface {
 | `AddRole`         | `Relation, Role, Card`                   | New `relates` clause on existing relation      |
 | `AddRolePlayer`   | `Entity, Relation, Role`                 | New `plays` clause on entity                   |
 | `ModifyOwnership` | `Owner, Attribute, OldAnnots, NewAnnots` | Change annotations on existing `owns`          |
-| `RenameAttribute` | `OldName, NewName, ValueType`            | Deprecated create-only attribute operation     |
 | `RunTypeQL`       | `Up, Down`                               | Arbitrary TypeQL migration step                |
 
-`ModifyOwnership` is reversible when `OldAnnots` is provided. `RenameAttribute` and `RunTypeQL` (without `Down`) are not reversible.
+`ModifyOwnership` is reversible when `OldAnnots` is provided. `RunTypeQL` without `Down` is not reversible.
 
-`RenameAttribute` keeps its original output for migration-checksum compatibility.
+The create-only `RenameAttribute` operation was removed.
 Use `RenameAttributeType` and `RenameMigration` for native renames.
 
 ### Native Rename Operations

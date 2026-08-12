@@ -274,7 +274,6 @@ func RenameRelation(oldName, newName string) RenameOperation {
 }
 
 // RenameAttributeType creates a native attribute-type rename operation.
-// It is separate from the deprecated RenameAttribute compatibility operation.
 func RenameAttributeType(oldName, newName string) RenameOperation {
 	return RenameOperation{kind: renameOperationAttribute, oldName: oldName, newName: newName}
 }
@@ -332,26 +331,6 @@ func (op RenameOperation) RollbackTypeQL() string {
 }
 
 var _ Operation = RenameOperation{}
-
-// --- Rename attribute compatibility operation ---
-
-// RenameAttribute is the legacy create-only attribute operation.
-// It defines the new attribute but does not rename or copy the old attribute.
-// Callers must handle data migration separately.
-//
-// Deprecated: use RenameAttributeType with RenameMigration for a native rename.
-type RenameAttribute struct {
-	OldName   string
-	NewName   string
-	ValueType string
-}
-
-func (op RenameAttribute) ToTypeQL() string {
-	return fmt.Sprintf("define attribute %s, value %s;", op.NewName, op.ValueType)
-}
-func (op RenameAttribute) IsReversible() bool     { return false }
-func (op RenameAttribute) IsDestructive() bool    { return false }
-func (op RenameAttribute) RollbackTypeQL() string { return "" }
 
 // --- Arbitrary TypeQL ---
 

@@ -538,7 +538,7 @@ func TestTypeQLSyntax_MigrationStateQueries(t *testing.T) {
 }
 
 func TestTypeQLSyntax_NativeRenameStatements(t *testing.T) {
-	const checkerLag = "CaliLuke/go-typeql#9: typeql-check 3.12.0 lacks the TypeDB 3.12.2 rename grammar"
+	const checkerLag = "CaliLuke/go-typeql#111: typeql-check 3.12.0 lacks the TypeDB 3.12.2 rename grammar"
 	tests := []struct {
 		name  string
 		query string

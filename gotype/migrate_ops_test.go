@@ -234,22 +234,6 @@ func TestModifyOwnership_NotReversibleWithoutOld(t *testing.T) {
 	}
 }
 
-func TestRenameAttribute_ToTypeQL(t *testing.T) {
-	// Compatibility test for the deprecated create-only operation.
-	//nolint:staticcheck // The test protects the deprecated output and checksum behavior.
-	op := RenameAttribute{OldName: "email", NewName: "email-address", ValueType: "string"}
-	got := op.ToTypeQL()
-	if got != "define attribute email-address, value string;" {
-		t.Errorf("got %q", got)
-	}
-	if op.IsReversible() {
-		t.Error("should not be reversible")
-	}
-	if op.IsDestructive() {
-		t.Error("should not be destructive")
-	}
-}
-
 func TestRenameOperation(t *testing.T) {
 	tests := []struct {
 		name     string

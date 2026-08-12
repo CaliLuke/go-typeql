@@ -347,11 +347,6 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
   - [func \(op RemoveRolePlayer\) IsReversible\(\) bool](<#RemoveRolePlayer.IsReversible>)
   - [func \(op RemoveRolePlayer\) RollbackTypeQL\(\) string](<#RemoveRolePlayer.RollbackTypeQL>)
   - [func \(op RemoveRolePlayer\) ToTypeQL\(\) string](<#RemoveRolePlayer.ToTypeQL>)
-- [type RenameAttribute](<#RenameAttribute>)
-  - [func \(op RenameAttribute\) IsDestructive\(\) bool](<#RenameAttribute.IsDestructive>)
-  - [func \(op RenameAttribute\) IsReversible\(\) bool](<#RenameAttribute.IsReversible>)
-  - [func \(op RenameAttribute\) RollbackTypeQL\(\) string](<#RenameAttribute.RollbackTypeQL>)
-  - [func \(op RenameAttribute\) ToTypeQL\(\) string](<#RenameAttribute.ToTypeQL>)
 - [type RenameOperation](<#RenameOperation>)
   - [func RenameAttributeType\(oldName, newName string\) RenameOperation](<#RenameAttributeType>)
   - [func RenameEntity\(oldName, newName string\) RenameOperation](<#RenameEntity>)
@@ -1215,7 +1210,7 @@ func (BaseRelation) TypeDBTypeName() string
 TypeDBTypeName returns the TypeDB type name for the relation.
 
 <a name="BreakingChange"></a>
-## type [BreakingChange](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L371-L375>)
+## type [BreakingChange](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L350-L354>)
 
 BreakingChange describes a change that could cause data loss or schema errors.
 
@@ -2406,7 +2401,7 @@ type Meta struct {
 ```
 
 <a name="MigrateOption"></a>
-## type [MigrateOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L488>)
+## type [MigrateOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L467>)
 
 MigrateOption configures migration behavior.
 
@@ -2415,7 +2410,7 @@ type MigrateOption func(*migrateConfig)
 ```
 
 <a name="WithDestructive"></a>
-### func [WithDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L495>)
+### func [WithDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L474>)
 
 ```go
 func WithDestructive() MigrateOption
@@ -3597,57 +3592,6 @@ func (op RemoveRolePlayer) ToTypeQL() string
 
 
 
-<a name="RenameAttribute"></a>
-## type [RenameAttribute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L343-L347>)
-
-RenameAttribute is the legacy create\-only attribute operation. It defines the new attribute but does not rename or copy the old attribute. Callers must handle data migration separately.
-
-Deprecated: use RenameAttributeType with RenameMigration for a native rename.
-
-```go
-type RenameAttribute struct {
-    OldName   string
-    NewName   string
-    ValueType string
-}
-```
-
-<a name="RenameAttribute.IsDestructive"></a>
-### func \(RenameAttribute\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L353>)
-
-```go
-func (op RenameAttribute) IsDestructive() bool
-```
-
-
-
-<a name="RenameAttribute.IsReversible"></a>
-### func \(RenameAttribute\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L352>)
-
-```go
-func (op RenameAttribute) IsReversible() bool
-```
-
-
-
-<a name="RenameAttribute.RollbackTypeQL"></a>
-### func \(RenameAttribute\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L354>)
-
-```go
-func (op RenameAttribute) RollbackTypeQL() string
-```
-
-
-
-<a name="RenameAttribute.ToTypeQL"></a>
-### func \(RenameAttribute\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L349>)
-
-```go
-func (op RenameAttribute) ToTypeQL() string
-```
-
-
-
 <a name="RenameOperation"></a>
 ## type [RenameOperation](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L259-L264>)
 
@@ -3662,13 +3606,13 @@ type RenameOperation struct {
 ```
 
 <a name="RenameAttributeType"></a>
-### func [RenameAttributeType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L278>)
+### func [RenameAttributeType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L277>)
 
 ```go
 func RenameAttributeType(oldName, newName string) RenameOperation
 ```
 
-RenameAttributeType creates a native attribute\-type rename operation. It is separate from the deprecated RenameAttribute compatibility operation.
+RenameAttributeType creates a native attribute\-type rename operation.
 
 <a name="RenameEntity"></a>
 ### func [RenameEntity](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L267>)
@@ -3689,7 +3633,7 @@ func RenameRelation(oldName, newName string) RenameOperation
 RenameRelation creates a native relation\-type rename operation.
 
 <a name="RenameRole"></a>
-### func [RenameRole](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L283>)
+### func [RenameRole](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L282>)
 
 ```go
 func RenameRole(relation, oldName, newName string) RenameOperation
@@ -3698,7 +3642,7 @@ func RenameRole(relation, oldName, newName string) RenameOperation
 RenameRole creates a native role rename in the specified relation scope.
 
 <a name="RenameOperation.IsDestructive"></a>
-### func \(RenameOperation\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L314>)
+### func \(RenameOperation\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L313>)
 
 ```go
 func (RenameOperation) IsDestructive() bool
@@ -3707,7 +3651,7 @@ func (RenameOperation) IsDestructive() bool
 IsDestructive reports whether the operation removes schema objects or data.
 
 <a name="RenameOperation.IsReversible"></a>
-### func \(RenameOperation\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L309>)
+### func \(RenameOperation\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L308>)
 
 ```go
 func (op RenameOperation) IsReversible() bool
@@ -3716,7 +3660,7 @@ func (op RenameOperation) IsReversible() bool
 IsReversible reports whether the operation has a rollback statement.
 
 <a name="RenameOperation.RollbackTypeQL"></a>
-### func \(RenameOperation\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L319>)
+### func \(RenameOperation\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L318>)
 
 ```go
 func (op RenameOperation) RollbackTypeQL() string
@@ -3725,7 +3669,7 @@ func (op RenameOperation) RollbackTypeQL() string
 RollbackTypeQL returns the native TypeQL statement that restores the old label.
 
 <a name="RenameOperation.ToTypeQL"></a>
-### func \(RenameOperation\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L293>)
+### func \(RenameOperation\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L292>)
 
 ```go
 func (op RenameOperation) ToTypeQL() string
@@ -3806,7 +3750,7 @@ func (f *RolePlayerFilter) Validate() error
 Validate reports an invalid role name and recursively validates the inner filter.
 
 <a name="RunTypeQL"></a>
-## type [RunTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L360-L363>)
+## type [RunTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L339-L342>)
 
 RunTypeQL executes arbitrary TypeQL as a migration step. Provide Up for the forward migration and optionally Down for rollback.
 
@@ -3818,7 +3762,7 @@ type RunTypeQL struct {
 ```
 
 <a name="RunTypeQL.IsDestructive"></a>
-### func \(RunTypeQL\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L367>)
+### func \(RunTypeQL\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L346>)
 
 ```go
 func (op RunTypeQL) IsDestructive() bool
@@ -3827,7 +3771,7 @@ func (op RunTypeQL) IsDestructive() bool
 
 
 <a name="RunTypeQL.IsReversible"></a>
-### func \(RunTypeQL\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L366>)
+### func \(RunTypeQL\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L345>)
 
 ```go
 func (op RunTypeQL) IsReversible() bool
@@ -3836,7 +3780,7 @@ func (op RunTypeQL) IsReversible() bool
 
 
 <a name="RunTypeQL.RollbackTypeQL"></a>
-### func \(RunTypeQL\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L368>)
+### func \(RunTypeQL\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L347>)
 
 ```go
 func (op RunTypeQL) RollbackTypeQL() string
@@ -3845,7 +3789,7 @@ func (op RunTypeQL) RollbackTypeQL() string
 
 
 <a name="RunTypeQL.ToTypeQL"></a>
-### func \(RunTypeQL\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L365>)
+### func \(RunTypeQL\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L344>)
 
 ```go
 func (op RunTypeQL) ToTypeQL() string
@@ -3992,7 +3936,7 @@ func SyncSchema(ctx context.Context, db *Database, opts ...SyncSchemaOption) (*S
 SyncSchema performs a one\-shot schema synchronization: introspect current DB schema, diff against registered Go models, and apply the changes atomically in a single schema transaction. Use WithForce\(\) to also apply destructive changes \(removals\) — preview them first with PlanSchema. Use WithSkipIfExists\(\) to only apply when the database has no user\-defined schema yet.
 
 <a name="SchemaDiff.BreakingChanges"></a>
-### func \(\*SchemaDiff\) [BreakingChanges](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L380>)
+### func \(\*SchemaDiff\) [BreakingChanges](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L359>)
 
 ```go
 func (d *SchemaDiff) BreakingChanges() []BreakingChange
@@ -4001,7 +3945,7 @@ func (d *SchemaDiff) BreakingChanges() []BreakingChange
 BreakingChanges analyzes the diff for changes that could cause data loss, including detected changes that cannot be applied automatically \(see SchemaDiff.Unsupported\).
 
 <a name="SchemaDiff.DestructiveOperations"></a>
-### func \(\*SchemaDiff\) [DestructiveOperations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L464>)
+### func \(\*SchemaDiff\) [DestructiveOperations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L443>)
 
 ```go
 func (d *SchemaDiff) DestructiveOperations() []Operation
@@ -4019,7 +3963,7 @@ func (d *SchemaDiff) GenerateMigration() []string
 GenerateMigration produces the additive TypeQL statements \(define and redefine\) required to reconcile the database schema with the Go models. Statements are returned individually for review; execution should go through Plan, which batches them into atomic queries.
 
 <a name="SchemaDiff.GenerateMigrationWithOpts"></a>
-### func \(\*SchemaDiff\) [GenerateMigrationWithOpts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L501>)
+### func \(\*SchemaDiff\) [GenerateMigrationWithOpts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L480>)
 
 ```go
 func (d *SchemaDiff) GenerateMigrationWithOpts(opts ...MigrateOption) []string
@@ -4028,7 +3972,7 @@ func (d *SchemaDiff) GenerateMigrationWithOpts(opts ...MigrateOption) []string
 GenerateMigrationWithOpts produces TypeQL statements to apply the diff. With WithDestructive\(\), also generates undefine statements for removals.
 
 <a name="SchemaDiff.HasBreakingChanges"></a>
-### func \(\*SchemaDiff\) [HasBreakingChanges](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L413>)
+### func \(\*SchemaDiff\) [HasBreakingChanges](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L392>)
 
 ```go
 func (d *SchemaDiff) HasBreakingChanges() bool
@@ -4046,7 +3990,7 @@ func (d *SchemaDiff) IsEmpty() bool
 IsEmpty returns true if the diff contains no applicable schema changes. Unsupported changes are not counted — they cannot be applied automatically — but they still surface through Summary, BreakingChanges, and HasBreakingChanges.
 
 <a name="SchemaDiff.Operations"></a>
-### func \(\*SchemaDiff\) [Operations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L421>)
+### func \(\*SchemaDiff\) [Operations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L400>)
 
 ```go
 func (d *SchemaDiff) Operations() []Operation
