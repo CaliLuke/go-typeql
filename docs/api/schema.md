@@ -253,10 +253,34 @@ type Operation interface {
 | `AddRole`         | `Relation, Role, Card`                   | New `relates` clause on existing relation      |
 | `AddRolePlayer`   | `Entity, Relation, Role`                 | New `plays` clause on entity                   |
 | `ModifyOwnership` | `Owner, Attribute, OldAnnots, NewAnnots` | Change annotations on existing `owns`          |
-| `RenameAttribute` | `OldName, NewName, ValueType`            | Define new attribute (data migration separate) |
+| `RenameAttribute` | `OldName, NewName, ValueType`            | Deprecated create-only attribute operation     |
 | `RunTypeQL`       | `Up, Down`                               | Arbitrary TypeQL migration step                |
 
 `ModifyOwnership` is reversible when `OldAnnots` is provided. `RenameAttribute` and `RunTypeQL` (without `Down`) are not reversible.
+
+`RenameAttribute` keeps its original output for migration-checksum compatibility.
+Use `RenameAttributeType` and `RenameMigration` for native renames.
+
+### Native Rename Operations
+
+`RenameOperation` is an opaque value. Only these constructors create valid values:
+
+```go
+func RenameEntity(oldName, newName string) RenameOperation
+func RenameRelation(oldName, newName string) RenameOperation
+func RenameAttributeType(oldName, newName string) RenameOperation
+func RenameRole(relation, oldName, newName string) RenameOperation
+```
+
+Each operation uses a native TypeDB `redefine ... label ...` command.
+Native renames keep instances, values, ownerships, roles, and schema capabilities.
+Each operation is reversible and non-destructive.
+
+The zero value is invalid and produces no TypeQL.
+`RenameMigration` rejects this value before it creates a migration.
+
+CAUTION: A rollback can fail after schema drift or target-label reuse.
+Inspect the current schema before you roll back an old rename.
 
 ### Destructive Operations (irreversible)
 
@@ -462,6 +486,60 @@ migrations := []gotype.SequentialMigration{
 }
 ```
 
+### RenameMigration
+
+```go
+func RenameMigration(name string, renames ...RenameOperation) (SequentialMigration, error)
+```
+
+`RenameMigration` creates a tracked migration from native rename operations.
+It keeps the caller order for forward statements.
+It reverses this order for rollback statements.
+
+The constructor rejects these inputs:
+
+- An empty migration name.
+- An empty operation list.
+- A zero `RenameOperation` value.
+- An invalid or reserved TypeQL label.
+- Equal source and target labels.
+
+The error identifies the operation index and the invalid field.
+
+```go
+migration, err := gotype.RenameMigration(
+    "20260812_native_schema_renames",
+    gotype.RenameAttributeType("old-email", "email"),
+    gotype.RenameEntity("old-person", "person"),
+    gotype.RenameRole("old-employment", "old-worker", "worker"),
+    gotype.RenameRelation("old-employment", "employment"),
+)
+if err != nil {
+    return err
+}
+
+migrations := []gotype.SequentialMigration{migration}
+_, err = gotype.RunSequentialMigrations(ctx, db, migrations)
+if err != nil {
+    return err
+}
+
+_, err = gotype.RollbackSequentialMigration(ctx, db, migrations, 1)
+```
+
+The tracked forward and rollback paths each use one schema transaction.
+The migration-state change uses the same transaction.
+Direct calls to `migration.Up` or `migration.Down` use one transaction per statement.
+
+Rename chains depend on statement order.
+For `a` to `b` to `c`, rename `b` to `c` before you rename `a` to `b`.
+
+A direct label swap fails because both target labels exist.
+Use a unique temporary label in three rename operations.
+
+If a migration renames a role and its relation, rename the role first.
+Then rename the relation.
+
 ### RunSequentialMigrations
 
 ```go
@@ -574,6 +652,25 @@ Returned when a migration's `Up` or `Down` function fails. Supports `errors.Unwr
 | Rollback        | Via `Operation.RollbackTypeQL` | Via `Down` function                    |
 | Ordering        | Automatic from diff            | Explicit by name                       |
 | State tracking  | Hash-based                     | Name-based                             |
+
+### Native Renames and Schema Diffs
+
+`DiffSchema` does not infer renames from an added label and a removed label.
+Those changes can describe unrelated schema objects and unrelated data.
+
+Use this two-step workflow:
+
+1. Run a `RenameMigration` that changes the labels.
+2. Run the diff migration with models that use the new labels.
+
+CAUTION: Run the explicit rename before a diff migration uses the new labels.
+The diff can create the target label, which makes the native rename fail.
+
+CAUTION: Do not run old-label models after the rename.
+Those models can create empty objects with the old labels and report the renamed objects as removals.
+
+After the rename, schema introspection returns the new labels.
+The next diff then converges without an add-and-remove rename guess.
 
 ## Migration Workflow Guide
 

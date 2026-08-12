@@ -25,6 +25,7 @@ If `$ARGUMENTS` is empty, ask the user what version to release.
 ```bash
 go test ./ast/... ./gotype/... ./tqlgen/...
 make build-rust
+make test-rust
 docker compose up -d
 TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 ```

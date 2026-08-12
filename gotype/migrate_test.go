@@ -63,6 +63,21 @@ func TestDiffSchema_NewEntity(t *testing.T) {
 	assertContains(t, diff.AddEntities[0].TypeQL, "owns name @key")
 }
 
+func TestDiffSchema_DoesNotInferRename(t *testing.T) {
+	desired := &tqlgen.ParsedSchema{Entities: []tqlgen.EntitySpec{{Name: "person"}}}
+	current := &tqlgen.ParsedSchema{Entities: []tqlgen.EntitySpec{{Name: "old-person"}}}
+	diff := DiffSchema(desired, current)
+
+	if len(diff.AddEntities) != 1 || len(diff.RemoveTypes) != 1 {
+		t.Fatalf("expected an add and a removal, got add=%v remove=%v", diff.AddEntities, diff.RemoveTypes)
+	}
+	for _, op := range diff.Operations() {
+		if _, ok := op.(RenameOperation); ok {
+			t.Errorf("DiffSchema inferred a rename operation: %#v", op)
+		}
+	}
+}
+
 func TestDiffSchema_NewEntityIncludesDocAndMetaAnnotations(t *testing.T) {
 	desired := &tqlgen.ParsedSchema{
 		Entities: []tqlgen.EntitySpec{

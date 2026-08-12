@@ -235,6 +235,8 @@ func TestModifyOwnership_NotReversibleWithoutOld(t *testing.T) {
 }
 
 func TestRenameAttribute_ToTypeQL(t *testing.T) {
+	// Compatibility test for the deprecated create-only operation.
+	//nolint:staticcheck // The test protects the deprecated output and checksum behavior.
 	op := RenameAttribute{OldName: "email", NewName: "email-address", ValueType: "string"}
 	got := op.ToTypeQL()
 	if got != "define attribute email-address, value string;" {
@@ -245,6 +247,73 @@ func TestRenameAttribute_ToTypeQL(t *testing.T) {
 	}
 	if op.IsDestructive() {
 		t.Error("should not be destructive")
+	}
+}
+
+func TestRenameOperation(t *testing.T) {
+	tests := []struct {
+		name     string
+		op       RenameOperation
+		up       string
+		rollback string
+	}{
+		{
+			name:     "entity",
+			op:       RenameEntity("old-person", "person"),
+			up:       "redefine entity old-person label person;",
+			rollback: "redefine entity person label old-person;",
+		},
+		{
+			name:     "relation",
+			op:       RenameRelation("old-employment", "employment"),
+			up:       "redefine relation old-employment label employment;",
+			rollback: "redefine relation employment label old-employment;",
+		},
+		{
+			name:     "attribute",
+			op:       RenameAttributeType("old-email", "email"),
+			up:       "redefine attribute old-email label email;",
+			rollback: "redefine attribute email label old-email;",
+		},
+		{
+			name:     "role",
+			op:       RenameRole("employment", "old-employee", "employee"),
+			up:       "redefine employment:old-employee label employee;",
+			rollback: "redefine employment:employee label old-employee;",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.op.ToTypeQL(); got != tt.up {
+				t.Errorf("ToTypeQL() = %q, want %q", got, tt.up)
+			}
+			if got := tt.op.RollbackTypeQL(); got != tt.rollback {
+				t.Errorf("RollbackTypeQL() = %q, want %q", got, tt.rollback)
+			}
+			if !tt.op.IsReversible() {
+				t.Error("operation must be reversible")
+			}
+			if tt.op.IsDestructive() {
+				t.Error("operation must not be destructive")
+			}
+		})
+	}
+}
+
+func TestRenameOperation_ZeroValue(t *testing.T) {
+	var op RenameOperation
+	if got := op.ToTypeQL(); got != "" {
+		t.Errorf("ToTypeQL() = %q, want empty output", got)
+	}
+	if got := op.RollbackTypeQL(); got != "" {
+		t.Errorf("RollbackTypeQL() = %q, want empty output", got)
+	}
+	if op.IsReversible() {
+		t.Error("zero value must not be reversible")
+	}
+	if op.IsDestructive() {
+		t.Error("zero value must not be destructive")
 	}
 }
 

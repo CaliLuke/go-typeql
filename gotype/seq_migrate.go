@@ -155,6 +155,55 @@ func TQLMigration(name string, up []string, down []string) SequentialMigration {
 	return m
 }
 
+// RenameMigration creates a tracked migration from native rename operations.
+// It rejects an empty name, an empty operation list, invalid labels, zero
+// operations, and renames that use the same source and target label.
+// Forward statements keep caller order. Rollback statements use reverse order.
+func RenameMigration(name string, renames ...RenameOperation) (SequentialMigration, error) {
+	if strings.TrimSpace(name) == "" {
+		return SequentialMigration{}, fmt.Errorf("rename migration name is empty")
+	}
+	if len(renames) == 0 {
+		return SequentialMigration{}, fmt.Errorf("rename migration %q has no operations", name)
+	}
+
+	up := make([]string, len(renames))
+	down := make([]string, len(renames))
+	for i, op := range renames {
+		if op.kind == renameOperationInvalid {
+			return SequentialMigration{}, fmt.Errorf("rename operation %d is invalid", i)
+		}
+		fields := []struct {
+			name  string
+			value string
+		}{
+			{name: "oldName", value: op.oldName},
+			{name: "newName", value: op.newName},
+		}
+		if op.kind == renameOperationRole {
+			fields = append([]struct {
+				name  string
+				value string
+			}{{name: "relation", value: op.relation}}, fields...)
+		}
+		for _, field := range fields {
+			if err := validateTypeQLLabel(field.value); err != nil {
+				return SequentialMigration{}, fmt.Errorf("rename operation %d field %s: %w", i, field.name, err)
+			}
+		}
+		if op.oldName == op.newName {
+			return SequentialMigration{}, fmt.Errorf(
+				"rename operation %d field newName: target label %q equals source label",
+				i, op.newName,
+			)
+		}
+		up[i] = op.ToTypeQL()
+		down[len(renames)-1-i] = op.RollbackTypeQL()
+	}
+
+	return TQLMigration(name, up, down), nil
+}
+
 // execStmt executes a single TypeQL statement using the appropriate transaction type.
 func execStmt(ctx context.Context, db *Database, stmt string) error {
 	if inferTxType(stmt) == "schema" {
@@ -309,9 +358,9 @@ func applySeqStatements(ctx context.Context, db *Database, stmts []string, state
 		return fmt.Errorf("open transaction: %w", err)
 	}
 	defer tx.Close()
-	for _, s := range stmts {
+	for i, s := range stmts {
 		if _, err := tx.QueryWithContext(ctx, s); err != nil {
-			return err
+			return fmt.Errorf("statement %d %q: %w", i, s, err)
 		}
 	}
 	if _, err := tx.QueryWithContext(ctx, stateQuery); err != nil {

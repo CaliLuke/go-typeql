@@ -571,6 +571,35 @@ plan, err := gotype.PlanSchema(ctx, db, gotype.WithForce())
 `WithSkipIfExists()` is a bootstrap guard: it skips the sync entirely when the
 database already contains user-defined types.
 
+### Native type and role renames
+
+Use an explicit tracked migration for a type or role rename:
+
+```go
+migration, err := gotype.RenameMigration(
+    "20260812_native_schema_renames",
+    gotype.RenameAttributeType("old-email", "email"),
+    gotype.RenameEntity("old-person", "person"),
+    gotype.RenameRole("old-employment", "old-worker", "worker"),
+    gotype.RenameRelation("old-employment", "employment"),
+)
+if err != nil {
+    return err
+}
+
+_, err = gotype.RunSequentialMigrations(ctx, db, []gotype.SequentialMigration{migration})
+```
+
+Run the role rename before the relation rename.
+Rollback uses the reverse order automatically.
+
+Run the explicit rename before you run a schema diff with new-label models.
+Do not run old-label models after the rename.
+`DiffSchema` does not infer rename pairs.
+
+`RenameAttribute` is deprecated and keeps its create-only behavior.
+Use `RenameAttributeType` for a native attribute rename.
+
 ---
 
 ## Serialization

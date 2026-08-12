@@ -536,3 +536,26 @@ func TestTypeQLSyntax_MigrationStateQueries(t *testing.T) {
 	assertTypeQL(t, "migration tracking schema", migrationSchemaSQL, "")
 	assertTypeQL(t, "migration record insert", recordQuery("abc123", `add 1 attribute(s): "quoted"`), "")
 }
+
+func TestTypeQLSyntax_NativeRenameStatements(t *testing.T) {
+	const checkerLag = "CaliLuke/go-typeql#9: typeql-check 3.12.0 lacks the TypeDB 3.12.2 rename grammar"
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "entity forward", query: RenameEntity("old-person", "person").ToTypeQL()},
+		{name: "entity rollback", query: RenameEntity("old-person", "person").RollbackTypeQL()},
+		{name: "relation forward", query: RenameRelation("old-employment", "employment").ToTypeQL()},
+		{name: "relation rollback", query: RenameRelation("old-employment", "employment").RollbackTypeQL()},
+		{name: "attribute forward", query: RenameAttributeType("old-email", "email").ToTypeQL()},
+		{name: "attribute rollback", query: RenameAttributeType("old-email", "email").RollbackTypeQL()},
+		{name: "role forward", query: RenameRole("employment", "old-employee", "employee").ToTypeQL()},
+		{name: "role rollback", query: RenameRole("employment", "old-employee", "employee").RollbackTypeQL()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTypeQL(t, tt.name, tt.query, checkerLag)
+		})
+	}
+}

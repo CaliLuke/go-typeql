@@ -33,6 +33,19 @@ func TestInferTxType(t *testing.T) {
 	}
 }
 
+func TestInferTxType_RenameStatements(t *testing.T) {
+	for _, op := range []RenameOperation{
+		RenameEntity("old-person", "person"),
+		RenameRelation("old-employment", "employment"),
+		RenameAttributeType("old-email", "email"),
+		RenameRole("employment", "old-worker", "worker"),
+	} {
+		if got := inferTxType(op.ToTypeQL()); got != "schema" {
+			t.Errorf("inferTxType(%q) = %q, want schema", op.ToTypeQL(), got)
+		}
+	}
+}
+
 // --- TQLMigration ---
 
 func TestTQLMigration_CreatesUpDown(t *testing.T) {
@@ -46,6 +59,124 @@ func TestTQLMigration_CreatesUpDown(t *testing.T) {
 	if m.Down == nil {
 		t.Fatal("Down is nil")
 	}
+}
+
+func TestRenameMigration_CreatesOrderedStatements(t *testing.T) {
+	m, err := RenameMigration(
+		"20260812_native_schema_renames",
+		RenameRole("old-employment", "old-worker", "worker"),
+		RenameRelation("old-employment", "employment"),
+		RenameAttributeType("old-email", "email"),
+		RenameEntity("old-person", "person"),
+	)
+	if err != nil {
+		t.Fatalf("RenameMigration() failed: %v", err)
+	}
+	wantUp := []string{
+		"redefine old-employment:old-worker label worker;",
+		"redefine relation old-employment label employment;",
+		"redefine attribute old-email label email;",
+		"redefine entity old-person label person;",
+	}
+	wantDown := []string{
+		"redefine entity person label old-person;",
+		"redefine attribute email label old-email;",
+		"redefine relation employment label old-employment;",
+		"redefine old-employment:worker label old-worker;",
+	}
+	if m.Statements == nil {
+		t.Fatal("Statements is nil")
+	}
+	if !slicesEqual(m.Statements.Up, wantUp) {
+		t.Errorf("Up statements = %v, want %v", m.Statements.Up, wantUp)
+	}
+	if !slicesEqual(m.Statements.Down, wantDown) {
+		t.Errorf("Down statements = %v, want %v", m.Statements.Down, wantDown)
+	}
+	if m.Up == nil || m.Down == nil {
+		t.Error("RenameMigration() must create Up and Down functions")
+	}
+}
+
+func TestRenameMigration_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		migName string
+		ops     []RenameOperation
+		want    []string
+	}{
+		{name: "empty name", ops: []RenameOperation{RenameEntity("old", "new")}, want: []string{"name", "empty"}},
+		{name: "no operations", migName: "001", want: []string{"no operations"}},
+		{name: "zero operation", migName: "001", ops: []RenameOperation{{}}, want: []string{"operation 0", "invalid"}},
+		{name: "invalid old name", migName: "001", ops: []RenameOperation{RenameEntity("old name", "new")}, want: []string{"operation 0", "oldName", "old name"}},
+		{name: "invalid new name", migName: "001", ops: []RenameOperation{RenameRelation("old", "new.name")}, want: []string{"operation 0", "newName", "new.name"}},
+		{name: "invalid relation", migName: "001", ops: []RenameOperation{RenameRole("bad relation", "old", "new")}, want: []string{"operation 0", "relation", "bad relation"}},
+		{name: "invalid old role", migName: "001", ops: []RenameOperation{RenameRole("employment", "role", "new")}, want: []string{"operation 0", "oldName", "role", "reserved"}},
+		{name: "invalid new role", migName: "001", ops: []RenameOperation{RenameRole("employment", "old", "last")}, want: []string{"operation 0", "newName", "last", "reserved"}},
+		{name: "equal labels", migName: "001", ops: []RenameOperation{RenameAttributeType("email", "email")}, want: []string{"operation 0", "newName", "equals source"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := RenameMigration(tt.migName, tt.ops...)
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			for _, text := range tt.want {
+				if !strings.Contains(err.Error(), text) {
+					t.Errorf("error %q does not contain %q", err, text)
+				}
+			}
+		})
+	}
+}
+
+func TestRenameMigration_ChecksumStable(t *testing.T) {
+	makeMigration := func() SequentialMigration {
+		m, err := RenameMigration("001", RenameEntity("old-person", "person"))
+		if err != nil {
+			t.Fatalf("RenameMigration() failed: %v", err)
+		}
+		return m
+	}
+	if first, second := MigrationChecksum(makeMigration()), MigrationChecksum(makeMigration()); first != second {
+		t.Errorf("checksums differ: %q != %q", first, second)
+	}
+}
+
+func TestRenameMigration_DryRunLogsNativeStatements(t *testing.T) {
+	schemaTx := &mockTx{}
+	readTx := &mockTx{responses: [][]map[string]any{nil}}
+	db := NewDatabase(&mockConn{txs: []*mockTx{schemaTx, readTx}}, "test")
+	m, err := RenameMigration("001", RenameEntity("old-person", "person"))
+	if err != nil {
+		t.Fatalf("RenameMigration() failed: %v", err)
+	}
+	var logs []string
+	if _, err := RunSequentialMigrations(
+		context.Background(),
+		db,
+		[]SequentialMigration{m},
+		WithSeqDryRun(),
+		WithSeqLogger(func(message string) { logs = append(logs, message) }),
+	); err != nil {
+		t.Fatalf("dry run failed: %v", err)
+	}
+	if !strings.Contains(strings.Join(logs, "\n"), "redefine entity old-person label person;") {
+		t.Errorf("dry-run log does not contain the rename statement: %v", logs)
+	}
+}
+
+func slicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestTQLMigration_NilDownWhenEmpty(t *testing.T) {
@@ -1281,6 +1412,9 @@ func TestRunSequentialMigrations_StatementFailureRecordsNothing(t *testing.T) {
 	}
 	if len(applied) != 0 {
 		t.Errorf("expected 0 applied, got %v", applied)
+	}
+	if !strings.Contains(err.Error(), `statement 0 "insert $p isa person, has name \"Alice\";"`) {
+		t.Errorf("error does not identify the failing statement: %v", err)
 	}
 }
 

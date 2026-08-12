@@ -16,11 +16,11 @@ var TypeQLReservedWords = map[string]bool{
 	// Stream manipulation stages
 	"select": true, "require": true, "sort": true, "limit": true, "offset": true, "reduce": true,
 	// Special stages
-	"with": true,
+	"with": true, "end": true,
 	// Pattern logic
 	"or": true, "not": true, "try": true,
 	// Type definition statements
-	"entity": true, "relation": true, "attribute": true, "struct": true, "fun": true,
+	"entity": true, "relation": true, "attribute": true, "role": true, "struct": true, "fun": true,
 	// Constraint definition statements
 	"sub": true, "relates": true, "plays": true, "value": true, "owns": true, "alias": true,
 	// Instance statements
@@ -32,7 +32,7 @@ var TypeQLReservedWords = map[string]bool{
 	"key": true, "subkey": true, "unique": true, "values": true,
 	"range": true, "regex": true, "distinct": true, "doc": true, "meta": true,
 	// Reductions
-	"check": true, "first": true, "count": true, "max": true, "min": true,
+	"check": true, "first": true, "last": true, "count": true, "max": true, "min": true,
 	"mean": true, "median": true, "std": true, "sum": true, "list": true,
 	// Value types
 	"boolean": true, "integer": true, "double": true, "decimal": true,
@@ -79,6 +79,18 @@ func ValidateIdentifier(name, context string) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// validateTypeQLLabel checks the identifier shape and reserved-word set used
+// for TypeQL type, relation, and role labels.
+func validateTypeQLLabel(name string) error {
+	if err := ValidateIdentifier(name, "label"); err != nil {
+		return err
+	}
+	if IsReservedWord(name) {
+		return &ReservedWordError{Word: name, Context: "label"}
 	}
 	return nil
 }

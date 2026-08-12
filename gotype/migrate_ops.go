@@ -240,13 +240,106 @@ func (op ModifyOwnership) RollbackTypeQL() string {
 	return fmt.Sprintf("redefine %s, owns %s %s;", op.Owner, op.Attribute, op.OldAnnots)
 }
 
-// --- Rename attribute ---
+// --- Native rename operations ---
 
-// RenameAttribute represents renaming an attribute type.
-// TypeDB has no native rename, so this generates a multi-step sequence:
-// 1. Define new attribute
-// 2. Reassign ownership from old to new
-// Note: data migration must be handled separately.
+type renameOperationKind uint8
+
+const (
+	renameOperationInvalid renameOperationKind = iota
+	renameOperationEntity
+	renameOperationRelation
+	renameOperationAttribute
+	renameOperationRole
+)
+
+// RenameOperation is a native TypeDB type or role rename.
+//
+// Create values with RenameEntity, RenameRelation, RenameAttributeType, or
+// RenameRole. The zero value is invalid and produces no TypeQL.
+type RenameOperation struct {
+	kind     renameOperationKind
+	relation string
+	oldName  string
+	newName  string
+}
+
+// RenameEntity creates a native entity-type rename operation.
+func RenameEntity(oldName, newName string) RenameOperation {
+	return RenameOperation{kind: renameOperationEntity, oldName: oldName, newName: newName}
+}
+
+// RenameRelation creates a native relation-type rename operation.
+func RenameRelation(oldName, newName string) RenameOperation {
+	return RenameOperation{kind: renameOperationRelation, oldName: oldName, newName: newName}
+}
+
+// RenameAttributeType creates a native attribute-type rename operation.
+// It is separate from the deprecated RenameAttribute compatibility operation.
+func RenameAttributeType(oldName, newName string) RenameOperation {
+	return RenameOperation{kind: renameOperationAttribute, oldName: oldName, newName: newName}
+}
+
+// RenameRole creates a native role rename in the specified relation scope.
+func RenameRole(relation, oldName, newName string) RenameOperation {
+	return RenameOperation{
+		kind:     renameOperationRole,
+		relation: relation,
+		oldName:  oldName,
+		newName:  newName,
+	}
+}
+
+// ToTypeQL returns the native TypeQL rename statement.
+func (op RenameOperation) ToTypeQL() string {
+	switch op.kind {
+	case renameOperationEntity:
+		return fmt.Sprintf("redefine entity %s label %s;", op.oldName, op.newName)
+	case renameOperationRelation:
+		return fmt.Sprintf("redefine relation %s label %s;", op.oldName, op.newName)
+	case renameOperationAttribute:
+		return fmt.Sprintf("redefine attribute %s label %s;", op.oldName, op.newName)
+	case renameOperationRole:
+		return fmt.Sprintf("redefine %s:%s label %s;", op.relation, op.oldName, op.newName)
+	default:
+		return ""
+	}
+}
+
+// IsReversible reports whether the operation has a rollback statement.
+func (op RenameOperation) IsReversible() bool {
+	return op.kind != renameOperationInvalid
+}
+
+// IsDestructive reports whether the operation removes schema objects or data.
+func (RenameOperation) IsDestructive() bool {
+	return false
+}
+
+// RollbackTypeQL returns the native TypeQL statement that restores the old label.
+func (op RenameOperation) RollbackTypeQL() string {
+	switch op.kind {
+	case renameOperationEntity:
+		return RenameEntity(op.newName, op.oldName).ToTypeQL()
+	case renameOperationRelation:
+		return RenameRelation(op.newName, op.oldName).ToTypeQL()
+	case renameOperationAttribute:
+		return RenameAttributeType(op.newName, op.oldName).ToTypeQL()
+	case renameOperationRole:
+		return RenameRole(op.relation, op.newName, op.oldName).ToTypeQL()
+	default:
+		return ""
+	}
+}
+
+var _ Operation = RenameOperation{}
+
+// --- Rename attribute compatibility operation ---
+
+// RenameAttribute is the legacy create-only attribute operation.
+// It defines the new attribute but does not rename or copy the old attribute.
+// Callers must handle data migration separately.
+//
+// Deprecated: use RenameAttributeType with RenameMigration for a native rename.
 type RenameAttribute struct {
 	OldName   string
 	NewName   string

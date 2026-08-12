@@ -10,9 +10,9 @@ The grammar file in this directory:
 
 is copied from the `typedb/typeql` crate at:
 
-- `src/parser/typeql.pest`
+- `rust/parser/typeql.pest`
 
-The current vendored copy matches the upstream `typeql` crate version `3.12.0`.
+The current vendored copy matches the upstream `typeql` crate version `3.12.2`.
 
 ## Why This Exists
 
@@ -38,6 +38,6 @@ Example:
 
 ```bash
 git clone --depth 1 --branch <tag> https://github.com/typedb/typeql /tmp/typeql-<tag>
-cp /tmp/typeql-<tag>/src/parser/typeql.pest typeql-reference/typeql.pest
+cp /tmp/typeql-<tag>/rust/parser/typeql.pest typeql-reference/typeql.pest
 git diff -- typeql-reference/typeql.pest
 ```

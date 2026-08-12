@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Required Language Style
+
+Use `.agents/skills/simple-english/SKILL.md` for every user interaction and all documentation in this repository.
+
+Use the skill's pragmatic mode by default. Use strict mode only when the user requests STE or ASD-STE100 compliance.
+
+Keep code, identifiers, commands, file paths, product names, and quoted errors unchanged.
+
 ## What This Is
 
 Go ORM for TypeDB 3.x. Wraps the Rust driver via CGo FFI. Module: `github.com/CaliLuke/go-typeql`
@@ -9,7 +17,7 @@ Go ORM for TypeDB 3.x. Wraps the Rust driver via CGo FFI. Module: `github.com/Ca
 ## Commands
 
 ```bash
-# Unit tests (645 tests, no DB or CGo needed)
+# Unit tests (659 tests, no DB or CGo needed)
 go test ./ast/... ./gotype/... ./tqlgen/...
 
 # Single test

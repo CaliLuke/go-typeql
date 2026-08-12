@@ -352,6 +352,15 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
   - [func \(op RenameAttribute\) IsReversible\(\) bool](<#RenameAttribute.IsReversible>)
   - [func \(op RenameAttribute\) RollbackTypeQL\(\) string](<#RenameAttribute.RollbackTypeQL>)
   - [func \(op RenameAttribute\) ToTypeQL\(\) string](<#RenameAttribute.ToTypeQL>)
+- [type RenameOperation](<#RenameOperation>)
+  - [func RenameAttributeType\(oldName, newName string\) RenameOperation](<#RenameAttributeType>)
+  - [func RenameEntity\(oldName, newName string\) RenameOperation](<#RenameEntity>)
+  - [func RenameRelation\(oldName, newName string\) RenameOperation](<#RenameRelation>)
+  - [func RenameRole\(relation, oldName, newName string\) RenameOperation](<#RenameRole>)
+  - [func \(RenameOperation\) IsDestructive\(\) bool](<#RenameOperation.IsDestructive>)
+  - [func \(op RenameOperation\) IsReversible\(\) bool](<#RenameOperation.IsReversible>)
+  - [func \(op RenameOperation\) RollbackTypeQL\(\) string](<#RenameOperation.RollbackTypeQL>)
+  - [func \(op RenameOperation\) ToTypeQL\(\) string](<#RenameOperation.ToTypeQL>)
 - [type ReservedWordError](<#ReservedWordError>)
   - [func \(e \*ReservedWordError\) Error\(\) string](<#ReservedWordError.Error>)
 - [type RoleInfo](<#RoleInfo>)
@@ -398,6 +407,7 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
 - [type SeqValidationIssue](<#SeqValidationIssue>)
   - [func ValidateSequentialMigrations\(migrations \[\]SequentialMigration\) \[\]SeqValidationIssue](<#ValidateSequentialMigrations>)
 - [type SequentialMigration](<#SequentialMigration>)
+  - [func RenameMigration\(name string, renames ...RenameOperation\) \(SequentialMigration, error\)](<#RenameMigration>)
   - [func TQLMigration\(name string, up \[\]string, down \[\]string\) SequentialMigration](<#TQLMigration>)
 - [type StringFilter](<#StringFilter>)
   - [func \(f \*StringFilter\) ToPatterns\(varName string\) \[\]string](<#StringFilter.ToPatterns>)
@@ -450,11 +460,11 @@ var TypeQLReservedWords = map[string]bool{
 
     "select": true, "require": true, "sort": true, "limit": true, "offset": true, "reduce": true,
 
-    "with": true,
+    "with": true, "end": true,
 
     "or": true, "not": true, "try": true,
 
-    "entity": true, "relation": true, "attribute": true, "struct": true, "fun": true,
+    "entity": true, "relation": true, "attribute": true, "role": true, "struct": true, "fun": true,
 
     "sub": true, "relates": true, "plays": true, "value": true, "owns": true, "alias": true,
 
@@ -466,7 +476,7 @@ var TypeQLReservedWords = map[string]bool{
     "key": true, "subkey": true, "unique": true, "values": true,
     "range": true, "regex": true, "distinct": true, "doc": true, "meta": true,
 
-    "check": true, "first": true, "count": true, "max": true, "min": true,
+    "check": true, "first": true, "last": true, "count": true, "max": true, "min": true,
     "mean": true, "median": true, "std": true, "sum": true, "list": true,
 
     "boolean": true, "integer": true, "double": true, "decimal": true,
@@ -483,7 +493,7 @@ var TypeQLReservedWords = map[string]bool{
 ```
 
 <a name="ActiveTransactionContexts"></a>
-## func [ActiveTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L97>)
+## func [ActiveTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L107>)
 
 ```go
 func ActiveTransactionContexts() int64
@@ -519,7 +529,7 @@ func ClearRegistry()
 ClearRegistry resets the global registry, removing all registered models. This is primarily used for testing purposes.
 
 <a name="EnsureDatabase"></a>
-## func [EnsureDatabase](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L109>)
+## func [EnsureDatabase](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L119>)
 
 ```go
 func EnsureDatabase(ctx context.Context, conn Conn, name string) (bool, error)
@@ -620,7 +630,7 @@ func IsReservedWord(name string) bool
 IsReservedWord returns true if the given name is a TypeQL reserved keyword. The check is case\-insensitive.
 
 <a name="LeakedTransactionContexts"></a>
-## func [LeakedTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L103>)
+## func [LeakedTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L113>)
 
 ```go
 func LeakedTransactionContexts() int64
@@ -669,7 +679,7 @@ func Register[T any]() error
 Register adds a Go struct type to the global registry as a TypeDB model. The type T must embed either BaseEntity or BaseRelation.
 
 <a name="RollbackSequentialMigration"></a>
-## func [RollbackSequentialMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L525>)
+## func [RollbackSequentialMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L574>)
 
 ```go
 func RollbackSequentialMigration(ctx context.Context, db *Database, migrations []SequentialMigration, steps int) ([]string, error)
@@ -680,7 +690,7 @@ RollbackSequentialMigration rolls back the last N applied migrations in reverse 
 Atomicity mirrors RunSequentialMigrations: migrations created with TQLMigration execute their Down statements and the record deletion in one transaction, so a rollback can never complete without also clearing the migration's applied status. Migrations with a custom Down function run Down first and delete the record afterwards in a separate transaction; if the process dies in between, the record still shows the migration as applied even though Down has run.
 
 <a name="RunSequentialMigrations"></a>
-## func [RunSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L342>)
+## func [RunSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L391>)
 
 ```go
 func RunSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error)
@@ -693,7 +703,7 @@ Atomicity: migrations created with TQLMigration \(Statements set\) execute all o
 Migrations with a custom Up function manage their own transactions, so the same guarantee is impossible: Up runs first and the tracking record is inserted afterwards in its own write transaction. If the process dies between the two, the migration re\-runs on the next invocation. Custom migrations should therefore be idempotent — use put or key\-guarded insert statements rather than bare inserts.
 
 <a name="StampSequentialMigrations"></a>
-## func [StampSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L418>)
+## func [StampSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L467>)
 
 ```go
 func StampSequentialMigrations(ctx context.Context, db *Database, migrations []SequentialMigration, opts ...SeqMigrationOption) ([]string, error)
@@ -1205,7 +1215,7 @@ func (BaseRelation) TypeDBTypeName() string
 TypeDBTypeName returns the TypeDB type name for the relation.
 
 <a name="BreakingChange"></a>
-## type [BreakingChange](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L278-L282>)
+## type [BreakingChange](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L371-L375>)
 
 BreakingChange describes a change that could cause data loss or schema errors.
 
@@ -1308,7 +1318,7 @@ func (f *ComputedFilter) Validate() error
 Validate reports construction errors: an invalid computed variable name, an unsupported operator, or a non\-scalar comparison value. Expr is a raw TypeQL expression and is intentionally not validated.
 
 <a name="Conn"></a>
-## type [Conn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L60-L77>)
+## type [Conn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L70-L87>)
 
 Conn is the interface for a TypeDB connection.
 
@@ -1392,7 +1402,7 @@ func (p *ConnPool) Stats() PoolStats
 Stats returns current pool statistics.
 
 <a name="Database"></a>
-## type [Database](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L128-L132>)
+## type [Database](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L138-L142>)
 
 Database represents a high\-level handle to a specific TypeDB database, providing convenient methods for transaction management and query execution.
 
@@ -1403,7 +1413,7 @@ type Database struct {
 ```
 
 <a name="NewDatabase"></a>
-### func [NewDatabase](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L135>)
+### func [NewDatabase](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L145>)
 
 ```go
 func NewDatabase(conn Conn, dbName string) *Database
@@ -1421,7 +1431,7 @@ func NewDatabaseWithPool(config PoolConfig, dbName string, factory func() (Conn,
 NewDatabaseWithPool creates a Database that uses a connection pool for concurrent access. The pool is created with the given configuration and pre\-warmed with MinSize connections. The Database takes ownership of the pool and will close it when Database.Close\(\) is called.
 
 <a name="Database.Begin"></a>
-### func \(\*Database\) [Begin](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L244>)
+### func \(\*Database\) [Begin](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L254>)
 
 ```go
 func (db *Database) Begin(txType TransactionType) (*TransactionContext, error)
@@ -1430,7 +1440,7 @@ func (db *Database) Begin(txType TransactionType) (*TransactionContext, error)
 Begin starts a new TransactionContext. The caller must call Close\(\) when done. A finalizer will log a warning if the transaction is garbage\-collected without being closed.
 
 <a name="Database.BeginContext"></a>
-### func \(\*Database\) [BeginContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L251>)
+### func \(\*Database\) [BeginContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L261>)
 
 ```go
 func (db *Database) BeginContext(ctx context.Context, txType TransactionType) (*TransactionContext, error)
@@ -1439,7 +1449,7 @@ func (db *Database) BeginContext(ctx context.Context, txType TransactionType) (*
 BeginContext starts a new TransactionContext with a ctx\-aware transaction open. The caller must call Close\(\) when done. A finalizer will log a warning if the transaction is garbage\-collected without being closed.
 
 <a name="Database.Close"></a>
-### func \(\*Database\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L140>)
+### func \(\*Database\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L150>)
 
 ```go
 func (db *Database) Close()
@@ -1448,7 +1458,7 @@ func (db *Database) Close()
 Close closes the underlying connection if it is owned by this Database handle.
 
 <a name="Database.ExecuteRead"></a>
-### func \(\*Database\) [ExecuteRead](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L219>)
+### func \(\*Database\) [ExecuteRead](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L229>)
 
 ```go
 func (db *Database) ExecuteRead(ctx context.Context, query string) ([]map[string]any, error)
@@ -1459,7 +1469,7 @@ ExecuteRead executes a query in a new read transaction.
 If ctx is cancelled mid\-query, ExecuteRead returns ctx.Err\(\) immediately; see ExecuteWrite for how the deferred transaction close behaves after cancellation.
 
 <a name="Database.ExecuteSchema"></a>
-### func \(\*Database\) [ExecuteSchema](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L314>)
+### func \(\*Database\) [ExecuteSchema](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L324>)
 
 ```go
 func (db *Database) ExecuteSchema(ctx context.Context, query string) error
@@ -1470,7 +1480,7 @@ ExecuteSchema executes a schema modification query in a schema transaction.
 If ctx is cancelled mid\-query, ExecuteSchema returns ctx.Err\(\) without committing; see ExecuteWrite for how the deferred transaction close behaves after cancellation.
 
 <a name="Database.ExecuteWrite"></a>
-### func \(\*Database\) [ExecuteWrite](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L194>)
+### func \(\*Database\) [ExecuteWrite](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L204>)
 
 ```go
 func (db *Database) ExecuteWrite(ctx context.Context, query string) ([]map[string]any, error)
@@ -1481,7 +1491,7 @@ ExecuteWrite executes a query in a new write transaction and commits it. If Comm
 If ctx is cancelled mid\-query, ExecuteWrite returns ctx.Err\(\) without committing. With the go\-typeql driver the deferred transaction close does not block on the abandoned in\-flight call; the native handle is freed in the background once the driver call returns. Other Tx implementations may block in Close until their query call completes.
 
 <a name="Database.GetConn"></a>
-### func \(\*Database\) [GetConn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L152>)
+### func \(\*Database\) [GetConn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L162>)
 
 ```go
 func (db *Database) GetConn() Conn
@@ -1508,7 +1518,7 @@ func (db *Database) MustManager[T any]() *Manager[T]
 MustManager creates a Manager for model type T bound to db and panics if the type has not been registered. Prefer Manager when the caller needs to handle registration failures explicitly.
 
 <a name="Database.Name"></a>
-### func \(\*Database\) [Name](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L147>)
+### func \(\*Database\) [Name](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L157>)
 
 ```go
 func (db *Database) Name() string
@@ -1517,7 +1527,7 @@ func (db *Database) Name() string
 Name returns the name of the database.
 
 <a name="Database.Schema"></a>
-### func \(\*Database\) [Schema](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L157>)
+### func \(\*Database\) [Schema](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L167>)
 
 ```go
 func (db *Database) Schema(ctx context.Context) (string, error)
@@ -1526,7 +1536,7 @@ func (db *Database) Schema(ctx context.Context) (string, error)
 Schema returns the current TypeQL schema definition for this database.
 
 <a name="Database.Transaction"></a>
-### func \(\*Database\) [Transaction](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L165>)
+### func \(\*Database\) [Transaction](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L175>)
 
 ```go
 func (db *Database) Transaction(txType TransactionType) (Tx, error)
@@ -1535,7 +1545,7 @@ func (db *Database) Transaction(txType TransactionType) (Tx, error)
 Transaction opens a new transaction of the specified type.
 
 <a name="Database.TransactionContext"></a>
-### func \(\*Database\) [TransactionContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L171>)
+### func \(\*Database\) [TransactionContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L181>)
 
 ```go
 func (db *Database) TransactionContext(ctx context.Context, txType TransactionType) (Tx, error)
@@ -1544,7 +1554,7 @@ func (db *Database) TransactionContext(ctx context.Context, txType TransactionTy
 TransactionContext opens a new transaction of the specified type and lets context\-aware Conn implementations honor cancellation while acquiring it.
 
 <a name="DeleteOption"></a>
-## type [DeleteOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L352>)
+## type [DeleteOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L345>)
 
 DeleteOption configures delete behavior.
 
@@ -1553,7 +1563,7 @@ type DeleteOption func(*deleteConfig)
 ```
 
 <a name="WithStrict"></a>
-### func [WithStrict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L359>)
+### func [WithStrict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L352>)
 
 ```go
 func WithStrict() DeleteOption
@@ -2129,7 +2139,7 @@ type InsertBuilder interface {
 ```
 
 <a name="InvalidIdentifierError"></a>
-## type [InvalidIdentifierError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L88-L92>)
+## type [InvalidIdentifierError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L100-L104>)
 
 InvalidIdentifierError is returned when a name contains characters not allowed in TypeQL identifiers.
 
@@ -2142,7 +2152,7 @@ type InvalidIdentifierError struct {
 ```
 
 <a name="InvalidIdentifierError.Error"></a>
-### func \(\*InvalidIdentifierError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L94>)
+### func \(\*InvalidIdentifierError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L106>)
 
 ```go
 func (e *InvalidIdentifierError) Error() string
@@ -2220,7 +2230,7 @@ func NewManagerWithTx[T any](tc *TransactionContext) (*Manager[T], error)
 NewManagerWithTx creates a Manager bound to an existing transaction context. All operations performed by this manager will use the provided transaction.
 
 <a name="Manager[T].All"></a>
-### func \(\*Manager\[T\]\) [All](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L202>)
+### func \(\*Manager\[T\]\) [All](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L201>)
 
 ```go
 func (m *Manager[T]) All(ctx context.Context) ([]*T, error)
@@ -2229,7 +2239,7 @@ func (m *Manager[T]) All(ctx context.Context) ([]*T, error)
 All retrieves all instances of the model type T from the database.
 
 <a name="Manager[T].Delete"></a>
-### func \(\*Manager\[T\]\) [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L364>)
+### func \(\*Manager\[T\]\) [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L357>)
 
 ```go
 func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOption) error
@@ -2238,7 +2248,7 @@ func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOpti
 Delete deletes an instance by IID.
 
 <a name="Manager[T].DeleteMany"></a>
-### func \(\*Manager\[T\]\) [DeleteMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L407>)
+### func \(\*Manager\[T\]\) [DeleteMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L400>)
 
 ```go
 func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...DeleteOption) error
@@ -2256,7 +2266,7 @@ func (m *Manager[T]) Get(ctx context.Context, filters map[string]any) ([]*T, err
 Get retrieves instances of T that match the specified attribute filters. filters is a map where keys are TypeDB attribute names and values are the target values.
 
 <a name="Manager[T].GetByIID"></a>
-### func \(\*Manager\[T\]\) [GetByIID](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L234>)
+### func \(\*Manager\[T\]\) [GetByIID](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L232>)
 
 ```go
 func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error)
@@ -2265,7 +2275,7 @@ func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error)
 GetByIID retrieves a single instance of T by its internal instance ID \(IID\). It returns nil if no instance is found with the given IID. The IID must match 0x\[0\-9a\-fA\-F\]\+; anything else is rejected with an error before any query is sent.
 
 <a name="Manager[T].GetByIIDPolymorphic"></a>
-### func \(\*Manager\[T\]\) [GetByIIDPolymorphic](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L664>)
+### func \(\*Manager\[T\]\) [GetByIIDPolymorphic](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L657>)
 
 ```go
 func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, string, error)
@@ -2274,7 +2284,7 @@ func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, s
 GetByIIDPolymorphic fetches a single instance by IID with polymorphic type resolution. It resolves the actual stored type and fetches all of that type's attributes, so subtype\-specific fields are preserved when the concrete type is registered. Returns the instance hydrated as \*T \(base type fields only\), the type label, and an error if any. Use GetByIIDPolymorphicAny for full subtype hydration. Returns nil, "", nil if not found.
 
 <a name="Manager[T].GetByIIDPolymorphicAny"></a>
-### func \(\*Manager\[T\]\) [GetByIIDPolymorphicAny](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L707>)
+### func \(\*Manager\[T\]\) [GetByIIDPolymorphicAny](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L700>)
 
 ```go
 func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (any, string, error)
@@ -2283,7 +2293,7 @@ func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (an
 GetByIIDPolymorphicAny fetches a single instance by IID and hydrates it as the actual concrete subtype. Unlike GetByIIDPolymorphic which always returns \*T, this returns any \(the concrete type pointer\) so subtype\-specific fields are preserved. The concrete subtype must be registered via Register\[ConcreteType\]\(\). Returns nil, "", nil if not found.
 
 <a name="Manager[T].GetOne"></a>
-### func \(\*Manager\[T\]\) [GetOne](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L186>)
+### func \(\*Manager\[T\]\) [GetOne](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L185>)
 
 ```go
 func (m *Manager[T]) GetOne(ctx context.Context, filters map[string]any) (*T, error)
@@ -2292,7 +2302,7 @@ func (m *Manager[T]) GetOne(ctx context.Context, filters map[string]any) (*T, er
 GetOne retrieves exactly one instance of T matching the specified attribute filters. It returns a \*NotFoundError when no instance matches and a \*NotUniqueError when more than one instance matches, so callers can distinguish those cases with errors.As.
 
 <a name="Manager[T].GetWithRoles"></a>
-### func \(\*Manager\[T\]\) [GetWithRoles](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L208>)
+### func \(\*Manager\[T\]\) [GetWithRoles](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L207>)
 
 ```go
 func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) ([]*T, error)
@@ -2310,7 +2320,7 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error
 Insert adds a new instance of T to the database. If T has key fields, the instance's internal IID will be populated upon success. Key attributes must be set to non\-zero values; a missing key returns a \*KeyAttributeError instead of silently inserting a zero\-value key.
 
 <a name="Manager[T].InsertMany"></a>
-### func \(\*Manager\[T\]\) [InsertMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L610>)
+### func \(\*Manager\[T\]\) [InsertMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L603>)
 
 ```go
 func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error
@@ -2319,7 +2329,7 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error
 InsertMany inserts multiple instances in a single transaction.
 
 <a name="Manager[T].Put"></a>
-### func \(\*Manager\[T\]\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L484>)
+### func \(\*Manager\[T\]\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L477>)
 
 ```go
 func (m *Manager[T]) Put(ctx context.Context, instance *T) error
@@ -2328,7 +2338,7 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error
 Put upserts an instance \(insert or update\). After a successful put, the instance's IID is populated \(if it has key fields\). Key attributes must be set to non\-zero values; a missing key returns a \*KeyAttributeError since the upsert match is meaningless without it.
 
 <a name="Manager[T].PutMany"></a>
-### func \(\*Manager\[T\]\) [PutMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L530>)
+### func \(\*Manager\[T\]\) [PutMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L523>)
 
 ```go
 func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error
@@ -2346,7 +2356,7 @@ func (m *Manager[T]) Query() *Query[T]
 Query returns a new chainable query builder for this model.
 
 <a name="Manager[T].Update"></a>
-### func \(\*Manager\[T\]\) [Update](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L262>)
+### func \(\*Manager\[T\]\) [Update](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L255>)
 
 ```go
 func (m *Manager[T]) Update(ctx context.Context, instance *T) error
@@ -2355,7 +2365,7 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error
 Update modifies an existing instance of T in the database. The instance must have its IID populated \(typically from a prior Get or Insert\).
 
 <a name="Manager[T].UpdateMany"></a>
-### func \(\*Manager\[T\]\) [UpdateMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L455>)
+### func \(\*Manager\[T\]\) [UpdateMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L448>)
 
 ```go
 func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error
@@ -2396,7 +2406,7 @@ type Meta struct {
 ```
 
 <a name="MigrateOption"></a>
-## type [MigrateOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L395>)
+## type [MigrateOption](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L488>)
 
 MigrateOption configures migration behavior.
 
@@ -2405,7 +2415,7 @@ type MigrateOption func(*migrateConfig)
 ```
 
 <a name="WithDestructive"></a>
-### func [WithDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L402>)
+### func [WithDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L495>)
 
 ```go
 func WithDestructive() MigrateOption
@@ -3588,9 +3598,11 @@ func (op RemoveRolePlayer) ToTypeQL() string
 
 
 <a name="RenameAttribute"></a>
-## type [RenameAttribute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L250-L254>)
+## type [RenameAttribute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L343-L347>)
 
-RenameAttribute represents renaming an attribute type. TypeDB has no native rename, so this generates a multi\-step sequence: 1. Define new attribute 2. Reassign ownership from old to new Note: data migration must be handled separately.
+RenameAttribute is the legacy create\-only attribute operation. It defines the new attribute but does not rename or copy the old attribute. Callers must handle data migration separately.
+
+Deprecated: use RenameAttributeType with RenameMigration for a native rename.
 
 ```go
 type RenameAttribute struct {
@@ -3601,7 +3613,7 @@ type RenameAttribute struct {
 ```
 
 <a name="RenameAttribute.IsDestructive"></a>
-### func \(RenameAttribute\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L260>)
+### func \(RenameAttribute\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L353>)
 
 ```go
 func (op RenameAttribute) IsDestructive() bool
@@ -3610,7 +3622,7 @@ func (op RenameAttribute) IsDestructive() bool
 
 
 <a name="RenameAttribute.IsReversible"></a>
-### func \(RenameAttribute\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L259>)
+### func \(RenameAttribute\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L352>)
 
 ```go
 func (op RenameAttribute) IsReversible() bool
@@ -3619,7 +3631,7 @@ func (op RenameAttribute) IsReversible() bool
 
 
 <a name="RenameAttribute.RollbackTypeQL"></a>
-### func \(RenameAttribute\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L261>)
+### func \(RenameAttribute\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L354>)
 
 ```go
 func (op RenameAttribute) RollbackTypeQL() string
@@ -3628,13 +3640,98 @@ func (op RenameAttribute) RollbackTypeQL() string
 
 
 <a name="RenameAttribute.ToTypeQL"></a>
-### func \(RenameAttribute\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L256>)
+### func \(RenameAttribute\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L349>)
 
 ```go
 func (op RenameAttribute) ToTypeQL() string
 ```
 
 
+
+<a name="RenameOperation"></a>
+## type [RenameOperation](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L259-L264>)
+
+RenameOperation is a native TypeDB type or role rename.
+
+Create values with RenameEntity, RenameRelation, RenameAttributeType, or RenameRole. The zero value is invalid and produces no TypeQL.
+
+```go
+type RenameOperation struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="RenameAttributeType"></a>
+### func [RenameAttributeType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L278>)
+
+```go
+func RenameAttributeType(oldName, newName string) RenameOperation
+```
+
+RenameAttributeType creates a native attribute\-type rename operation. It is separate from the deprecated RenameAttribute compatibility operation.
+
+<a name="RenameEntity"></a>
+### func [RenameEntity](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L267>)
+
+```go
+func RenameEntity(oldName, newName string) RenameOperation
+```
+
+RenameEntity creates a native entity\-type rename operation.
+
+<a name="RenameRelation"></a>
+### func [RenameRelation](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L272>)
+
+```go
+func RenameRelation(oldName, newName string) RenameOperation
+```
+
+RenameRelation creates a native relation\-type rename operation.
+
+<a name="RenameRole"></a>
+### func [RenameRole](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L283>)
+
+```go
+func RenameRole(relation, oldName, newName string) RenameOperation
+```
+
+RenameRole creates a native role rename in the specified relation scope.
+
+<a name="RenameOperation.IsDestructive"></a>
+### func \(RenameOperation\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L314>)
+
+```go
+func (RenameOperation) IsDestructive() bool
+```
+
+IsDestructive reports whether the operation removes schema objects or data.
+
+<a name="RenameOperation.IsReversible"></a>
+### func \(RenameOperation\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L309>)
+
+```go
+func (op RenameOperation) IsReversible() bool
+```
+
+IsReversible reports whether the operation has a rollback statement.
+
+<a name="RenameOperation.RollbackTypeQL"></a>
+### func \(RenameOperation\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L319>)
+
+```go
+func (op RenameOperation) RollbackTypeQL() string
+```
+
+RollbackTypeQL returns the native TypeQL statement that restores the old label.
+
+<a name="RenameOperation.ToTypeQL"></a>
+### func \(RenameOperation\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L293>)
+
+```go
+func (op RenameOperation) ToTypeQL() string
+```
+
+ToTypeQL returns the native TypeQL rename statement.
 
 <a name="ReservedWordError"></a>
 ## type [ReservedWordError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/errors.go#L52-L55>)
@@ -3709,7 +3806,7 @@ func (f *RolePlayerFilter) Validate() error
 Validate reports an invalid role name and recursively validates the inner filter.
 
 <a name="RunTypeQL"></a>
-## type [RunTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L267-L270>)
+## type [RunTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L360-L363>)
 
 RunTypeQL executes arbitrary TypeQL as a migration step. Provide Up for the forward migration and optionally Down for rollback.
 
@@ -3721,7 +3818,7 @@ type RunTypeQL struct {
 ```
 
 <a name="RunTypeQL.IsDestructive"></a>
-### func \(RunTypeQL\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L274>)
+### func \(RunTypeQL\) [IsDestructive](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L367>)
 
 ```go
 func (op RunTypeQL) IsDestructive() bool
@@ -3730,7 +3827,7 @@ func (op RunTypeQL) IsDestructive() bool
 
 
 <a name="RunTypeQL.IsReversible"></a>
-### func \(RunTypeQL\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L273>)
+### func \(RunTypeQL\) [IsReversible](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L366>)
 
 ```go
 func (op RunTypeQL) IsReversible() bool
@@ -3739,7 +3836,7 @@ func (op RunTypeQL) IsReversible() bool
 
 
 <a name="RunTypeQL.RollbackTypeQL"></a>
-### func \(RunTypeQL\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L275>)
+### func \(RunTypeQL\) [RollbackTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L368>)
 
 ```go
 func (op RunTypeQL) RollbackTypeQL() string
@@ -3748,7 +3845,7 @@ func (op RunTypeQL) RollbackTypeQL() string
 
 
 <a name="RunTypeQL.ToTypeQL"></a>
-### func \(RunTypeQL\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L272>)
+### func \(RunTypeQL\) [ToTypeQL](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L365>)
 
 ```go
 func (op RunTypeQL) ToTypeQL() string
@@ -3895,7 +3992,7 @@ func SyncSchema(ctx context.Context, db *Database, opts ...SyncSchemaOption) (*S
 SyncSchema performs a one\-shot schema synchronization: introspect current DB schema, diff against registered Go models, and apply the changes atomically in a single schema transaction. Use WithForce\(\) to also apply destructive changes \(removals\) — preview them first with PlanSchema. Use WithSkipIfExists\(\) to only apply when the database has no user\-defined schema yet.
 
 <a name="SchemaDiff.BreakingChanges"></a>
-### func \(\*SchemaDiff\) [BreakingChanges](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L287>)
+### func \(\*SchemaDiff\) [BreakingChanges](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L380>)
 
 ```go
 func (d *SchemaDiff) BreakingChanges() []BreakingChange
@@ -3904,7 +4001,7 @@ func (d *SchemaDiff) BreakingChanges() []BreakingChange
 BreakingChanges analyzes the diff for changes that could cause data loss, including detected changes that cannot be applied automatically \(see SchemaDiff.Unsupported\).
 
 <a name="SchemaDiff.DestructiveOperations"></a>
-### func \(\*SchemaDiff\) [DestructiveOperations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L371>)
+### func \(\*SchemaDiff\) [DestructiveOperations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L464>)
 
 ```go
 func (d *SchemaDiff) DestructiveOperations() []Operation
@@ -3922,7 +4019,7 @@ func (d *SchemaDiff) GenerateMigration() []string
 GenerateMigration produces the additive TypeQL statements \(define and redefine\) required to reconcile the database schema with the Go models. Statements are returned individually for review; execution should go through Plan, which batches them into atomic queries.
 
 <a name="SchemaDiff.GenerateMigrationWithOpts"></a>
-### func \(\*SchemaDiff\) [GenerateMigrationWithOpts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L408>)
+### func \(\*SchemaDiff\) [GenerateMigrationWithOpts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L501>)
 
 ```go
 func (d *SchemaDiff) GenerateMigrationWithOpts(opts ...MigrateOption) []string
@@ -3931,7 +4028,7 @@ func (d *SchemaDiff) GenerateMigrationWithOpts(opts ...MigrateOption) []string
 GenerateMigrationWithOpts produces TypeQL statements to apply the diff. With WithDestructive\(\), also generates undefine statements for removals.
 
 <a name="SchemaDiff.HasBreakingChanges"></a>
-### func \(\*SchemaDiff\) [HasBreakingChanges](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L320>)
+### func \(\*SchemaDiff\) [HasBreakingChanges](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L413>)
 
 ```go
 func (d *SchemaDiff) HasBreakingChanges() bool
@@ -3949,7 +4046,7 @@ func (d *SchemaDiff) IsEmpty() bool
 IsEmpty returns true if the diff contains no applicable schema changes. Unsupported changes are not counted — they cannot be applied automatically — but they still surface through Summary, BreakingChanges, and HasBreakingChanges.
 
 <a name="SchemaDiff.Operations"></a>
-### func \(\*SchemaDiff\) [Operations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L328>)
+### func \(\*SchemaDiff\) [Operations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/migrate_ops.go#L421>)
 
 ```go
 func (d *SchemaDiff) Operations() []Operation
@@ -4051,7 +4148,7 @@ type SeqMigrationInfo struct {
 ```
 
 <a name="SeqMigrationStatus"></a>
-### func [SeqMigrationStatus](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L484>)
+### func [SeqMigrationStatus](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L533>)
 
 ```go
 func SeqMigrationStatus(ctx context.Context, db *Database, migrations []SequentialMigration) ([]SeqMigrationInfo, error)
@@ -4109,7 +4206,7 @@ type SeqValidationIssue struct {
 ```
 
 <a name="ValidateSequentialMigrations"></a>
-### func [ValidateSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L168>)
+### func [ValidateSequentialMigrations](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L217>)
 
 ```go
 func ValidateSequentialMigrations(migrations []SequentialMigration) []SeqValidationIssue
@@ -4139,6 +4236,15 @@ type SequentialMigration struct {
     Statements *TQLStatements
 }
 ```
+
+<a name="RenameMigration"></a>
+### func [RenameMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L162>)
+
+```go
+func RenameMigration(name string, renames ...RenameOperation) (SequentialMigration, error)
+```
+
+RenameMigration creates a tracked migration from native rename operations. It rejects an empty name, an empty operation list, invalid labels, zero operations, and renames that use the same source and target label. Forward statements keep caller order. Rollback statements use reverse order.
 
 <a name="TQLMigration"></a>
 ### func [TQLMigration](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/seq_migrate.go#L112>)
@@ -4225,7 +4331,7 @@ type TQLStatements struct {
 ```
 
 <a name="TransactionContext"></a>
-## type [TransactionContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L233-L239>)
+## type [TransactionContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L243-L249>)
 
 TransactionContext provides a scoped transaction that can be explicitly managed and shared across multiple Manager operations.
 
@@ -4236,7 +4342,7 @@ type TransactionContext struct {
 ```
 
 <a name="TransactionContext.Close"></a>
-### func \(\*TransactionContext\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L281>)
+### func \(\*TransactionContext\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L291>)
 
 ```go
 func (tc *TransactionContext) Close()
@@ -4245,7 +4351,7 @@ func (tc *TransactionContext) Close()
 Close releases resources associated with the scoped transaction.
 
 <a name="TransactionContext.Commit"></a>
-### func \(\*TransactionContext\) [Commit](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L263>)
+### func \(\*TransactionContext\) [Commit](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L273>)
 
 ```go
 func (tc *TransactionContext) Commit() error
@@ -4272,7 +4378,7 @@ func (tc *TransactionContext) MustManager[T any]() *Manager[T]
 MustManager creates a Manager for model type T bound to tc's transaction and panics if the type has not been registered.
 
 <a name="TransactionContext.Rollback"></a>
-### func \(\*TransactionContext\) [Rollback](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L272>)
+### func \(\*TransactionContext\) [Rollback](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L282>)
 
 ```go
 func (tc *TransactionContext) Rollback() error
@@ -4281,7 +4387,7 @@ func (tc *TransactionContext) Rollback() error
 Rollback discards changes in the scoped transaction.
 
 <a name="TransactionContext.Tx"></a>
-### func \(\*TransactionContext\) [Tx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L287>)
+### func \(\*TransactionContext\) [Tx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L297>)
 
 ```go
 func (tc *TransactionContext) Tx() Tx

@@ -1,13 +1,17 @@
-.PHONY: build-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang install-typeql-check
+.PHONY: build-rust test-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang install-typeql-check
 
 # Version of the official TypeQL syntax checker (typedb/typedb-tools).
-# Keep in lockstep with the TypeDB server version pinned in docker-compose.yml.
+# Use the newest published checker that is compatible with the TypeDB server.
 TYPEQL_CHECK_VERSION ?= 3.12.0
 
 # Build the Rust FFI static library
 # MACOSX_DEPLOYMENT_TARGET=13.0 matches Go 1.27's minimum supported macOS.
 build-rust:
 	cd driver/rust && MACOSX_DEPLOYMENT_TARGET=13.0 cargo build --release
+
+# Run Rust FFI and direct TypeQL parser tests.
+test-rust:
+	cargo test --manifest-path driver/rust/Cargo.toml
 
 # Install the official typeql-check CLI into ~/go/bin (used by the TypeQL
 # syntax test gates; see internal/typeqlcheck and docs/TESTING.md).

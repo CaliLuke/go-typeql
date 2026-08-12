@@ -799,7 +799,7 @@ pub extern "C" fn typedb_driver_is_open(driver: *const TypeDBDriver) -> bool {
     )
 }
 
-/// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.12.1"}.
+/// Return server version as JSON: {"distribution":"TypeDB CE","version":"3.12.2"}.
 /// Caller must free with typedb_free_string.
 #[unsafe(no_mangle)]
 pub extern "C" fn typedb_driver_server_version(
@@ -1762,6 +1762,24 @@ mod tests {
             .into_owned();
         unsafe { typedb_free_string(err) };
         msg
+    }
+
+    #[test]
+    fn typeql_parser_accepts_native_rename_commands() {
+        for query in [
+            "redefine entity old-person label person;",
+            "redefine entity person label old-person;",
+            "redefine relation old-employment label employment;",
+            "redefine relation employment label old-employment;",
+            "redefine attribute old-email label email;",
+            "redefine attribute email label old-email;",
+            "redefine employment:old-employee label employee;",
+            "redefine employment:employee label old-employee;",
+        ] {
+            typeql::parse_query(query).unwrap_or_else(|err| {
+                panic!("TypeQL 3.12.2 rejected native rename {query:?}: {err}")
+            });
+        }
     }
 
     #[test]

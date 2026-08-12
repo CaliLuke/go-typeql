@@ -21,6 +21,9 @@ make test-integration
 # Or directly:
 TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
 
+# Rust FFI and direct TypeQL parser tests
+make test-rust
+
 # Lint
 make lint
 

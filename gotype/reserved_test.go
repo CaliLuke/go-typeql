@@ -2,6 +2,9 @@ package gotype
 
 import (
 	"errors"
+	"os"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -9,11 +12,38 @@ func TestIsReservedWord(t *testing.T) {
 	reserved := []string{
 		"label", "entity", "relation", "attribute", "given", "match", "fetch",
 		"insert", "delete", "iid", "isa", "has", "sub", "owns", "doc", "meta",
-		"true", "false", "string", "boolean", "integer", "double",
+		"true", "false", "string", "boolean", "integer", "double", "role", "end", "last",
 	}
 	for _, w := range reserved {
 		if !IsReservedWord(w) {
 			t.Errorf("expected %q to be reserved", w)
+		}
+	}
+}
+
+func TestTypeQLReservedWords_CoversGrammarReservedRule(t *testing.T) {
+	grammar, err := os.ReadFile("../typeql-reference/typeql.pest")
+	if err != nil {
+		t.Fatalf("read TypeQL grammar: %v", err)
+	}
+
+	reservedRule := regexp.MustCompile(`(?ms)^reserved = \{(.*?)\n\s*\}`).FindSubmatch(grammar)
+	if len(reservedRule) != 2 {
+		t.Fatal("reserved rule not found in TypeQL grammar")
+	}
+	tokens := regexp.MustCompile(`[A-Z][A-Z_]*`).FindAllString(string(reservedRule[1]), -1)
+	if len(tokens) == 0 {
+		t.Fatal("reserved rule contains no tokens")
+	}
+
+	for _, token := range tokens {
+		definition := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(token) + `\s*=.*?"([^"]+)"`).FindSubmatch(grammar)
+		if len(definition) != 2 {
+			t.Fatalf("reserved token %s has no literal definition", token)
+		}
+		word := strings.ToLower(string(definition[1]))
+		if !TypeQLReservedWords[word] {
+			t.Errorf("TypeQLReservedWords does not contain grammar keyword %q", word)
 		}
 	}
 }

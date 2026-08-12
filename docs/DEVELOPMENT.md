@@ -65,7 +65,8 @@ gotype/
 
 ## Building the Rust FFI Library
 
-The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface. The repo currently tracks TypeDB `3.12.1` with the `typedb-driver` `3.12.1` and `typeql` `3.12.0` Rust crates.
+The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate.
+It exposes a C FFI interface. The repository tracks TypeDB `3.12.2`, `typedb-driver` `3.12.3`, and `typeql` `3.12.2`.
 
 ```bash
 # Build the static library (driver/rust/target/release/libtypedb_go_ffi.a)
