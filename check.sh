@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Quality gates for day-to-day development. Scoped to unit packages
-# (ast/, gotype/, tqlgen/, cmd/) — driver/ needs CGo + built Rust lib, which
-# is the province of release-checks and `make test-integration`.
+# (ast/, given/, gotype/, tqlgen/, cmd/) — driver/ needs CGo + built Rust lib,
+# which is the province of release-checks and `make test-integration`.
 #
 # Usage:
 #   ./check.sh          run all gates
@@ -12,7 +12,7 @@ FIX="${1:-}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-UNIT_PKGS=(./ast/... ./gotype/... ./tqlgen/... ./cmd/... ./internal/...)
+UNIT_PKGS=(./ast/... ./given/... ./gotype/... ./tqlgen/... ./cmd/... ./internal/...)
 PKG_DIRS=$(go list -f '{{.Dir}}' "${UNIT_PKGS[@]}" | tr '\n' ' ')
 STATICCHECK_BIN="${STATICCHECK_BIN:-$HOME/go/bin/staticcheck}"
 
@@ -85,7 +85,7 @@ run_gate "go test (-race)" go test -race "${UNIT_PKGS[@]}" -timeout 180s
 # Non-test Go sources for the gocyclo / dupl blocking gates — production code
 # only. Test files routinely have high parallel-symmetry (deliberate) and
 # long table-driven functions; gating them fights readability.
-NON_TEST_GO=$(find ast gotype tqlgen cmd internal -name '*.go' -not -name '*_test.go' 2>/dev/null | tr '\n' ' ')
+NON_TEST_GO=$(find ast given gotype tqlgen cmd internal -name '*.go' -not -name '*_test.go' 2>/dev/null | tr '\n' ' ')
 
 run_gate "gocyclo (>20, non-test)" bash -c "
   out=\$(gocyclo -over 20 $NON_TEST_GO 2>/dev/null)

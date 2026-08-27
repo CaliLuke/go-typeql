@@ -488,7 +488,7 @@ var TypeQLReservedWords = map[string]bool{
 ```
 
 <a name="ActiveTransactionContexts"></a>
-## func [ActiveTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L107>)
+## func [ActiveTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L109>)
 
 ```go
 func ActiveTransactionContexts() int64
@@ -524,7 +524,7 @@ func ClearRegistry()
 ClearRegistry resets the global registry, removing all registered models. This is primarily used for testing purposes.
 
 <a name="EnsureDatabase"></a>
-## func [EnsureDatabase](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L119>)
+## func [EnsureDatabase](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L121>)
 
 ```go
 func EnsureDatabase(ctx context.Context, conn Conn, name string) (bool, error)
@@ -625,7 +625,7 @@ func IsReservedWord(name string) bool
 IsReservedWord returns true if the given name is a TypeQL reserved keyword. The check is case\-insensitive.
 
 <a name="LeakedTransactionContexts"></a>
-## func [LeakedTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L113>)
+## func [LeakedTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L115>)
 
 ```go
 func LeakedTransactionContexts() int64
@@ -1313,7 +1313,7 @@ func (f *ComputedFilter) Validate() error
 Validate reports construction errors: an invalid computed variable name, an unsupported operator, or a non\-scalar comparison value. Expr is a raw TypeQL expression and is intentionally not validated.
 
 <a name="Conn"></a>
-## type [Conn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L70-L87>)
+## type [Conn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L72-L89>)
 
 Conn is the interface for a TypeDB connection.
 
@@ -1339,7 +1339,7 @@ type Conn interface {
 ```
 
 <a name="ConnPool"></a>
-## type [ConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L41-L54>)
+## type [ConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L43-L56>)
 
 ConnPool manages a pool of database connections for concurrent access.
 
@@ -1352,7 +1352,7 @@ type ConnPool struct {
 ```
 
 <a name="NewConnPool"></a>
-### func [NewConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L94>)
+### func [NewConnPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L96>)
 
 ```go
 func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, error)
@@ -1361,7 +1361,7 @@ func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, er
 NewConnPool creates a new connection pool with the given configuration and factory function. The factory function is called to create new connections when needed. If config.MinSize \> 0, the pool will be pre\-warmed with MinSize connections.
 
 <a name="ConnPool.Close"></a>
-### func \(\*ConnPool\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L389>)
+### func \(\*ConnPool\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L391>)
 
 ```go
 func (p *ConnPool) Close()
@@ -1370,7 +1370,7 @@ func (p *ConnPool) Close()
 Close closes all connections in the pool and prevents new connections from being acquired.
 
 <a name="ConnPool.Get"></a>
-### func \(\*ConnPool\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L139>)
+### func \(\*ConnPool\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L141>)
 
 ```go
 func (p *ConnPool) Get(ctx context.Context) (Conn, error)
@@ -1379,7 +1379,7 @@ func (p *ConnPool) Get(ctx context.Context) (Conn, error)
 Get acquires a connection from the pool. If no connections are available and the pool is at max capacity, it waits for one to become available. Returns ErrPoolClosed if the pool is closed, or ErrPoolTimeout if WaitTimeout is exceeded.
 
 <a name="ConnPool.Put"></a>
-### func \(\*ConnPool\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L348>)
+### func \(\*ConnPool\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L350>)
 
 ```go
 func (p *ConnPool) Put(conn Conn)
@@ -1388,7 +1388,7 @@ func (p *ConnPool) Put(conn Conn)
 Put returns a connection to the pool. If the connection is no longer open, it is discarded instead of being returned to the pool.
 
 <a name="ConnPool.Stats"></a>
-### func \(\*ConnPool\) [Stats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L440>)
+### func \(\*ConnPool\) [Stats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L442>)
 
 ```go
 func (p *ConnPool) Stats() PoolStats
@@ -1397,7 +1397,7 @@ func (p *ConnPool) Stats() PoolStats
 Stats returns current pool statistics.
 
 <a name="Database"></a>
-## type [Database](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L138-L142>)
+## type [Database](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L140-L144>)
 
 Database represents a high\-level handle to a specific TypeDB database, providing convenient methods for transaction management and query execution.
 
@@ -1408,7 +1408,7 @@ type Database struct {
 ```
 
 <a name="NewDatabase"></a>
-### func [NewDatabase](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L145>)
+### func [NewDatabase](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L147>)
 
 ```go
 func NewDatabase(conn Conn, dbName string) *Database
@@ -1417,7 +1417,7 @@ func NewDatabase(conn Conn, dbName string) *Database
 NewDatabase creates a new Database handle bound to a specific database name.
 
 <a name="NewDatabaseWithPool"></a>
-### func [NewDatabaseWithPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L504>)
+### func [NewDatabaseWithPool](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L506>)
 
 ```go
 func NewDatabaseWithPool(config PoolConfig, dbName string, factory func() (Conn, error)) (*Database, error)
@@ -1426,7 +1426,7 @@ func NewDatabaseWithPool(config PoolConfig, dbName string, factory func() (Conn,
 NewDatabaseWithPool creates a Database that uses a connection pool for concurrent access. The pool is created with the given configuration and pre\-warmed with MinSize connections. The Database takes ownership of the pool and will close it when Database.Close\(\) is called.
 
 <a name="Database.Begin"></a>
-### func \(\*Database\) [Begin](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L254>)
+### func \(\*Database\) [Begin](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L256>)
 
 ```go
 func (db *Database) Begin(txType TransactionType) (*TransactionContext, error)
@@ -1435,7 +1435,7 @@ func (db *Database) Begin(txType TransactionType) (*TransactionContext, error)
 Begin starts a new TransactionContext. The caller must call Close\(\) when done. A finalizer will log a warning if the transaction is garbage\-collected without being closed.
 
 <a name="Database.BeginContext"></a>
-### func \(\*Database\) [BeginContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L261>)
+### func \(\*Database\) [BeginContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L263>)
 
 ```go
 func (db *Database) BeginContext(ctx context.Context, txType TransactionType) (*TransactionContext, error)
@@ -1444,7 +1444,7 @@ func (db *Database) BeginContext(ctx context.Context, txType TransactionType) (*
 BeginContext starts a new TransactionContext with a ctx\-aware transaction open. The caller must call Close\(\) when done. A finalizer will log a warning if the transaction is garbage\-collected without being closed.
 
 <a name="Database.Close"></a>
-### func \(\*Database\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L150>)
+### func \(\*Database\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L152>)
 
 ```go
 func (db *Database) Close()
@@ -1453,7 +1453,7 @@ func (db *Database) Close()
 Close closes the underlying connection if it is owned by this Database handle.
 
 <a name="Database.ExecuteRead"></a>
-### func \(\*Database\) [ExecuteRead](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L229>)
+### func \(\*Database\) [ExecuteRead](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L231>)
 
 ```go
 func (db *Database) ExecuteRead(ctx context.Context, query string) ([]map[string]any, error)
@@ -1464,7 +1464,7 @@ ExecuteRead executes a query in a new read transaction.
 If ctx is cancelled mid\-query, ExecuteRead returns ctx.Err\(\) immediately; see ExecuteWrite for how the deferred transaction close behaves after cancellation.
 
 <a name="Database.ExecuteSchema"></a>
-### func \(\*Database\) [ExecuteSchema](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L324>)
+### func \(\*Database\) [ExecuteSchema](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L326>)
 
 ```go
 func (db *Database) ExecuteSchema(ctx context.Context, query string) error
@@ -1475,7 +1475,7 @@ ExecuteSchema executes a schema modification query in a schema transaction.
 If ctx is cancelled mid\-query, ExecuteSchema returns ctx.Err\(\) without committing; see ExecuteWrite for how the deferred transaction close behaves after cancellation.
 
 <a name="Database.ExecuteWrite"></a>
-### func \(\*Database\) [ExecuteWrite](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L204>)
+### func \(\*Database\) [ExecuteWrite](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L206>)
 
 ```go
 func (db *Database) ExecuteWrite(ctx context.Context, query string) ([]map[string]any, error)
@@ -1486,7 +1486,7 @@ ExecuteWrite executes a query in a new write transaction and commits it. If Comm
 If ctx is cancelled mid\-query, ExecuteWrite returns ctx.Err\(\) without committing. With the go\-typeql driver the deferred transaction close does not block on the abandoned in\-flight call; the native handle is freed in the background once the driver call returns. Other Tx implementations may block in Close until their query call completes.
 
 <a name="Database.GetConn"></a>
-### func \(\*Database\) [GetConn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L162>)
+### func \(\*Database\) [GetConn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L164>)
 
 ```go
 func (db *Database) GetConn() Conn
@@ -1513,7 +1513,7 @@ func (db *Database) MustManager[T any]() *Manager[T]
 MustManager creates a Manager for model type T bound to db and panics if the type has not been registered. Prefer Manager when the caller needs to handle registration failures explicitly.
 
 <a name="Database.Name"></a>
-### func \(\*Database\) [Name](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L157>)
+### func \(\*Database\) [Name](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L159>)
 
 ```go
 func (db *Database) Name() string
@@ -1522,7 +1522,7 @@ func (db *Database) Name() string
 Name returns the name of the database.
 
 <a name="Database.Schema"></a>
-### func \(\*Database\) [Schema](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L167>)
+### func \(\*Database\) [Schema](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L169>)
 
 ```go
 func (db *Database) Schema(ctx context.Context) (string, error)
@@ -1531,7 +1531,7 @@ func (db *Database) Schema(ctx context.Context) (string, error)
 Schema returns the current TypeQL schema definition for this database.
 
 <a name="Database.Transaction"></a>
-### func \(\*Database\) [Transaction](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L175>)
+### func \(\*Database\) [Transaction](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L177>)
 
 ```go
 func (db *Database) Transaction(txType TransactionType) (Tx, error)
@@ -1540,7 +1540,7 @@ func (db *Database) Transaction(txType TransactionType) (Tx, error)
 Transaction opens a new transaction of the specified type.
 
 <a name="Database.TransactionContext"></a>
-### func \(\*Database\) [TransactionContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L181>)
+### func \(\*Database\) [TransactionContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L183>)
 
 ```go
 func (db *Database) TransactionContext(ctx context.Context, txType TransactionType) (Tx, error)
@@ -2952,7 +2952,7 @@ type PlaysChange struct {
 ```
 
 <a name="PoolConfig"></a>
-## type [PoolConfig](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L12-L21>)
+## type [PoolConfig](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L14-L23>)
 
 PoolConfig specifies connection pool behavior.
 
@@ -2970,7 +2970,7 @@ type PoolConfig struct {
 ```
 
 <a name="DefaultPoolConfig"></a>
-### func [DefaultPoolConfig](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L24>)
+### func [DefaultPoolConfig](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L26>)
 
 ```go
 func DefaultPoolConfig() PoolConfig
@@ -2979,7 +2979,7 @@ func DefaultPoolConfig() PoolConfig
 DefaultPoolConfig returns a reasonable default pool configuration.
 
 <a name="PoolStats"></a>
-## type [PoolStats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L453-L458>)
+## type [PoolStats](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/pool.go#L455-L460>)
 
 PoolStats provides statistics about the connection pool.
 
@@ -4275,7 +4275,7 @@ type TQLStatements struct {
 ```
 
 <a name="TransactionContext"></a>
-## type [TransactionContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L243-L249>)
+## type [TransactionContext](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L245-L251>)
 
 TransactionContext provides a scoped transaction that can be explicitly managed and shared across multiple Manager operations.
 
@@ -4286,7 +4286,7 @@ type TransactionContext struct {
 ```
 
 <a name="TransactionContext.Close"></a>
-### func \(\*TransactionContext\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L291>)
+### func \(\*TransactionContext\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L293>)
 
 ```go
 func (tc *TransactionContext) Close()
@@ -4295,7 +4295,7 @@ func (tc *TransactionContext) Close()
 Close releases resources associated with the scoped transaction.
 
 <a name="TransactionContext.Commit"></a>
-### func \(\*TransactionContext\) [Commit](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L273>)
+### func \(\*TransactionContext\) [Commit](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L275>)
 
 ```go
 func (tc *TransactionContext) Commit() error
@@ -4322,7 +4322,7 @@ func (tc *TransactionContext) MustManager[T any]() *Manager[T]
 MustManager creates a Manager for model type T bound to tc's transaction and panics if the type has not been registered.
 
 <a name="TransactionContext.Rollback"></a>
-### func \(\*TransactionContext\) [Rollback](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L282>)
+### func \(\*TransactionContext\) [Rollback](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L284>)
 
 ```go
 func (tc *TransactionContext) Rollback() error
@@ -4331,7 +4331,7 @@ func (tc *TransactionContext) Rollback() error
 Rollback discards changes in the scoped transaction.
 
 <a name="TransactionContext.Tx"></a>
-### func \(\*TransactionContext\) [Tx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L297>)
+### func \(\*TransactionContext\) [Tx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L299>)
 
 ```go
 func (tc *TransactionContext) Tx() Tx
@@ -4340,7 +4340,7 @@ func (tc *TransactionContext) Tx() Tx
 Tx returns the underlying Tx for direct query execution.
 
 <a name="TransactionType"></a>
-## type [TransactionType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L16>)
+## type [TransactionType](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L18>)
 
 TransactionType represents the intended mode of operation for a TypeDB transaction.
 
@@ -4362,11 +4362,11 @@ const (
 ```
 
 <a name="Tx"></a>
-## type [Tx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L35-L57>)
+## type [Tx](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L32-L59>)
 
 Tx is the interface for a TypeDB transaction, allowing for query execution and lifecycle management.
 
-The driver package's \*driver.Transaction satisfies Tx. It also provides QueryWithContextAndOptions\(ctx, query, \*driver.QueryOptions, \*driver.GivenRows\) for composing cancellation with per\-query options such as prefetch size; callers that hold the concrete transaction \(for example via TransactionContext.Tx or Manager.WithTx\) can reach it with a type assertion.
+The driver package's \*driver.Transaction satisfies Tx.
 
 ```go
 type Tx interface {
@@ -4383,6 +4383,11 @@ type Tx interface {
     // blocking behind it. Other implementations may block in Close until
     // their query call completes.
     QueryWithContext(ctx context.Context, query string) ([]map[string]any, error)
+    // QueryWithRows executes a TypeQL query with typed input rows for a given stage.
+    QueryWithRows(query string, rows given.Rows) ([]map[string]any, error)
+    // QueryWithContextAndRows executes a TypeQL query with context cancellation
+    // support and typed input rows for a given stage.
+    QueryWithContextAndRows(ctx context.Context, query string, rows given.Rows) ([]map[string]any, error)
     // Commit persists changes made in the transaction.
     Commit() error
     // Rollback discards changes made in the transaction.

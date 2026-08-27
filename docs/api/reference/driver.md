@@ -48,6 +48,7 @@ This package wraps a thin C FFI layer \(driver/rust/\) that itself wraps the off
 - [type GivenRows](<#GivenRows>)
   - [func NewGivenRows\(variables ...string\) \*GivenRows](<#NewGivenRows>)
   - [func \(r \*GivenRows\) Add\(values ...GivenValue\) error](<#GivenRows.Add>)
+  - [func \(r \*GivenRows\) MarshalGivenRows\(\) \(\[\]byte, error\)](<#GivenRows.MarshalGivenRows>)
   - [func \(r \*GivenRows\) MustAdd\(values ...GivenValue\) \*GivenRows](<#GivenRows.MustAdd>)
 - [type GivenValue](<#GivenValue>)
   - [func BoolGiven\(v bool\) GivenValue](<#BoolGiven>)
@@ -78,10 +79,11 @@ This package wraps a thin C FFI layer \(driver/rust/\) that itself wraps the off
   - [func \(t \*Transaction\) Query\(query string\) \(\[\]map\[string\]any, error\)](<#Transaction.Query>)
   - [func \(t \*Transaction\) QueryEachWithContext\(ctx context.Context, query string, fn func\(rowCount int, row map\[string\]any\) error\) error](<#Transaction.QueryEachWithContext>)
   - [func \(t \*Transaction\) QueryWithContext\(ctx context.Context, query string\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithContext>)
-  - [func \(t \*Transaction\) QueryWithContextAndOptions\(ctx context.Context, query string, opts \*QueryOptions, rows \*GivenRows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithContextAndOptions>)
+  - [func \(t \*Transaction\) QueryWithContextAndOptions\(ctx context.Context, query string, opts \*QueryOptions, rows given.Rows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithContextAndOptions>)
+  - [func \(t \*Transaction\) QueryWithContextAndRows\(ctx context.Context, query string, rows given.Rows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithContextAndRows>)
   - [func \(t \*Transaction\) QueryWithOptions\(query string, opts \*QueryOptions\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithOptions>)
-  - [func \(t \*Transaction\) QueryWithOptionsAndRows\(query string, opts \*QueryOptions, rows \*GivenRows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithOptionsAndRows>)
-  - [func \(t \*Transaction\) QueryWithRows\(query string, rows \*GivenRows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithRows>)
+  - [func \(t \*Transaction\) QueryWithOptionsAndRows\(query string, opts \*QueryOptions, rows given.Rows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithOptionsAndRows>)
+  - [func \(t \*Transaction\) QueryWithRows\(query string, rows given.Rows\) \(\[\]map\[string\]any, error\)](<#Transaction.QueryWithRows>)
   - [func \(t \*Transaction\) Rollback\(\) error](<#Transaction.Rollback>)
 - [type TransactionOptions](<#TransactionOptions>)
   - [func NewTransactionOptions\(\) \*TransactionOptions](<#NewTransactionOptions>)
@@ -119,7 +121,7 @@ func ReleaseAllConcepts()
 ReleaseAllConcepts frees every concept handle registered by this process, across all drivers and transactions. Handles obtained before this call become invalid.
 
 <a name="WaitForPendingCloses"></a>
-## func [WaitForPendingCloses](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L193>)
+## func [WaitForPendingCloses](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L195>)
 
 ```go
 func WaitForPendingCloses(ctx context.Context) error
@@ -146,7 +148,7 @@ type Concept struct {
 ```
 
 <a name="AsConcept"></a>
-### func [AsConcept](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L205>)
+### func [AsConcept](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L206>)
 
 ```go
 func AsConcept(value any) (Concept, bool)
@@ -445,6 +447,15 @@ func (r *GivenRows) Add(values ...GivenValue) error
 
 Add appends a row. It returns an error if the row width does not match the declared variable count.
 
+<a name="GivenRows.MarshalGivenRows"></a>
+### func \(\*GivenRows\) [MarshalGivenRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L109>)
+
+```go
+func (r *GivenRows) MarshalGivenRows() ([]byte, error)
+```
+
+MarshalGivenRows validates and encodes the rows for the driver.
+
 <a name="GivenRows.MustAdd"></a>
 ### func \(\*GivenRows\) [MustAdd](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L101>)
 
@@ -467,7 +478,7 @@ type GivenValue struct {
 ```
 
 <a name="BoolGiven"></a>
-### func [BoolGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L154>)
+### func [BoolGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L155>)
 
 ```go
 func BoolGiven(v bool) GivenValue
@@ -476,7 +487,7 @@ func BoolGiven(v bool) GivenValue
 BoolGiven creates a boolean given row entry.
 
 <a name="ConceptGiven"></a>
-### func [ConceptGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L149>)
+### func [ConceptGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L150>)
 
 ```go
 func ConceptGiven(v Concept) GivenValue
@@ -485,7 +496,7 @@ func ConceptGiven(v Concept) GivenValue
 ConceptGiven creates a concept given row entry from an opaque concept handle.
 
 <a name="DateGiven"></a>
-### func [DateGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L180>)
+### func [DateGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L181>)
 
 ```go
 func DateGiven(v string) GivenValue
@@ -494,7 +505,7 @@ func DateGiven(v string) GivenValue
 DateGiven creates a date given row entry from an ISO\-8601 date string.
 
 <a name="DatetimeGiven"></a>
-### func [DatetimeGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L186>)
+### func [DatetimeGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L187>)
 
 ```go
 func DatetimeGiven(v string) GivenValue
@@ -503,7 +514,7 @@ func DatetimeGiven(v string) GivenValue
 DatetimeGiven creates a datetime given row entry from an ISO\-8601 local datetime string.
 
 <a name="DatetimeTZGiven"></a>
-### func [DatetimeTZGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L192>)
+### func [DatetimeTZGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L193>)
 
 ```go
 func DatetimeTZGiven(v string) GivenValue
@@ -512,7 +523,7 @@ func DatetimeTZGiven(v string) GivenValue
 DatetimeTZGiven creates a datetime\-tz given row entry from an ISO\-8601 timestamp with timezone.
 
 <a name="DecimalGiven"></a>
-### func [DecimalGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L175>)
+### func [DecimalGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L176>)
 
 ```go
 func DecimalGiven(v string) GivenValue
@@ -521,7 +532,7 @@ func DecimalGiven(v string) GivenValue
 DecimalGiven creates a decimal given row entry from its TypeDB decimal string representation.
 
 <a name="DoubleGiven"></a>
-### func [DoubleGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L164>)
+### func [DoubleGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L165>)
 
 ```go
 func DoubleGiven(v float64) GivenValue
@@ -530,7 +541,7 @@ func DoubleGiven(v float64) GivenValue
 DoubleGiven creates a double given row entry.
 
 <a name="DurationGiven"></a>
-### func [DurationGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L197>)
+### func [DurationGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L198>)
 
 ```go
 func DurationGiven(v string) GivenValue
@@ -539,7 +550,7 @@ func DurationGiven(v string) GivenValue
 DurationGiven creates a duration given row entry from a TypeDB duration string.
 
 <a name="EmptyGiven"></a>
-### func [EmptyGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L144>)
+### func [EmptyGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L145>)
 
 ```go
 func EmptyGiven() GivenValue
@@ -548,7 +559,7 @@ func EmptyGiven() GivenValue
 EmptyGiven creates an empty given row entry.
 
 <a name="IntGiven"></a>
-### func [IntGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L159>)
+### func [IntGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L160>)
 
 ```go
 func IntGiven(v int64) GivenValue
@@ -557,7 +568,7 @@ func IntGiven(v int64) GivenValue
 IntGiven creates an integer given row entry.
 
 <a name="StringGiven"></a>
-### func [StringGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L169>)
+### func [StringGiven](<https://github.com/CaliLuke/go-typeql/blob/main/driver/given.go#L170>)
 
 ```go
 func StringGiven(v string) GivenValue
@@ -665,7 +676,7 @@ type ServerVersion struct {
 ```
 
 <a name="Transaction"></a>
-## type [Transaction](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L44-L61>)
+## type [Transaction](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L46-L63>)
 
 Transaction represents an active unit of work in a TypeDB database. Transactions are used to execute queries and must be either committed or closed.
 
@@ -681,7 +692,7 @@ type Transaction struct {
 ```
 
 <a name="Transaction.Close"></a>
-### func \(\*Transaction\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L817>)
+### func \(\*Transaction\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L825>)
 
 ```go
 func (t *Transaction) Close()
@@ -690,7 +701,7 @@ func (t *Transaction) Close()
 Close terminates the transaction without committing any changes. It should be used in a 'defer' block to ensure resources are released.
 
 <a name="Transaction.CloseAsync"></a>
-### func \(\*Transaction\) [CloseAsync](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L830>)
+### func \(\*Transaction\) [CloseAsync](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L838>)
 
 ```go
 func (t *Transaction) CloseAsync(onDone func(error))
@@ -703,7 +714,7 @@ CloseAsync terminates the transaction without committing and returns without wai
 - if the transaction was already committed, rolled back, closed, or abandoned, with nil, before CloseAsync returns.
 
 <a name="Transaction.CloseChecked"></a>
-### func \(\*Transaction\) [CloseChecked](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L852>)
+### func \(\*Transaction\) [CloseChecked](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L860>)
 
 ```go
 func (t *Transaction) CloseChecked() error
@@ -712,7 +723,7 @@ func (t *Transaction) CloseChecked() error
 CloseChecked terminates the transaction synchronously and returns the checked TypeDB close error, if any. It returns nil immediately when the transaction was already committed, rolled back, closed, or abandoned.
 
 <a name="Transaction.Commit"></a>
-### func \(\*Transaction\) [Commit](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L759>)
+### func \(\*Transaction\) [Commit](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L767>)
 
 ```go
 func (t *Transaction) Commit() error
@@ -721,7 +732,7 @@ func (t *Transaction) Commit() error
 Commit persists the changes made in the transaction to the database. Whether Commit succeeds or fails, the underlying Rust transaction handle is consumed and cannot be reused, rolled back, or closed again meaningfully. Commit on a transaction abandoned by a cancelled QueryWithContext call returns ErrTransactionAbandoned immediately.
 
 <a name="Transaction.IsOpen"></a>
-### func \(\*Transaction\) [IsOpen](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L315>)
+### func \(\*Transaction\) [IsOpen](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L317>)
 
 ```go
 func (t *Transaction) IsOpen() bool
@@ -730,7 +741,7 @@ func (t *Transaction) IsOpen() bool
 IsOpen returns true if the transaction is active and has not been committed, rolled back, closed, or abandoned by a cancelled QueryWithContext call.
 
 <a name="Transaction.Query"></a>
-### func \(\*Transaction\) [Query](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L329>)
+### func \(\*Transaction\) [Query](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L331>)
 
 ```go
 func (t *Transaction) Query(query string) ([]map[string]any, error)
@@ -739,7 +750,7 @@ func (t *Transaction) Query(query string) ([]map[string]any, error)
 Query executes a TypeQL query \(match, insert, delete, update\) within the transaction. It returns the results as a slice of maps, where each map represents a ConceptRow.
 
 <a name="Transaction.QueryEachWithContext"></a>
-### func \(\*Transaction\) [QueryEachWithContext](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L532-L536>)
+### func \(\*Transaction\) [QueryEachWithContext](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L534-L538>)
 
 ```go
 func (t *Transaction) QueryEachWithContext(ctx context.Context, query string, fn func(rowCount int, row map[string]any) error) error
@@ -748,7 +759,7 @@ func (t *Transaction) QueryEachWithContext(ctx context.Context, query string, fn
 QueryEachWithContext executes a TypeQL query and calls fn for each result. The rowCount argument is the number of results in the current stream chunk. The driver reuses the row map, so fn must not retain it.
 
 <a name="Transaction.QueryWithContext"></a>
-### func \(\*Transaction\) [QueryWithContext](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L591>)
+### func \(\*Transaction\) [QueryWithContext](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L593>)
 
 ```go
 func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map[string]any, error)
@@ -757,10 +768,10 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 QueryWithContext executes a TypeQL query with context cancellation support and default query options. It is equivalent to QueryWithContextAndOptions with nil options and rows; see that method for the cancellation semantics.
 
 <a name="Transaction.QueryWithContextAndOptions"></a>
-### func \(\*Transaction\) [QueryWithContextAndOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L615>)
+### func \(\*Transaction\) [QueryWithContextAndOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L623>)
 
 ```go
-func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query string, opts *QueryOptions, rows *GivenRows) ([]map[string]any, error)
+func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query string, opts *QueryOptions, rows given.Rows) ([]map[string]any, error)
 ```
 
 QueryWithContextAndOptions executes a TypeQL query with context cancellation support, query options, and optional typed input rows for a given stage. Nil opts and rows keep the driver defaults.
@@ -773,8 +784,17 @@ Cancellation semantics are intentionally limited by the underlying Rust driver h
 
 If ctx is cancelled, the background call may keep using opts and rows until the driver returns; do not call opts.Close until the transaction's pending closes have drained \(see WaitForPendingCloses\).
 
+<a name="Transaction.QueryWithContextAndRows"></a>
+### func \(\*Transaction\) [QueryWithContextAndRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L599>)
+
+```go
+func (t *Transaction) QueryWithContextAndRows(ctx context.Context, query string, rows given.Rows) ([]map[string]any, error)
+```
+
+QueryWithContextAndRows executes a TypeQL query with context cancellation support and typed input rows for a given stage.
+
 <a name="Transaction.QueryWithOptions"></a>
-### func \(\*Transaction\) [QueryWithOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L334>)
+### func \(\*Transaction\) [QueryWithOptions](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L336>)
 
 ```go
 func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[string]any, error)
@@ -783,25 +803,25 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 QueryWithOptions executes a TypeQL query with specific QueryOptions.
 
 <a name="Transaction.QueryWithOptionsAndRows"></a>
-### func \(\*Transaction\) [QueryWithOptionsAndRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L345>)
+### func \(\*Transaction\) [QueryWithOptionsAndRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L347>)
 
 ```go
-func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, rows *GivenRows) ([]map[string]any, error)
+func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, rows given.Rows) ([]map[string]any, error)
 ```
 
 QueryWithOptionsAndRows executes a TypeQL query with query options and typed input rows for a given stage.
 
 <a name="Transaction.QueryWithRows"></a>
-### func \(\*Transaction\) [QueryWithRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L339>)
+### func \(\*Transaction\) [QueryWithRows](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L341>)
 
 ```go
-func (t *Transaction) QueryWithRows(query string, rows *GivenRows) ([]map[string]any, error)
+func (t *Transaction) QueryWithRows(query string, rows given.Rows) ([]map[string]any, error)
 ```
 
 QueryWithRows executes a TypeQL query with typed input rows for a given stage.
 
 <a name="Transaction.Rollback"></a>
-### func \(\*Transaction\) [Rollback](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L788>)
+### func \(\*Transaction\) [Rollback](<https://github.com/CaliLuke/go-typeql/blob/main/driver/transaction.go#L796>)
 
 ```go
 func (t *Transaction) Rollback() error

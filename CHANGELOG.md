@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.15.0-alpha.3 - 2026-08-27
+
+- Exposed TypeQL `given` input rows through `gotype.Tx`, including context cancellation.
+- Added the pure-Go `given.Rows` contract for driver-independent transaction interfaces.
 - Updated the TypeDB server to `3.12.3`.
 
 ## v1.15.0-alpha.2 - 2026-08-12

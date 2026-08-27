@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/CaliLuke/go-typeql/given"
 )
 
 // PoolConfig specifies connection pool behavior.
@@ -646,6 +648,14 @@ func (pt *pooledTx) Query(query string) ([]map[string]any, error) {
 
 func (pt *pooledTx) QueryWithContext(ctx context.Context, query string) ([]map[string]any, error) {
 	return pt.tx.QueryWithContext(ctx, query)
+}
+
+func (pt *pooledTx) QueryWithRows(query string, rows given.Rows) ([]map[string]any, error) {
+	return pt.tx.QueryWithRows(query, rows)
+}
+
+func (pt *pooledTx) QueryWithContextAndRows(ctx context.Context, query string, rows given.Rows) ([]map[string]any, error) {
+	return pt.tx.QueryWithContextAndRows(ctx, query, rows)
 }
 
 func (pt *pooledTx) QueryEachWithContext(

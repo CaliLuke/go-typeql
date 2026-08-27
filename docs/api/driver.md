@@ -158,9 +158,10 @@ exclusive). Individual transactions still serialize their own FFI calls.
 
 ### Given Rows
 
-TypeDB 3.12 adds the `given` stage for passing input rows separately from the
-query string. Use `QueryWithRows` or `QueryWithOptionsAndRows` to send typed
-values without interpolating them into TypeQL:
+TypeDB 3.12 adds the `given` stage. This stage passes input rows separately
+from the query string. Use `QueryWithRows` or `QueryWithContextAndRows` to send
+typed values through `gotype.Tx` without interpolation. Use
+`QueryWithOptionsAndRows` when the query also needs driver-specific options:
 
 ```go
 rows := driver.NewGivenRows("name", "age").
@@ -168,6 +169,16 @@ rows := driver.NewGivenRows("name", "age").
     MustAdd(driver.StringGiven("Bob"), driver.IntGiven(41))
 
 _, err := txn.QueryWithRows(`
+given $name: string, $age: integer;
+insert $p isa person, has name == $name, has age == $age;
+`, rows)
+```
+
+`*driver.GivenRows` implements `given.Rows`. Therefore, the same rows work
+with a transaction returned as `gotype.Tx`:
+
+```go
+_, err := tx.QueryWithContextAndRows(ctx, `
 given $name: string, $age: integer;
 insert $p isa person, has name == $name, has age == $age;
 `, rows)

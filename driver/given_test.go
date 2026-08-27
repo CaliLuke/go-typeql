@@ -24,7 +24,7 @@ func TestGivenRowsAddValidatesWidth(t *testing.T) {
 
 func TestGivenRowsJSONRequiresVariables(t *testing.T) {
 	rows := &GivenRows{}
-	_, err := rows.json()
+	_, err := rows.MarshalGivenRows()
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -34,7 +34,7 @@ func TestGivenRowsJSONRequiresVariables(t *testing.T) {
 }
 
 func TestGivenRowsJSONEncodesEmptyRowsAsArray(t *testing.T) {
-	data, err := NewGivenRows("name").json()
+	data, err := NewGivenRows("name").MarshalGivenRows()
 	if err != nil {
 		t.Fatalf("json: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestConceptGivenEncodesOpaqueConceptHandle(t *testing.T) {
 	}
 	rows := NewGivenRows("p").MustAdd(ConceptGiven(concept))
 
-	data, err := rows.json()
+	data, err := rows.MarshalGivenRows()
 	if err != nil {
 		t.Fatalf("json: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestAsConceptExtractsOpaqueConceptMetadata(t *testing.T) {
 
 func TestConceptGivenRequiresHandle(t *testing.T) {
 	rows := NewGivenRows("p").MustAdd(ConceptGiven(Concept{}))
-	_, err := rows.json()
+	_, err := rows.MarshalGivenRows()
 	if err == nil {
 		t.Fatal("expected empty handle error")
 	}

@@ -3,8 +3,11 @@
 package driver
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/CaliLuke/go-typeql/gotype"
 )
 
 func TestQueryWithRows_InsertAndReadScalars(t *testing.T) {
@@ -68,7 +71,8 @@ insert $p isa person, has name == $n, has age == $a;
 	}
 	defer readTx.Close()
 
-	results, err := readTx.QueryWithRows(`
+	var readAPI gotype.Tx = readTx
+	results, err := readAPI.QueryWithContextAndRows(context.Background(), `
 given $n: string;
 match
   $p isa person, has name == $n, has age $a;

@@ -68,6 +68,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 | Package   | What it does                                | Needs CGo |
 | --------- | ------------------------------------------- | :-------: |
 | `ast/`    | TypeQL AST nodes and compiler               |    No     |
+| `given/`  | Shared input-row contract for `given` stages |    No     |
 | `gotype/` | ORM core: models, CRUD, queries, migrations |    No     |
 | `tqlgen/` | Code generator: TypeQL schema to Go structs |    No     |
 | `driver/` | Rust FFI bindings to `typedb-driver` 3.x    |    Yes    |
@@ -77,10 +78,13 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql@v1.15.0-alpha.2
+go get github.com/CaliLuke/go-typeql@v1.15.0-alpha.3
 ```
 
-The `ast/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database. The `driver/` package targets TypeDB `3.12.3` with the `typedb-driver` `3.12.3` and `typeql` `3.12.2` Rust crates. If you use TypeDB `3.10.x`, use go-typeql `v1.10.x`.
+The `ast/`, `given/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database.
+The `driver/` package targets TypeDB `3.12.3`.
+It uses the `typedb-driver` `3.12.3` and `typeql` `3.12.2` Rust crates.
+If you use TypeDB `3.10.x`, use go-typeql `v1.10.x`.
 
 The `driver/` package requires the static library for the Rust FFI. `go get` downloads only the source tree. It does not build or install `libtypedb_go_ffi.a`.
 
@@ -102,7 +106,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 platform="$(go env GOOS)-$(go env GOARCH)"
 
 # Download for your platform
-gh release download v1.15.0-alpha.2 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
+gh release download v1.15.0-alpha.3 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 libdir=/usr/local/lib
@@ -128,7 +132,7 @@ The [Getting Started walkthrough](docs/GETTING_STARTED.md) is a complete runnabl
 
 ```bash
 # Unit tests (645 tests, no database needed)
-go test ./ast/... ./gotype/... ./tqlgen/...
+go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Integration tests (with the repo compose file, TypeDB is exposed on host port 1730)
 docker compose up -d

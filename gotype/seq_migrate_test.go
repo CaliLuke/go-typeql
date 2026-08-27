@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/CaliLuke/go-typeql/given"
 )
 
 // --- inferTxType ---
@@ -838,6 +840,12 @@ type errMockTx struct {
 
 func (m *errMockTx) Query(string) ([]map[string]any, error) { return nil, m.err }
 func (m *errMockTx) QueryWithContext(_ context.Context, q string) ([]map[string]any, error) {
+	return m.Query(q)
+}
+func (m *errMockTx) QueryWithRows(q string, _ given.Rows) ([]map[string]any, error) {
+	return m.Query(q)
+}
+func (m *errMockTx) QueryWithContextAndRows(_ context.Context, q string, _ given.Rows) ([]map[string]any, error) {
 	return m.Query(q)
 }
 func (m *errMockTx) Commit() error   { return nil }

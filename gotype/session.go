@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+
+	"github.com/CaliLuke/go-typeql/given"
 )
 
 // TransactionType represents the intended mode of operation for a TypeDB transaction.
@@ -26,12 +28,7 @@ const (
 
 // Tx is the interface for a TypeDB transaction, allowing for query execution and lifecycle management.
 //
-// The driver package's *driver.Transaction satisfies Tx. It also provides
-// QueryWithContextAndOptions(ctx, query, *driver.QueryOptions,
-// *driver.GivenRows) for composing cancellation with per-query options such
-// as prefetch size; callers that hold the concrete transaction (for example
-// via TransactionContext.Tx or Manager.WithTx) can reach it with a type
-// assertion.
+// The driver package's *driver.Transaction satisfies Tx.
 type Tx interface {
 	// Query executes a TypeQL query and returns the results.
 	Query(query string) ([]map[string]any, error)
@@ -46,6 +43,11 @@ type Tx interface {
 	// blocking behind it. Other implementations may block in Close until
 	// their query call completes.
 	QueryWithContext(ctx context.Context, query string) ([]map[string]any, error)
+	// QueryWithRows executes a TypeQL query with typed input rows for a given stage.
+	QueryWithRows(query string, rows given.Rows) ([]map[string]any, error)
+	// QueryWithContextAndRows executes a TypeQL query with context cancellation
+	// support and typed input rows for a given stage.
+	QueryWithContextAndRows(ctx context.Context, query string, rows given.Rows) ([]map[string]any, error)
 	// Commit persists changes made in the transaction.
 	Commit() error
 	// Rollback discards changes made in the transaction.

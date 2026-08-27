@@ -13,7 +13,7 @@ go-typeql uses a two-tier testing approach:
 # Unit tests (437 tests, no DB required)
 make test-unit
 # Or directly:
-go test ./ast/... ./gotype/... ./tqlgen/...
+go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Integration tests (requires TypeDB + Rust library)
 docker compose up -d

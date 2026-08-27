@@ -15,6 +15,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/CaliLuke/go-typeql/given"
+
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -336,17 +338,17 @@ func (t *Transaction) QueryWithOptions(query string, opts *QueryOptions) ([]map[
 }
 
 // QueryWithRows executes a TypeQL query with typed input rows for a given stage.
-func (t *Transaction) QueryWithRows(query string, rows *GivenRows) ([]map[string]any, error) {
+func (t *Transaction) QueryWithRows(query string, rows given.Rows) ([]map[string]any, error) {
 	return t.query(query, nil, rows)
 }
 
 // QueryWithOptionsAndRows executes a TypeQL query with query options and typed
 // input rows for a given stage.
-func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, rows *GivenRows) ([]map[string]any, error) {
+func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, rows given.Rows) ([]map[string]any, error) {
 	return t.query(query, opts, rows)
 }
 
-func (t *Transaction) query(query string, opts *QueryOptions, rows *GivenRows, logExtra ...any) ([]map[string]any, error) {
+func (t *Transaction) query(query string, opts *QueryOptions, rows given.Rows, logExtra ...any) ([]map[string]any, error) {
 	var results []map[string]any
 	err := t.queryDecoded(query, opts, rows, func(buf *C.uchar, outLen C.size_t) (int, error) {
 		var decodeErr error
@@ -363,7 +365,7 @@ const queryStreamChunkRows = 256
 func (t *Transaction) queryDecoded(
 	query string,
 	opts *QueryOptions,
-	rows *GivenRows,
+	rows given.Rows,
 	decode queryDecoder,
 	logExtra ...any,
 ) error {
@@ -380,7 +382,7 @@ func (t *Transaction) queryDecoded(
 	var rowsJSON []byte
 	var err error
 	if rows != nil {
-		rowsJSON, err = rows.json()
+		rowsJSON, err = rows.MarshalGivenRows()
 		if err != nil {
 			err = withQuery(err, query)
 			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, logFields...)
@@ -592,6 +594,12 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 	return t.QueryWithContextAndOptions(ctx, query, nil, nil)
 }
 
+// QueryWithContextAndRows executes a TypeQL query with context cancellation
+// support and typed input rows for a given stage.
+func (t *Transaction) QueryWithContextAndRows(ctx context.Context, query string, rows given.Rows) ([]map[string]any, error) {
+	return t.QueryWithContextAndOptions(ctx, query, nil, rows)
+}
+
 // QueryWithContextAndOptions executes a TypeQL query with context cancellation
 // support, query options, and optional typed input rows for a given stage.
 // Nil opts and rows keep the driver defaults.
@@ -612,7 +620,7 @@ func (t *Transaction) QueryWithContext(ctx context.Context, query string) ([]map
 // If ctx is cancelled, the background call may keep using opts and rows until
 // the driver returns; do not call opts.Close until the transaction's pending
 // closes have drained (see WaitForPendingCloses).
-func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query string, opts *QueryOptions, rows *GivenRows) ([]map[string]any, error) {
+func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query string, opts *QueryOptions, rows given.Rows) ([]map[string]any, error) {
 	queryOp := queryOperation(query)
 	queryFP := queryFingerprint(query)
 	if deadline, ok := ctx.Deadline(); ok {

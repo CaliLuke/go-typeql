@@ -111,6 +111,31 @@ err = tc.Commit() // Both inserts in one transaction
 
 Transaction types: `ReadTransaction` (0), `WriteTransaction` (1), `SchemaTransaction` (2).
 
+The `Tx` interface includes `QueryWithRows` and `QueryWithContextAndRows`.
+These methods execute a raw query with typed input for its `given` stage.
+`*driver.GivenRows` supplies the input:
+
+```go
+tx, err := db.Transaction(gotype.WriteTransaction)
+if err != nil {
+    return err
+}
+defer tx.Close()
+
+rows := driver.NewGivenRows("name").
+    MustAdd(driver.StringGiven("Alice")).
+    MustAdd(driver.StringGiven("Bob"))
+
+_, err = tx.QueryWithContextAndRows(ctx, `
+given $name: string;
+insert $p isa person, has name == $name;
+`, rows)
+if err != nil {
+    return err
+}
+return tx.Commit()
+```
+
 ## Database
 
 `Database` wraps a `Conn` with a database name and provides convenience methods for executing queries:

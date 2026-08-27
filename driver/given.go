@@ -105,7 +105,8 @@ func (r *GivenRows) MustAdd(values ...GivenValue) *GivenRows {
 	return r
 }
 
-func (r *GivenRows) json() ([]byte, error) {
+// MarshalGivenRows validates and encodes the rows for the driver.
+func (r *GivenRows) MarshalGivenRows() ([]byte, error) {
 	if r == nil {
 		return nil, fmt.Errorf("given rows is nil")
 	}

@@ -128,11 +128,11 @@ The project uses build tags to isolate CGo-dependent code:
 | `typedb`      | Gates all driver source files |
 | `integration` | Gates integration test files  |
 
-The `ast/`, `gotype/`, and `tqlgen/` packages compile and test without any build tags. Only the `driver/` package requires `cgo && typedb`.
+The `ast/`, `given/`, `gotype/`, and `tqlgen/` packages compile and test without build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
 # Unit tests (default, no tags needed) — 437 tests
-go test ./ast/... ./gotype/... ./tqlgen/...
+go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests
 # Default test address is localhost:1729. When using the repo compose file, use
@@ -143,10 +143,11 @@ TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,t
 ## Package Dependencies
 
 ```text
-ast/           — zero external dependencies (stdlib only)
-gotype/    — depends on ast/ and tqlgen/ (no CGo)
-tqlgen/        — depends on github.com/alecthomas/participle/v2
-driver/        — CGo + Rust FFI (gated by build tags)
+ast/       — zero external dependencies (standard library only)
+given/     — shared input-row contract (standard library only)
+gotype/    — depends on ast/, given/, and tqlgen/ (no CGo)
+tqlgen/    — depends on github.com/alecthomas/participle/v2
+driver/    — depends on given/; CGo + Rust FFI (gated by build tags)
 ```
 
 The `gotype` package defines `Conn` and `Tx` interfaces that decouple it from the `driver` package. This means `gotype` compiles and tests without CGo.
@@ -220,6 +221,7 @@ Regenerate the checked-in markdown reference after exported API changes:
 
 ```bash
 ~/go/bin/gomarkdoc ./ast/ > docs/api/reference/ast.md
+~/go/bin/gomarkdoc ./given/ > docs/api/reference/given.md
 ~/go/bin/gomarkdoc ./gotype/ > docs/api/reference/gotype.md
 ~/go/bin/gomarkdoc ./tqlgen/ > docs/api/reference/tqlgen.md
 ~/go/bin/gomarkdoc --tags "cgo,typedb" ./driver/ > docs/api/reference/driver.md

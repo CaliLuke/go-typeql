@@ -23,7 +23,7 @@ If `$ARGUMENTS` is empty, ask the user what version to release.
 ## 2. Run the full test suite
 
 ```bash
-go test ./ast/... ./gotype/... ./tqlgen/...
+go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 make build-rust
 make test-rust
 docker compose up -d
@@ -32,7 +32,7 @@ TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 go test -tags "cgo,t
 
 This step must prove both release surfaces still work:
 
-- The pure-Go packages (`ast/`, `gotype/`, `tqlgen/`) still pass from a clean checkout.
+- The pure-Go packages (`ast/`, `given/`, `gotype/`, `tqlgen/`) still pass from a clean checkout.
 - The CGo driver still links after producing `driver/rust/target/release/libtypedb_go_ffi.a`.
 
 The TypeDB container can be left running for subsequent steps; no teardown needed unless the user wants a clean environment (`docker compose down`).
@@ -40,7 +40,7 @@ The TypeDB container can be left running for subsequent steps; no teardown neede
 ## 3. Check test coverage
 
 ```bash
-go test -coverprofile=coverage.out ./ast/... ./gotype/... ./tqlgen/...
+go test -coverprofile=coverage.out ./ast/... ./given/... ./gotype/... ./tqlgen/...
 go tool cover -func=coverage.out | tail -1
 ```
 
@@ -77,6 +77,7 @@ first, then regenerate the checked-in reference docs:
 
 ```bash
 ~/go/bin/gomarkdoc ./ast/ > docs/api/reference/ast.md
+~/go/bin/gomarkdoc ./given/ > docs/api/reference/given.md
 ~/go/bin/gomarkdoc ./gotype/ > docs/api/reference/gotype.md
 ~/go/bin/gomarkdoc ./tqlgen/ > docs/api/reference/tqlgen.md
 ~/go/bin/gomarkdoc --tags "cgo,typedb" ./driver/ > docs/api/reference/driver.md
@@ -99,7 +100,7 @@ For driver changes, remember that reference generation requires build tags:
 Count tests with:
 
 ```bash
-go test ./ast/... ./gotype/... ./tqlgen/... -v 2>&1 | grep -c "^--- PASS"
+go test ./ast/... ./given/... ./gotype/... ./tqlgen/... -v 2>&1 | grep -c "^--- PASS"
 ```
 
 Update the number in the comment at the top of the Commands section in `AGENTS.md`. `CLAUDE.md` is a symlink to `AGENTS.md`. If the comment is no longer at that location, grep for the prior count to find it.

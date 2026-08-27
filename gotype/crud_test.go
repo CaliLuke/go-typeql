@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/CaliLuke/go-typeql/given"
 )
 
 // --- Mock transaction and connection ---
@@ -57,6 +59,14 @@ func (m *mockTx) QueryWithContext(ctx context.Context, query string) ([]map[stri
 		return nil, err
 	}
 	return m.Query(query)
+}
+
+func (m *mockTx) QueryWithRows(query string, _ given.Rows) ([]map[string]any, error) {
+	return m.Query(query)
+}
+
+func (m *mockTx) QueryWithContextAndRows(ctx context.Context, query string, _ given.Rows) ([]map[string]any, error) {
+	return m.QueryWithContext(ctx, query)
 }
 
 func (m *mockTx) Commit() error {

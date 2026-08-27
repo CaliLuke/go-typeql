@@ -894,6 +894,8 @@ type Conn interface {
 type Tx interface {
     Query(query string) ([]map[string]any, error)
     QueryWithContext(ctx context.Context, query string) ([]map[string]any, error)
+    QueryWithRows(query string, rows given.Rows) ([]map[string]any, error)
+    QueryWithContextAndRows(ctx context.Context, query string, rows given.Rows) ([]map[string]any, error)
     Commit() error
     Rollback() error
     Close()
@@ -903,12 +905,11 @@ type Tx interface {
 
 The `driver/` package provides the real implementation via Rust FFI. For unit tests, use mock implementations.
 
-Cancellation semantics: a `Tx.QueryWithContext` whose context is cancelled returns
-`ctx.Err()` immediately and abandons the underlying driver transaction — later calls on
-it error with `driver.ErrTransactionAbandoned` and `Close` never blocks. Driver-specific
-features beyond the `Tx` interface (e.g. `QueryOptions`, `GivenRows` via
-`QueryWithContextAndOptions`) are reached by type-asserting the `Tx` to
-`*driver.Transaction`.
+Cancellation semantics: if the context expires, `Tx.QueryWithContext` and
+`Tx.QueryWithContextAndRows` return `ctx.Err()` immediately. The driver then
+abandons the transaction, and `Close` does not block. `*driver.GivenRows`
+implements `given.Rows`. Driver-specific query options still require a
+`*driver.Transaction` and `QueryWithContextAndOptions`.
 
 ---
 

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/CaliLuke/go-typeql/given"
 )
 
 // poolTestEntity is a simple entity for pool testing
@@ -47,6 +49,14 @@ func (m *asyncCloseMockTx) QueryWithContext(ctx context.Context, query string) (
 		return nil, err
 	}
 	return m.Query(query)
+}
+
+func (m *asyncCloseMockTx) QueryWithRows(query string, _ given.Rows) ([]map[string]any, error) {
+	return m.Query(query)
+}
+
+func (m *asyncCloseMockTx) QueryWithContextAndRows(ctx context.Context, query string, _ given.Rows) ([]map[string]any, error) {
+	return m.QueryWithContext(ctx, query)
 }
 
 func (m *asyncCloseMockTx) Commit() error {

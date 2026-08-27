@@ -20,6 +20,7 @@ Generated from source via `gomarkdoc`. Regenerate with:
 
 ```bash
 ~/go/bin/gomarkdoc ./ast/ > docs/api/reference/ast.md
+~/go/bin/gomarkdoc ./given/ > docs/api/reference/given.md
 ~/go/bin/gomarkdoc ./gotype/ > docs/api/reference/gotype.md
 ~/go/bin/gomarkdoc ./tqlgen/ > docs/api/reference/tqlgen.md
 ~/go/bin/gomarkdoc --tags "cgo,typedb" ./driver/ > docs/api/reference/driver.md
@@ -29,5 +30,6 @@ Generated from source via `gomarkdoc`. Regenerate with:
 | ------- | ------------------------------------------ |
 | ast     | [reference/ast.md](reference/ast.md)       |
 | driver  | [reference/driver.md](reference/driver.md) |
+| given   | [reference/given.md](reference/given.md)   |
 | gotype  | [reference/gotype.md](reference/gotype.md) |
 | tqlgen  | [reference/tqlgen.md](reference/tqlgen.md) |

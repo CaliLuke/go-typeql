@@ -43,7 +43,7 @@ clean-rust:
 
 # Run all unit tests (no DB required)
 test-unit:
-	go test ./ast/... ./gotype/...
+	go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Run integration tests (requires TypeDB + built Rust library).
 # The repo compose maps host port 1730 -> container port 1729;
@@ -66,7 +66,7 @@ bench:
 
 # Lint (fast — just vet)
 lint:
-	go vet ./ast/... ./gotype/...
+	go vet ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Full quality gates (unit scope): build, vet, goimports, tidy drift,
 # golangci-lint, staticcheck, tests + dupl/gocyclo reports.
