@@ -53,6 +53,12 @@ func DefaultConfig() RenderConfig {
 // roles with no resolvable player, skipped functions) are reported to
 // cfg.WarnWriter (os.Stderr by default).
 func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error {
+	return renderWithRolePlayerIndex(w, schema, cfg, true)
+}
+
+// renderWithRolePlayerIndex allows regression tests to compare the complete
+// generated source and warning stream against the original scan path.
+func renderWithRolePlayerIndex(w io.Writer, schema *ParsedSchema, cfg RenderConfig, useIndex bool) error {
 	if cfg.PackageName == "" {
 		cfg.PackageName = "models"
 	}
@@ -61,6 +67,11 @@ func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error {
 	}
 
 	r := newRenderer(schema, cfg)
+	// Building an index is worthwhile only for repeated inherited-role scans
+	// over large schemas. Small/shallow schemas avoid its per-render cost.
+	if useIndex && r.needsRolePlayerIndex() {
+		r.rolePlayers = buildRolePlayerIndex(schema)
+	}
 
 	// Build template context
 	data := &renderData{
@@ -136,13 +147,42 @@ func writeFormattedGo(w io.Writer, tmpl *template.Template, data any) error {
 // attribute value-type lookup, the relation lookup for inheritance walks,
 // the warning sink, and whether any emitted field needs the time import.
 type renderer struct {
-	cfg       RenderConfig
-	schema    *ParsedSchema
-	attrSpecs map[string]AttributeSpec // attr name -> spec
-	relations map[string]*RelationSpec // relation name -> spec
-	structs   map[string]bool          // TypeQL struct names
-	warnTo    io.Writer
-	needsTime bool
+	cfg         RenderConfig
+	schema      *ParsedSchema
+	attrSpecs   map[string]AttributeSpec // attr name -> spec
+	relations   map[string]*RelationSpec // relation name -> spec
+	rolePlayers map[roleLookupKey]string
+	structs     map[string]bool // TypeQL struct names
+	warnTo      io.Writer
+	needsTime   bool
+}
+
+type roleLookupKey struct {
+	relation string
+	role     string
+}
+
+// buildRolePlayerIndex keeps the first entity match before the first relation
+// match, in source order, just like findPlays. It is scoped to one render.
+func buildRolePlayerIndex(schema *ParsedSchema) map[roleLookupKey]string {
+	index := make(map[roleLookupKey]string)
+	for _, entity := range schema.Entities {
+		for _, play := range entity.Plays {
+			key := roleLookupKey{play.Relation, play.Role}
+			if _, exists := index[key]; !exists {
+				index[key] = entity.Name
+			}
+		}
+	}
+	for _, relation := range schema.Relations {
+		for _, play := range relation.Plays {
+			key := roleLookupKey{play.Relation, play.Role}
+			if _, exists := index[key]; !exists {
+				index[key] = relation.Name
+			}
+		}
+	}
+	return index
 }
 
 func newRenderer(schema *ParsedSchema, cfg RenderConfig) *renderer {
@@ -167,6 +207,40 @@ func newRenderer(schema *ParsedSchema, cfg RenderConfig) *renderer {
 		r.structs[s.Name] = true
 	}
 	return r
+}
+
+// needsRolePlayerIndex conservatively selects the measured deep, role-heavy
+// case; ordinary renders keep the allocation-free declaration scan.
+func (r *renderer) needsRolePlayerIndex() bool {
+	if len(r.schema.Entities) < 64 {
+		return false
+	}
+	for _, relation := range r.schema.Relations {
+		if (r.cfg.SkipAbstract && relation.Abstract) || len(relation.Relates) < 16 {
+			continue
+		}
+		var visited [4]string
+		depth := 0
+	walk:
+		for name := relation.Name; name != ""; {
+			for _, prev := range visited[:depth] {
+				if prev == name {
+					break walk
+				}
+			}
+			visited[depth] = name
+			depth++
+			if depth >= 4 {
+				return true
+			}
+			parent := r.relations[name]
+			if parent == nil {
+				break
+			}
+			name = parent.Parent
+		}
+	}
+	return false
 }
 
 func (r *renderer) warnf(format string, args ...any) {
@@ -618,7 +692,7 @@ func (r *renderer) findRolePlayer(rel RelationSpec, role RelatesSpec) string {
 	visited := make(map[string]bool)
 	for relName != "" && !visited[relName] {
 		visited[relName] = true
-		if p := findPlays(relName, roleName, r.schema); p != "" {
+		if p := r.findPlays(relName, roleName); p != "" {
 			return p
 		}
 		cur, ok := r.relations[relName]
@@ -642,6 +716,13 @@ func (r *renderer) findRolePlayer(rel RelationSpec, role RelatesSpec) string {
 		}
 	}
 	return ""
+}
+
+func (r *renderer) findPlays(relName, roleName string) string {
+	if r.rolePlayers != nil {
+		return r.rolePlayers[roleLookupKey{relName, roleName}]
+	}
+	return findPlays(relName, roleName, r.schema)
 }
 
 // findPlays returns the name of the first entity or relation declaring

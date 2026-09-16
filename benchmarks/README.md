@@ -13,3 +13,7 @@ make bench
 ```
 
 The benchmark recorder prints the current numbers and compares them to the previous recorded run for each benchmark.
+
+The isolated role-player resolution benchmark does not need TypeDB; run
+`go test ./tqlgen -run '^$' -bench '^BenchmarkRolePlayerResolution$' -benchtime=1000x -count=5 -benchmem`.
+See [the role-resolution report](ROLE_RESOLUTION.md) for workload and results.
