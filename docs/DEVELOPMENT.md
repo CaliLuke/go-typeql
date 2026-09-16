@@ -243,3 +243,10 @@ Key optimizations applied to the codebase:
 - **No thread pinning** — FFI uses out-parameter error handling instead of thread-local storage, so goroutines are free to migrate
 - **Connection pooling** — `ConnPool` with configurable min/max size, idle timeout, wait queue, health checks, and context support
 - **Hydration** — benchmarked at 0.3ms/1000 rows with reflection; no optimization needed
+- **Fetch projections** — each `ModelInfo` owns a synchronized cache keyed by
+  projection shape and variable name. Field/role signatures are checked on
+  every use, including currently registered role-player fields; sequential
+  edits to exposed metadata, subtype registrations, and registry replacement
+  rebuild stale entries.
+  Clearing the registry drops its ownership of the old metadata and cache.
+  Callers must synchronize concurrent mutation of exported metadata themselves.

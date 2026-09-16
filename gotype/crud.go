@@ -971,6 +971,16 @@ func extractIID(result map[string]any) string {
 // plus the union of all attribute fields from the base type and all registered
 // subtypes. This allows polymorphic retrieval in a single query.
 func buildPolymorphicFetch(info *ModelInfo, varName string) (string, error) {
+	subtypes := SubtypesOf(info.TypeName)
+	signature := polymorphicProjectionSignature(info, subtypes)
+	_, fetch, err := cachedProjection(info, "polymorphic", varName, signature, func() (string, string, error) {
+		query, err := compilePolymorphicFetch(info, varName, subtypes)
+		return "", query, err
+	})
+	return fetch, err
+}
+
+func compilePolymorphicFetch(info *ModelInfo, varName string, subtypes []*ModelInfo) (string, error) {
 	var items []ast.FetchItem
 	items = append(items, ast.FetchFunc("_iid", "iid", "$"+varName))
 	items = append(items, ast.FetchFunc("_type", "label", "$t"))
@@ -979,7 +989,7 @@ func buildPolymorphicFetch(info *ModelInfo, varName string) (string, error) {
 		items = appendFetchField(items, fi, varName)
 	}
 	// Add subtype-only fields
-	for _, sub := range SubtypesOf(info.TypeName) {
+	for _, sub := range subtypes {
 		for _, fi := range sub.Fields {
 			if _, exists := fieldByName(info.Fields, fi.Tag.Name); !exists {
 				items = appendFetchField(items, fi, varName)

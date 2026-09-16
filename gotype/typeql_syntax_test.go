@@ -40,6 +40,34 @@ func assertTypeQL(t *testing.T, label, query, knownIssue string) {
 // and pipes every query it generated through typeql-check.
 func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 	registerTestTypes(t)
+	t.Run("cold and cached fetch projection", func(t *testing.T) {
+		first := &mockTx{}
+		second := &mockTx{}
+		mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{first, second}}, "test_db"))
+		for _, tx := range []*mockTx{first, second} {
+			if _, err := mgr.Get(context.Background(), map[string]any{"name": "Alice"}); err != nil {
+				t.Fatal(err)
+			}
+			assertTypeQL(t, "cached fetch projection", tx.queries[0], "")
+		}
+		if first.queries[0] != second.queries[0] {
+			t.Fatal("cached query text differs from cold query")
+		}
+	})
+	t.Run("cold and cached polymorphic projection", func(t *testing.T) {
+		defer registerTestTypes(t)
+		ClearRegistry()
+		MustRegister[zzzParentModel]()
+		MustRegister[aaaChildModel]()
+		base, _ := LookupType(typeOf[zzzParentModel]())
+		for range 2 {
+			fetch, err := buildPolymorphicFetch(base, "e")
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertTypeQL(t, "polymorphic fetch", "match $e isa! $t; $t sub zzz-parent-model;\n"+fetch, "")
+		}
+	})
 	t.Run("keyed entity put and fetch", func(t *testing.T) {
 		writeTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xABC123"}}}}
 		mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{writeTx}}, "test_db"))

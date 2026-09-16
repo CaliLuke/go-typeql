@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -77,6 +78,8 @@ type ModelInfo struct {
 	// typeNameOverride records an explicit type: tag override so conflicting
 	// overrides on different fields can be detected.
 	typeNameOverride string
+	projectionMu     sync.Mutex
+	projections      map[projectionKey]projectionEntry
 }
 
 // FieldByName retrieves FieldInfo by the Go struct field name.

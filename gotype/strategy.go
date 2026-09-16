@@ -172,6 +172,14 @@ func (s *entityStrategy) BuildFetchAll(info *ModelInfo, varName string) (string,
 // buildFetchAll compiles a fetch for every owned attribute plus the synthetic
 // _iid field. Shared by entity and relation strategies.
 func buildFetchAll(info *ModelInfo, varName string) (string, error) {
+	_, fetch, err := cachedProjection(info, "all", varName, projectionSignature(info, nil), func() (string, string, error) {
+		query, err := compileFetchAll(info, varName)
+		return "", query, err
+	})
+	return fetch, err
+}
+
+func compileFetchAll(info *ModelInfo, varName string) (string, error) {
 	items := []ast.FetchItem{ast.FetchFunc("_iid", "iid", "$"+varName)}
 	for _, fi := range info.Fields {
 		if fi.IsSlice {
@@ -363,6 +371,14 @@ func (s *relationStrategy) BuildFetchAllWithType(info *ModelInfo, varName string
 // buildFetchAllWithType compiles a fetch for every owned attribute plus
 // synthetic _iid / _type fields. Shared by entity and relation strategies.
 func buildFetchAllWithType(info *ModelInfo, varName string) (string, error) {
+	_, fetch, err := cachedProjection(info, "all-with-type", varName, projectionSignature(info, nil), func() (string, string, error) {
+		query, err := compileFetchAllWithType(info, varName)
+		return "", query, err
+	})
+	return fetch, err
+}
+
+func compileFetchAllWithType(info *ModelInfo, varName string) (string, error) {
 	items := []ast.FetchItem{
 		ast.FetchFunc("_iid", "iid", "$"+varName),
 		ast.FetchFunc("_type", "label", "$t"),
@@ -374,6 +390,17 @@ func buildFetchAllWithType(info *ModelInfo, varName string) (string, error) {
 }
 
 func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) (string, string, error) {
+	players := projectionRolePlayers(info)
+	return cachedProjection(info, "with-roles", varName, projectionSignature(info, players), func() (string, string, error) {
+		return buildFetchWithRolePlayers(info, varName, players)
+	})
+}
+
+func buildFetchWithRoles(info *ModelInfo, varName string) (string, string, error) {
+	return buildFetchWithRolePlayers(info, varName, projectionRolePlayers(info))
+}
+
+func buildFetchWithRolePlayers(info *ModelInfo, varName string, players []*ModelInfo) (string, string, error) {
 	// Build match patterns for role players using AST
 	var matchPatterns []ast.Pattern
 	var items []string
@@ -383,7 +410,7 @@ func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) 
 	items = appendFetchProjectionItems(items, info.Fields, varName)
 
 	// Role players
-	for _, role := range info.Roles {
+	for i, role := range info.Roles {
 		roleVar := role.RoleName
 		// Add links pattern to match (using RawPattern for "links" syntax)
 		matchPatterns = append(matchPatterns, ast.RawPattern{
@@ -391,8 +418,8 @@ func (s *relationStrategy) BuildFetchWithRoles(info *ModelInfo, varName string) 
 		})
 
 		// Look up player model info to get its attributes
-		playerInfo, ok := Lookup(role.PlayerTypeName)
-		if !ok {
+		playerInfo := players[i]
+		if playerInfo == nil {
 			// Can't resolve player type — just include IID
 			items = append(items, fmt.Sprintf(`"%s": { "_iid": iid($%s) }`, role.RoleName, roleVar))
 			continue
