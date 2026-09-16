@@ -532,14 +532,20 @@ func (pca *poolConnAdapter) Transaction(dbName string, txType int) (Tx, error) {
 }
 
 // TransactionContext opens a transaction using a connection from the pool
-// while honoring caller cancellation during pool acquisition.
+// while honoring caller cancellation during pool acquisition and, when the
+// connection supports it, native transaction admission.
 func (pca *poolConnAdapter) TransactionContext(ctx context.Context, dbName string, txType int) (Tx, error) {
 	conn, err := pca.pool.Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get connection from pool: %w", err)
 	}
 
-	tx, err := conn.Transaction(dbName, txType)
+	var tx Tx
+	if contextual, ok := conn.(contextTransactionConn); ok {
+		tx, err = contextual.TransactionContext(ctx, dbName, txType)
+	} else {
+		tx, err = conn.Transaction(dbName, txType)
+	}
 	if err != nil {
 		pca.pool.Put(conn) // return connection to pool on error
 		return nil, err

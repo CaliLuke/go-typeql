@@ -56,12 +56,47 @@ type Transaction struct {
 	abandoned bool
 	ctxCalls  int // in-flight QueryWithContext background calls
 
-	id     uint64
-	dbName string
-	txType TransactionType
-	opened bool
-	owner  *Driver
-	closer *transactionCloseWorker
+	id                uint64
+	dbName            string
+	txType            TransactionType
+	opened            bool
+	owner             *Driver
+	closer            *transactionCloseWorker
+	lease             *nativeHandleLease
+	slotOnce          sync.Once
+	releaseNativeSlot func()
+}
+
+// A lease does not retain its Transaction, so finalizers can still run. It
+// allows Driver.Close to claim a handle after its weak Transaction reference
+// expires but before the finalizer gets scheduled on the finalizer goroutine.
+type nativeHandleLease struct {
+	mu      sync.Mutex
+	ptr     unsafe.Pointer
+	release func()
+	dbName  string
+	txType  TransactionType
+}
+
+func (l *nativeHandleLease) claim() unsafe.Pointer {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	ptr := l.ptr
+	l.ptr = nil
+	return ptr
+}
+
+func (t *Transaction) releaseSlot() {
+	if t.releaseNativeSlot != nil {
+		t.slotOnce.Do(t.releaseNativeSlot)
+	}
+}
+
+func (t *Transaction) claimNativeHandle() unsafe.Pointer {
+	if t.lease != nil {
+		return t.lease.claim()
+	}
+	return t.ptr
 }
 
 type transactionCloseJob struct {
@@ -74,6 +109,13 @@ type transactionCloseJob struct {
 	txType    TransactionType
 	start     time.Time
 	onDone    func(error)
+	release   func()
+}
+
+func (job transactionCloseJob) releaseSlot() {
+	if job.release != nil {
+		job.release()
+	}
 }
 
 type transactionCloseWorker struct {
@@ -94,6 +136,8 @@ const transactionCloseQueueSize = 1024
 type TransactionCleanupStats struct {
 	Pending            int
 	Queued             int
+	NativeInUse        int
+	NativeCapacity     int
 	OldestPendingAge   time.Duration
 	NativeCompletions  uint64
 	NativeFailures     uint64
@@ -191,7 +235,12 @@ func (c *transactionCleanupTracker) snapshot() TransactionCleanupStats {
 // CleanupStats returns this driver's cleanup counts, including after Close
 // drains its worker. Other drivers have independent counters.
 func (d *Driver) CleanupStats() TransactionCleanupStats {
-	return d.cleanup.snapshot()
+	stats := d.cleanup.snapshot()
+	if d.nativeSlots != nil {
+		stats.NativeCapacity = cap(d.nativeSlots)
+		stats.NativeInUse = cap(d.nativeSlots) - len(d.nativeSlots)
+	}
+	return stats
 }
 
 type transactionCloseTracker struct {
@@ -298,6 +347,7 @@ func runTransactionCloseJob(job transactionCloseJob) {
 	err := getError(closeErr)
 	logTransactionClose(job, err)
 	job.cleanup.finish(job, true, err, duration, false)
+	job.releaseSlot()
 	if job.onDone != nil {
 		job.onDone(err)
 	}
@@ -364,6 +414,7 @@ func (t *Transaction) finalize() {
 	}
 	C.typedb_transaction_drop(job.ptr)
 	job.cleanup.finish(job, false, nil, 0, true)
+	job.releaseSlot()
 }
 
 // abandon marks the transaction abandoned after a context cancellation while
@@ -411,9 +462,9 @@ func (t *Transaction) finishContextCall() {
 	}
 
 	t.mu.Lock()
-	job := transactionCloseJob{id: t.id, dbName: t.dbName, txType: t.txType, start: time.Now()}
+	job := transactionCloseJob{id: t.id, dbName: t.dbName, txType: t.txType, start: time.Now(), release: t.releaseSlot}
 	if t.ptr != nil {
-		job.ptr = t.ptr
+		job.ptr = t.claimNativeHandle()
 		t.ptr = nil
 		t.markClosedLocked("abandoned")
 	}
@@ -431,6 +482,7 @@ func (t *Transaction) finishContextCall() {
 	}
 	C.typedb_transaction_drop(job.ptr)
 	job.cleanup.finish(job, false, nil, 0, true)
+	job.releaseSlot()
 }
 
 type queryMetadata struct {
@@ -1029,8 +1081,10 @@ func (t *Transaction) Commit() error {
 
 	var commitErr *C.char
 	C.typedb_transaction_commit(t.ptr, &commitErr)
+	t.claimNativeHandle()
 	t.ptr = nil // consumed by commit
 	t.markClosedLocked("commit")
+	t.releaseSlot()
 	if err := getError(commitErr); err != nil {
 		t.logTransactionDuration("tx.commit", start, err)
 		return err
@@ -1063,8 +1117,10 @@ func (t *Transaction) Rollback() error {
 		return err
 	}
 	C.typedb_transaction_drop(t.ptr)
+	t.claimNativeHandle()
 	t.ptr = nil
 	t.markClosedLocked("rollback")
+	t.releaseSlot()
 	t.logTransactionDuration("tx.rollback", start, nil)
 	return nil
 }
@@ -1099,6 +1155,7 @@ func (t *Transaction) CloseAsync(onDone func(error)) {
 
 	C.typedb_transaction_drop(job.ptr)
 	job.cleanup.finish(job, false, nil, 0, true)
+	job.releaseSlot()
 	if job.onDone != nil {
 		job.onDone(nil)
 	}
@@ -1121,6 +1178,7 @@ func (t *Transaction) CloseChecked() error {
 	err := getError(closeErr)
 	logTransactionClose(job, err)
 	job.cleanup.finish(job, true, err, duration, false)
+	job.releaseSlot()
 	return err
 }
 
@@ -1140,12 +1198,13 @@ func (t *Transaction) detachCloseJob(start time.Time, onDone func(error)) transa
 		return transactionCloseJob{}
 	}
 	job := transactionCloseJob{
-		ptr:    t.ptr,
-		id:     t.id,
-		dbName: t.dbName,
-		txType: t.txType,
-		start:  start,
-		onDone: onDone,
+		ptr:     t.claimNativeHandle(),
+		id:      t.id,
+		dbName:  t.dbName,
+		txType:  t.txType,
+		start:   start,
+		onDone:  onDone,
+		release: t.releaseSlot,
 	}
 	t.ptr = nil
 	t.markClosedLocked("close")

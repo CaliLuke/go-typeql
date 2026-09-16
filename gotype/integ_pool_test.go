@@ -4,6 +4,7 @@ package gotype
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -35,6 +36,10 @@ func (a *driverAdapter) Transaction(dbName string, txType int) (Tx, error) {
 	return tx, nil
 }
 
+func (a *driverAdapter) TransactionContext(ctx context.Context, dbName string, txType int) (Tx, error) {
+	return a.drv.TransactionWithContextAndOptions(ctx, dbName, driver.TransactionType(txType), nil)
+}
+
 func (a *driverAdapter) Schema(dbName string) (string, error) {
 	return a.drv.Databases().Schema(dbName)
 }
@@ -61,6 +66,68 @@ func (a *driverAdapter) Close() {
 
 func (a *driverAdapter) IsOpen() bool {
 	return a.drv.IsOpen()
+}
+
+func TestIntegration_PooledTransactionsHonorNativeAdmission(t *testing.T) {
+	address := os.Getenv("TEST_DB_ADDRESS")
+	if address == "" {
+		address = "localhost:1729"
+	}
+	admin, err := driver.Open(address, "admin", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	name := fmt.Sprintf("pool_admission_%d", time.Now().UnixNano())
+	if err := admin.Databases().Create(name); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Databases().Delete(name)
+	var native *driver.Driver
+	db, err := NewDatabaseWithPool(PoolConfig{MinSize: 1, MaxSize: 1, WaitTimeout: 5 * time.Second}, name, func() (Conn, error) {
+		var err error
+		native, err = driver.OpenWithOptions(address, "admin", "password", driver.DriverOptions{MaxNativeTransactions: 1})
+		if err != nil {
+			return nil, err
+		}
+		return &driverAdapter{drv: native}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	held, err := native.Transaction(name, driver.Read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	_, err = db.TransactionContext(waitCtx, ReadTransaction)
+	cancelWait()
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		held.Close()
+		t.Fatalf("pooled native admission ignored caller cancellation: %v", err)
+	}
+	if err := held.CloseChecked(); err != nil {
+		t.Fatal(err)
+	}
+	for range 30 {
+		tx, err := db.GetConn().Transaction(name, int(driver.Read))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tx.Close() // returns the pooled connection before native cleanup
+		if stats := native.CleanupStats(); stats.NativeInUse > 1 || stats.Pending > 1 {
+			t.Fatalf("pooled connection bypassed native admission: %+v", stats)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := driver.WaitForPendingCloses(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if stats := native.CleanupStats(); stats.NativeInUse != 0 || stats.Pending != 0 {
+		t.Fatalf("pool cleanup did not release native capacity: %+v", stats)
+	}
 }
 
 func TestIntegration_ConnectionPool_ConcurrentQueries(t *testing.T) {

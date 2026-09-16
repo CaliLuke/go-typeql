@@ -290,6 +290,38 @@ handle until the blocking native call returns; only then can cleanup enter
 `Pending`. `WaitForPendingCloses` remains the process-wide drain for accepted
 asynchronous jobs. The Go counters do not measure native/Rust memory usage.
 
+The driver also bounds unfinished native transaction lifecycles. By default,
+at most 16 handles per driver may be open or waiting for native cleanup;
+`Close()` detaches a handle but does **not** return its admission slot until
+the native close or drop completes. This avoids accumulating a long cleanup
+backlog when read throughput exceeds close throughput. Set
+`DriverOptions.MaxNativeTransactions` to a positive limit for a particular
+workload, or to a negative value to opt out; zero keeps the default. Calls to
+`TransactionWithOptions` may wait for capacity. Use
+`TransactionWithContextAndOptions(ctx, db, kind, opts)` to make that wait
+cancellable. `CleanupStats().NativeInUse` and `NativeCapacity` expose reserved
+slots (including in-progress opens), not a byte-level native memory count; a
+zero capacity means admission is disabled. Driver shutdown wakes
+admission waiters and drains accepted closes. It also waits for concurrent
+checked closes or abandoned queries still running in native code before
+freeing the driver handle; cancellation of a query remains responsive, but a
+subsequent driver shutdown may wait for that native call to finish.
+
+The default 16-handle bound was chosen from five local runs of 100 completed
+read/close operations with ten callers and a 49-byte query returning zero
+rows, on TypeDB 3.13.0. Unbounded async cleanup accumulated 77–80 pending
+handles and 66–100 ms of final drain; bounded async peaked at 15 pending
+handles and about 6 ms of drain. Synchronous `CloseChecked` had the lowest
+completed-operation latency and essentially no final drain, but makes each
+caller wait for native close. The bounded policy keeps `Close()` asynchronous
+while preventing its backlog from growing with the workload. Queue wait and
+native close duration are separately visible in `CleanupStats`; Rust FFI close
+timing (`TYPEDB_GO_DEBUG_RUST=1`) confirmed the checked close path. The
+observed server memory snapshot was about 1.02 GiB before and after the run,
+not a peak-memory profile; benchmark B/op covers Go allocations only. Rerun
+the opt-in `BenchmarkNativeClosePolicies` on your own server and load before
+tuning the limit.
+
 ## Database Management
 
 ```go

@@ -73,7 +73,7 @@ func TestCleanupStatsNativeLifecycle(t *testing.T) {
 	if observed := <-fallbackDone; observed.Pending != 0 || observed.QueueFullFallbacks != 1 || observed.NativeCompletions != 2 {
 		t.Fatalf("failed-admission callback counts: %+v", observed)
 	}
-	if final := conn.CleanupStats(); final.Pending != 0 || final.QueueFullFallbacks != 1 || final.NativeCompletions != 2 {
+	if final := conn.CleanupStats(); final.Pending != 0 || final.QueueFullFallbacks != 1 || final.NativeCompletions != 2 || final.NativeInUse != 0 {
 		t.Fatalf("repeated close changed counts: %+v", final)
 	}
 }

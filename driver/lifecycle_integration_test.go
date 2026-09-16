@@ -179,6 +179,9 @@ reduce $count = count;
 	if err := WaitForPendingCloses(drainCtx); err != nil {
 		t.Fatalf("pending closes did not drain after abandonment: %v", err)
 	}
+	if usage := conn.CleanupStats(); usage.NativeInUse != 0 {
+		t.Fatalf("abandoned native slot still occupied after cleanup: %+v", usage)
+	}
 }
 
 // TestDriverCloseClosesOpenTransactions covers issue #67: Driver.Close must
@@ -227,6 +230,9 @@ func TestDriverCloseClosesOpenTransactions(t *testing.T) {
 	if err := WaitForPendingCloses(drainCtx); err != nil {
 		t.Fatalf("pending closes did not drain after Driver.Close: %v", err)
 	}
+	if usage := conn.CleanupStats(); usage.NativeInUse != 0 {
+		t.Fatalf("driver shutdown retained native slots: %+v", usage)
+	}
 }
 
 // TestTransactionFinalizerFreesLeakedHandle covers the issue #67 backstop: a
@@ -260,6 +266,12 @@ func TestTransactionFinalizerFreesLeakedHandle(t *testing.T) {
 			}
 			if open {
 				t.Fatal("leaked transaction still registered after finalizer ran")
+			}
+			for conn.CleanupStats().NativeInUse != 0 && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if usage := conn.CleanupStats(); usage.NativeInUse != 0 {
+				t.Fatalf("finalizer cleanup retained native slot: %+v", usage)
 			}
 			return
 		}

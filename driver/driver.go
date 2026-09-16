@@ -57,23 +57,35 @@ type Driver struct {
 	ptr unsafe.Pointer
 	// mu guards the ptr lifecycle: RLock for FFI calls on the handle, Lock
 	// only while Close drops it.
-	mu          sync.RWMutex
-	closeWorker *transactionCloseWorker
-	cleanup     *transactionCleanupTracker
-	txMu        sync.Mutex
+	mu           sync.RWMutex
+	closeWorker  *transactionCloseWorker
+	cleanup      *transactionCleanupTracker
+	closing      bool
+	closedSignal chan struct{}
+	closeMu      sync.Mutex
+	nativeSlots  chan struct{}
+	nativeWG     sync.WaitGroup
+	txMu         sync.Mutex
 	// txs tracks locally opened transactions by id. Entries are weak so an
 	// abandoned *Transaction can still be garbage-collected, letting its
 	// finalizer free the native handle; Close and the per-database helpers
 	// prune entries whose transaction has been collected.
 	txs map[uint64]weak.Pointer[Transaction]
+	// leases retain native handles without retaining Transaction objects, so
+	// shutdown can reclaim a handle before a queued finalizer runs.
+	leases map[uint64]*nativeHandleLease
 }
 
 // DriverOptions configures connection-level TypeDB driver behavior.
 //
-// Zero-valued fields keep the underlying TypeDB driver's defaults. These
+// Zero-valued fields keep defaults (including the Go-side native-handle
+// admission limit). These
 // options apply to driver-level operations such as connection setup, database
 // management, and transaction opening; query execution still uses QueryOptions.
 type DriverOptions struct {
+	// MaxNativeTransactions bounds open and detached-but-not-yet-cleaned-up
+	// native handles per driver. Zero uses 16; negative disables admission.
+	MaxNativeTransactions int
 	// TLSEnabled controls whether the driver connects with TLS.
 	TLSEnabled bool
 	// TLSRootCA optionally points to a custom root CA certificate when TLS is enabled.
@@ -164,7 +176,7 @@ func OpenWithOptions(address, username, password string, opts DriverOptions) (*D
 	}
 
 	logFFIDurationLazy("driver.open", start, func() []any { return []any{"address", address, "result", "ok"} })
-	return newDriver(ptr), nil
+	return newDriver(ptr, opts.MaxNativeTransactions), nil
 }
 
 // OpenWithAddresses creates a new connection using one or more public TypeDB addresses.
@@ -264,16 +276,29 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 	}
 
 	logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "ok"} })
-	return newDriver(ptr), nil
+	return newDriver(ptr, opts.MaxNativeTransactions), nil
 }
 
-func newDriver(ptr unsafe.Pointer) *Driver {
+func newDriver(ptr unsafe.Pointer, maxNative int) *Driver {
 	cleanup := newTransactionCleanupTracker()
+	if maxNative == 0 {
+		maxNative = 16
+	}
+	var slots chan struct{}
+	if maxNative > 0 {
+		slots = make(chan struct{}, maxNative)
+		for range maxNative {
+			slots <- struct{}{}
+		}
+	}
 	return &Driver{
-		ptr:         ptr,
-		closeWorker: newTransactionCloseWorker(cleanup),
-		cleanup:     cleanup,
-		txs:         make(map[uint64]weak.Pointer[Transaction]),
+		ptr:          ptr,
+		closeWorker:  newTransactionCloseWorker(cleanup),
+		cleanup:      cleanup,
+		closedSignal: make(chan struct{}),
+		nativeSlots:  slots,
+		txs:          make(map[uint64]weak.Pointer[Transaction]),
+		leases:       make(map[uint64]*nativeHandleLease),
 	}
 }
 
@@ -427,8 +452,25 @@ func (d *Driver) ServerVersion() (ServerVersion, error) {
 // calls (transaction opens, database operations) must return before the
 // driver handle is freed.
 func (d *Driver) Close() {
+	d.closeMu.Lock()
+	defer d.closeMu.Unlock()
+	d.mu.Lock()
+	if !d.closing {
+		d.closing = true
+		if d.closedSignal != nil {
+			close(d.closedSignal)
+		}
+	}
+	d.mu.Unlock()
 	for _, tx := range d.openTransactions() {
 		tx.Close()
+	}
+	// Weak references can disappear as soon as a finalizer is queued. Claim
+	// those orphaned native handles here rather than waiting for an unrelated
+	// finalizer to execute before nativeWG can drain.
+	for _, job := range d.orphanedCloseJobs() {
+		d.cleanup.begin(&job)
+		runTransactionCloseJob(job)
 	}
 
 	d.mu.Lock()
@@ -439,6 +481,10 @@ func (d *Driver) Close() {
 	if worker != nil {
 		worker.close()
 	}
+	// CloseChecked and abandoned queries can own detached native handles that
+	// are absent from the open-transaction registry and async close queue.
+	// Their release paths must finish before the Rust driver is freed.
+	d.nativeWG.Wait()
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -495,18 +541,38 @@ func (d *Driver) CloseDatabaseTransactions(ctx context.Context, databaseName str
 func (d *Driver) registerTransaction(tx *Transaction) {
 	d.txMu.Lock()
 	d.txs[tx.id] = weak.Make(tx)
+	tx.lease = &nativeHandleLease{ptr: tx.ptr, release: tx.releaseNativeSlot, dbName: tx.dbName, txType: tx.txType}
+	d.leases[tx.id] = tx.lease
 	d.txMu.Unlock()
 }
 
 func (d *Driver) unregisterTransaction(id uint64) {
 	d.txMu.Lock()
 	delete(d.txs, id)
+	delete(d.leases, id)
 	d.txMu.Unlock()
 }
 
+func (d *Driver) orphanedCloseJobs() []transactionCloseJob {
+	d.txMu.Lock()
+	defer d.txMu.Unlock()
+	var jobs []transactionCloseJob
+	for id, lease := range d.leases {
+		if ref, ok := d.txs[id]; ok && ref.Value() != nil {
+			continue
+		}
+		if ptr := lease.claim(); ptr != nil {
+			jobs = append(jobs, transactionCloseJob{ptr: ptr, id: id, dbName: lease.dbName, txType: lease.txType, start: time.Now(), cleanup: d.cleanup, release: lease.release})
+		}
+		delete(d.txs, id)
+		delete(d.leases, id)
+	}
+	return jobs
+}
+
 // liveTransactions returns strong references to the registered transactions
-// accepted by keep, pruning entries whose transaction has been collected (the
-// finalizer backstop handles those native handles).
+// accepted by keep. Pruned weak entries retain separate native leases until
+// finalization or deterministic driver shutdown claims the handle.
 func (d *Driver) liveTransactions(keep func(*Transaction) bool) []*Transaction {
 	d.txMu.Lock()
 	defer d.txMu.Unlock()
@@ -540,17 +606,56 @@ func (d *Driver) Transaction(databaseName string, txnType TransactionType) (*Tra
 
 // TransactionWithOptions opens a new transaction with the given options.
 func (d *Driver) TransactionWithOptions(databaseName string, txnType TransactionType, opts *TransactionOptions) (*Transaction, error) {
+	return d.TransactionWithContextAndOptions(context.Background(), databaseName, txnType, opts)
+}
+
+// TransactionWithContextAndOptions opens a transaction, allowing cancellation
+// while waiting for a native-handle admission slot. The slot remains occupied
+// until native cleanup, even when Close returns before cleanup finishes.
+func (d *Driver) TransactionWithContextAndOptions(ctx context.Context, databaseName string, txnType TransactionType, opts *TransactionOptions) (*Transaction, error) {
 	start := time.Now()
 	txID := nextTxID()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if d.nativeSlots != nil {
+		select {
+		case <-d.nativeSlots:
+		case <-d.closedSignal:
+			return nil, ErrNotConnected
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		if d.nativeSlots != nil {
+			d.nativeSlots <- struct{}{}
+		}
+		return nil, err
+	}
+	release := true
+	counted := false
+	defer func() {
+		if release {
+			if d.nativeSlots != nil {
+				d.nativeSlots <- struct{}{}
+			}
+			if counted {
+				d.nativeWG.Done()
+			}
+		}
+	}()
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	if d.ptr == nil {
+	if d.ptr == nil || d.closing {
 		logFFIDurationLazy("tx.open", start, func() []any {
 			return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", ErrNotConnected.Error()}
 		})
 		return nil, ErrNotConnected
 	}
+	d.nativeWG.Add(1) // under RLock: Close marks closing under the write lock
+	counted = true
 
 	cName := C.CString(databaseName)
 	defer C.free(unsafe.Pointer(cName))
@@ -576,6 +681,13 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 	}
 
 	tx := newTransaction(ptr, txID, databaseName, txnType, d, d.closeWorker)
+	tx.releaseNativeSlot = func() {
+		if d.nativeSlots != nil {
+			d.nativeSlots <- struct{}{}
+		}
+		d.nativeWG.Done()
+	}
+	release = false
 	d.registerTransaction(tx)
 	logFFIDurationLazy("tx.open", start, func() []any { return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "ok"} })
 	return tx, nil
