@@ -62,7 +62,7 @@ test-all: test-unit bench
 
 # Run benchmarks and append the results to benchmarks/benchmarks.sqlite
 bench:
-	go run ./cmd/benchdb
+	go run ./cmd/benchdb -db benchmarks/benchmarks.sqlite
 
 # Lint (fast — just vet)
 lint:

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,6 +39,51 @@ const liveBenchPersonCount = 256
 
 type liveBenchDriverAdapter struct {
 	drv *driver.Driver
+}
+
+type liveBenchCountConn struct {
+	Conn
+	queries *atomic.Int64
+}
+
+func (c *liveBenchCountConn) Transaction(name string, mode int) (Tx, error) {
+	tx, err := c.Conn.Transaction(name, mode)
+	if err != nil {
+		return nil, err
+	}
+	return &liveBenchCountTx{Tx: tx, queries: c.queries}, nil
+}
+
+type liveBenchCountTx struct {
+	Tx
+	queries *atomic.Int64
+}
+
+func (t *liveBenchCountTx) Query(query string) ([]map[string]any, error) {
+	t.queries.Add(1)
+	return t.Tx.Query(query)
+}
+
+func (t *liveBenchCountTx) QueryWithContext(ctx context.Context, query string) ([]map[string]any, error) {
+	t.queries.Add(1)
+	return t.Tx.QueryWithContext(ctx, query)
+}
+
+func (t *liveBenchCountTx) QueryEachWithContext(ctx context.Context, query string, fn func(int, map[string]any) error) error {
+	t.queries.Add(1)
+	if rowTx, ok := t.Tx.(rowQueryTx); ok {
+		return rowTx.QueryEachWithContext(ctx, query, fn)
+	}
+	rows, err := t.Tx.QueryWithContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := fn(len(rows), row); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *liveBenchDriverAdapter) Transaction(dbName string, txType int) (Tx, error) {
@@ -288,10 +334,12 @@ func BenchmarkLiveExists(b *testing.B) {
 func BenchmarkLiveRead_GetByIID(b *testing.B) {
 	f := liveBenchSetup(b)
 	ctx := context.Background()
+	var queries atomic.Int64
+	mgr := mustLiveBenchManager[liveBenchPerson](NewDatabase(&liveBenchCountConn{Conn: f.db.GetConn(), queries: &queries}, f.dbName))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		got, err := f.personMgr.GetByIID(ctx, f.personIID)
+		got, err := mgr.GetByIID(ctx, f.personIID)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -299,6 +347,7 @@ func BenchmarkLiveRead_GetByIID(b *testing.B) {
 			b.Fatal("GetByIID returned nil")
 		}
 	}
+	b.ReportMetric(float64(queries.Load())/float64(b.N), "queries/op")
 }
 
 // BenchmarkLiveReadScope includes the transaction open and caller-visible
@@ -394,11 +443,13 @@ func BenchmarkLiveReadScopePerRead(b *testing.B) {
 func BenchmarkLiveRead_Get(b *testing.B) {
 	f := liveBenchSetup(b)
 	ctx := context.Background()
+	var queries atomic.Int64
+	mgr := mustLiveBenchManager[liveBenchPerson](NewDatabase(&liveBenchCountConn{Conn: f.db.GetConn(), queries: &queries}, f.dbName))
 	filter := map[string]any{"name": f.person.Name}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		got, err := f.personMgr.Get(ctx, filter)
+		got, err := mgr.Get(ctx, filter)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -406,15 +457,18 @@ func BenchmarkLiveRead_Get(b *testing.B) {
 			b.Fatalf("got %d results", len(got))
 		}
 	}
+	b.ReportMetric(float64(queries.Load())/float64(b.N), "queries/op")
 }
 
 func BenchmarkLiveRead_All(b *testing.B) {
 	f := liveBenchSetup(b)
 	ctx := context.Background()
+	var queries atomic.Int64
+	mgr := mustLiveBenchManager[liveBenchPerson](NewDatabase(&liveBenchCountConn{Conn: f.db.GetConn(), queries: &queries}, f.dbName))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		got, err := f.personMgr.All(ctx)
+		got, err := mgr.All(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -422,16 +476,19 @@ func BenchmarkLiveRead_All(b *testing.B) {
 			b.Fatal("All returned no results")
 		}
 	}
+	b.ReportMetric(float64(queries.Load())/float64(b.N), "queries/op")
 }
 
 func BenchmarkLiveRead_GetWithRoles(b *testing.B) {
 	f := liveBenchSetup(b)
 	ctx := context.Background()
+	var queries atomic.Int64
+	mgr := mustLiveBenchManager[liveBenchEmployment](NewDatabase(&liveBenchCountConn{Conn: f.db.GetConn(), queries: &queries}, f.dbName))
 	filter := map[string]any{"since": f.employment.Since}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		got, err := f.employMgr.GetWithRoles(ctx, filter)
+		got, err := mgr.GetWithRoles(ctx, filter)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -439,6 +496,7 @@ func BenchmarkLiveRead_GetWithRoles(b *testing.B) {
 			b.Fatalf("got %d results", len(got))
 		}
 	}
+	b.ReportMetric(float64(queries.Load())/float64(b.N), "queries/op")
 }
 
 func BenchmarkLiveRead_CloseOnly(b *testing.B) {
@@ -513,6 +571,7 @@ func BenchmarkLiveRead_GetByIIDBreakdown(b *testing.B) {
 	b.ReportMetric(float64(openTotal.Nanoseconds())/n, "open-ns/op")
 	b.ReportMetric(float64(queryTotal.Nanoseconds())/n, "query-ns/op")
 	b.ReportMetric(float64(closeTotal.Nanoseconds())/n, "close-ns/op")
+	b.ReportMetric(1, "queries/op")
 	total := openTotal + queryTotal + closeTotal
 	if total > 0 {
 		b.ReportMetric(100*float64(closeTotal)/float64(total), "close-pct")

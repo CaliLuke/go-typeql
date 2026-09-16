@@ -4,6 +4,7 @@ package gotype
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 )
 
@@ -24,7 +25,8 @@ func BenchmarkLiveFetchCache(b *testing.B) {
 			label = "cached-projection"
 		}
 		b.Run(label, func(b *testing.B) {
-			mgr := mustLiveBenchManager[liveBenchPerson](f.db)
+			var queries atomic.Int64
+			mgr := mustLiveBenchManager[liveBenchPerson](NewDatabase(&liveBenchCountConn{Conn: f.db.GetConn(), queries: &queries}, f.dbName))
 			if !cached {
 				mgr.strategy = uncachedFetchStrategy{ModelStrategy: mgr.strategy}
 			}
@@ -35,6 +37,7 @@ func BenchmarkLiveFetchCache(b *testing.B) {
 					b.Fatalf("GetOne: %v, %v", row, err)
 				}
 			}
+			b.ReportMetric(float64(queries.Load())/float64(b.N), "queries/op")
 		})
 	}
 }

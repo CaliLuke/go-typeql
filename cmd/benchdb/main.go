@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +20,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var benchmarkLineRE = regexp.MustCompile(`^(Benchmark\S+?)(?:-\d+)?\s+(\d+)\s+([\d.]+)\s+ns/op(?:\s+([\d.]+)\s+B/op\s+([\d.]+)\s+allocs/op)?$`)
+var benchmarkLineRE = regexp.MustCompile(`^(Benchmark\S+?)(?:-\d+)?\s+(\d+)\s+(.+)$`)
 
 type benchmarkResult struct {
 	Package     string
@@ -29,6 +30,7 @@ type benchmarkResult struct {
 	NsPerOp     float64
 	BPerOp      float64
 	AllocsPerOp float64
+	Metrics     map[string]float64
 }
 
 type runRecord struct {
@@ -46,6 +48,36 @@ type runRecord struct {
 	Output     string
 }
 
+type groupSpec struct {
+	pattern   string
+	tags      string
+	benchTime string
+	packages  []string
+	live      bool
+	required  []string
+}
+
+func benchmarkGroup(name string) (groupSpec, error) {
+	switch name {
+	case "unit":
+		return groupSpec{pattern: ".", packages: []string{"./ast/...", "./gotype/...", "./tqlgen/..."}}, nil
+	case "decode":
+		return groupSpec{pattern: "^BenchmarkDecodeMsgpack(EachKeys)?$", tags: "cgo,typedb", benchTime: "10x", packages: []string{"./driver/..."}, required: []string{"BenchmarkDecodeMsgpack", "BenchmarkDecodeMsgpackEachKeys"}}, nil
+	case "bulk":
+		return groupSpec{pattern: "^BenchmarkLive(InsertMany|PutMany|DeleteMany|UpdateMany)$", tags: "cgo,typedb,integration", benchTime: "5x", packages: []string{"./gotype/..."}, live: true, required: []string{"BenchmarkLiveInsertMany", "BenchmarkLivePutMany", "BenchmarkLiveDeleteMany", "BenchmarkLiveUpdateMany"}}, nil
+	case "projections":
+		return groupSpec{pattern: "^Benchmark(ProjectionConstruction|LiveFetchCache)$", tags: "cgo,typedb,integration", benchTime: "100x", packages: []string{"./gotype/..."}, live: true, required: []string{"BenchmarkProjectionConstruction", "BenchmarkLiveFetchCache"}}, nil
+	case "typed-reads":
+		return groupSpec{pattern: "^BenchmarkLiveRead_(GetByIID|Get|All|GetWithRoles|GetByIIDBreakdown)$", tags: "cgo,typedb,integration", benchTime: "20x", packages: []string{"./gotype/..."}, live: true, required: []string{"BenchmarkLiveRead_GetByIID", "BenchmarkLiveRead_Get", "BenchmarkLiveRead_All", "BenchmarkLiveRead_GetWithRoles", "BenchmarkLiveRead_GetByIIDBreakdown"}}, nil
+	case "lifecycle":
+		return groupSpec{pattern: "^BenchmarkNativeClosePolicies$", tags: "cgo,typedb,integration", benchTime: "100x", packages: []string{"./driver/..."}, live: true, required: []string{"BenchmarkNativeClosePolicies"}}, nil
+	case "result-reads":
+		return groupSpec{pattern: "^BenchmarkLiveResult(Materialization|Streaming)$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./driver/..."}, live: true, required: []string{"BenchmarkLiveResultMaterialization", "BenchmarkLiveResultStreaming"}}, nil
+	default:
+		return groupSpec{}, fmt.Errorf("unknown benchmark group %q", name)
+	}
+}
+
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "benchdb: %v\n", err)
@@ -55,30 +87,56 @@ func main() {
 
 func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("benchdb", flag.ContinueOnError)
-	dbPath := fs.String("db", "benchmarks/benchmarks.sqlite", "sqlite database path")
+	dbPath := fs.String("db", "", "record reviewed results in this sqlite database (omit for exploratory stdout only)")
 	count := fs.Int("count", 5, "benchmark sample count")
-	bench := fs.String("bench", ".", "benchmark regex passed to go test -bench")
+	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads")
+	bench := fs.String("bench", "", "override the group's benchmark regex")
+	benchTime := fs.String("benchtime", "", "override the group's benchmark duration or fixed iterations")
 	reset := fs.Bool("reset", false, "clear existing benchmark history before saving the new run")
 	runPattern := fs.String("run", "^$", "test regex passed to go test -run")
 	timeout := fs.Duration("timeout", 10*time.Minute, "go test timeout")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	if *reset && *dbPath == "" {
+		return errors.New("-reset requires an explicit -db path")
+	}
+	if *count <= 0 {
+		return errors.New("-count must be positive")
+	}
 
+	spec, err := benchmarkGroup(*group)
+	if err != nil {
+		return err
+	}
+	if *bench != "" {
+		spec.pattern = *bench
+	}
+	if *benchTime != "" {
+		spec.benchTime = *benchTime
+	}
+	goCount := *count
+	if spec.live {
+		goCount = 1
+	}
 	benchArgs := []string{
 		"test",
 		"-run", *runPattern,
-		"-bench", *bench,
+		"-bench", spec.pattern,
 		"-benchmem",
-		"-count", strconv.Itoa(*count),
+		"-count", strconv.Itoa(goCount),
 		"-timeout", timeout.String(),
-		"./ast/...",
-		"./gotype/...",
-		"./tqlgen/...",
 	}
+	if spec.tags != "" {
+		benchArgs = append(benchArgs, "-tags", spec.tags)
+	}
+	if spec.benchTime != "" {
+		benchArgs = append(benchArgs, "-benchtime", spec.benchTime)
+	}
+	benchArgs = append(benchArgs, spec.packages...)
 
 	startedAt := time.Now().UTC()
-	output, results, cpuName, err := executeBenchmarks(ctx, benchArgs)
+	output, results, cpuName, err := executeBenchmarkSamples(ctx, benchArgs, *count, spec.live)
 	if err != nil {
 		return err
 	}
@@ -86,15 +144,43 @@ func run(ctx context.Context, args []string) error {
 	if len(results) == 0 {
 		return errors.New("no benchmark results parsed from go test output")
 	}
+	if *bench == "" {
+		if err := validateGroupSeries(spec, results); err != nil {
+			return err
+		}
+	}
 
-	db, err := openDB(*dbPath)
+	if *dbPath == "" {
+		fmt.Print(output)
+		fmt.Printf("Exploratory %s benchmark: %d series; no database changed.\n", *group, len(results))
+		return nil
+	}
+	return saveResults(ctx, *dbPath, *reset, benchArgs, *count, spec.live, startedAt, finishedAt, output, results, cpuName)
+}
+
+func validateGroupSeries(spec groupSpec, results []benchmarkResult) error {
+	present := make(map[string]bool, len(results))
+	for _, result := range results {
+		name, _, _ := strings.Cut(result.Name, "/")
+		present[name] = true
+	}
+	for _, name := range spec.required {
+		if !present[name] {
+			return fmt.Errorf("benchmark group incomplete: missing %s", name)
+		}
+	}
+	return nil
+}
+
+func saveResults(ctx context.Context, dbPath string, reset bool, benchArgs []string, count int, live bool, startedAt, finishedAt time.Time, output string, results []benchmarkResult, cpuName string) error {
+	db, err := openDB(dbPath)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		_ = db.Close()
 	}()
-	if *reset {
+	if reset {
 		if err := resetHistory(ctx, db); err != nil {
 			return err
 		}
@@ -113,7 +199,7 @@ func run(ctx context.Context, args []string) error {
 		GoArch:     runtime.GOARCH,
 		CPU:        cpuName,
 		Hostname:   hostname,
-		Command:    "go " + strings.Join(benchArgs, " "),
+		Command:    fmt.Sprintf("go %s%s", strings.Join(benchArgs, " "), sampleSuffix(count, live)),
 		Output:     output,
 	}
 	runID, err := insertRun(ctx, db, record, results)
@@ -121,7 +207,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Saved benchmark run %d to %s\n", runID, *dbPath)
+	fmt.Printf("Saved benchmark run %d to %s\n", runID, dbPath)
 	fmt.Printf("Command: %s\n", record.Command)
 	fmt.Printf("Commit: %s", commitOrUnknown(commit))
 	if dirty {
@@ -164,6 +250,78 @@ func executeBenchmarks(ctx context.Context, args []string) (string, []benchmarkR
 	return output, results, cpuName, nil
 }
 
+func sampleSuffix(count int, live bool) string {
+	if live {
+		return fmt.Sprintf(" (repeated in %d fresh processes)", count)
+	}
+	return ""
+}
+
+func executeBenchmarkSamples(ctx context.Context, args []string, count int, live bool) (string, []benchmarkResult, string, error) {
+	if !live {
+		return executeBenchmarks(ctx, args)
+	}
+	var output strings.Builder
+	var samples []benchmarkResult
+	var baseline []benchmarkResult
+	cpu := ""
+	for i := range count {
+		raw, results, currentCPU, err := executeBenchmarks(ctx, args)
+		fmt.Fprintf(&output, "# independent sample %d/%d\n%s", i+1, count, raw)
+		if err != nil {
+			return output.String(), nil, cpu, fmt.Errorf("live sample %d/%d: %w", i+1, count, err)
+		}
+		if i > 0 {
+			if err := compareSampleSeries(baseline, results); err != nil {
+				return output.String(), nil, cpu, fmt.Errorf("live sample %d/%d: %w", i+1, count, err)
+			}
+		} else {
+			baseline = results
+		}
+		samples = append(samples, results...)
+		if cpu == "" {
+			cpu = currentCPU
+		} else if cpu != currentCPU {
+			return output.String(), nil, cpu, fmt.Errorf("live sample %d/%d: CPU changed from %q to %q", i+1, count, cpu, currentCPU)
+		}
+	}
+	return output.String(), aggregateBenchmarks(samples), cpu, nil
+}
+
+func compareSampleSeries(want, got []benchmarkResult) error {
+	if len(want) != len(got) {
+		return fmt.Errorf("benchmark series count changed from %d to %d", len(want), len(got))
+	}
+	byKey := make(map[string]benchmarkResult, len(want))
+	for _, result := range want {
+		key := result.Package + "\x00" + result.Name
+		if _, exists := byKey[key]; exists {
+			return fmt.Errorf("duplicate benchmark series %q", key)
+		}
+		byKey[key] = result
+	}
+	for _, result := range got {
+		key := result.Package + "\x00" + result.Name
+		previous, ok := byKey[key]
+		if !ok {
+			return fmt.Errorf("unexpected benchmark series %q", key)
+		}
+		delete(byKey, key)
+		if len(previous.Metrics) != len(result.Metrics) {
+			return fmt.Errorf("metric set changed for %q", key)
+		}
+		for metric := range previous.Metrics {
+			if _, ok := result.Metrics[metric]; !ok {
+				return fmt.Errorf("missing metric %q for %q", metric, key)
+			}
+		}
+	}
+	if len(byKey) != 0 {
+		return errors.New("benchmark series missing from sample")
+	}
+	return nil
+}
+
 func parseBenchmarkOutput(output string) ([]benchmarkResult, string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	currentPkg := ""
@@ -185,23 +343,21 @@ func parseBenchmarkOutput(output string) ([]benchmarkResult, string, error) {
 			if err != nil {
 				return nil, cpuName, fmt.Errorf("parse iterations for %q: %w", line, err)
 			}
-			nsPerOp, err := strconv.ParseFloat(match[3], 64)
-			if err != nil {
-				return nil, cpuName, fmt.Errorf("parse ns/op for %q: %w", line, err)
+			fields := strings.Fields(match[3])
+			if len(fields)%2 != 0 {
+				return nil, cpuName, fmt.Errorf("unpaired benchmark metric in %q", line)
 			}
-			bPerOp := 0.0
-			if match[4] != "" {
-				bPerOp, err = strconv.ParseFloat(match[4], 64)
+			metrics := make(map[string]float64, len(fields)/2)
+			for i := 0; i < len(fields); i += 2 {
+				value, err := strconv.ParseFloat(fields[i], 64)
 				if err != nil {
-					return nil, cpuName, fmt.Errorf("parse B/op for %q: %w", line, err)
+					return nil, cpuName, fmt.Errorf("parse benchmark metric in %q: %w", line, err)
 				}
+				metrics[fields[i+1]] = value
 			}
-			allocsPerOp := 0.0
-			if match[5] != "" {
-				allocsPerOp, err = strconv.ParseFloat(match[5], 64)
-				if err != nil {
-					return nil, cpuName, fmt.Errorf("parse allocs/op for %q: %w", line, err)
-				}
+			nsPerOp, ok := metrics["ns/op"]
+			if !ok {
+				continue
 			}
 			results = append(results, benchmarkResult{
 				Package:     currentPkg,
@@ -209,8 +365,9 @@ func parseBenchmarkOutput(output string) ([]benchmarkResult, string, error) {
 				Samples:     1,
 				Iterations:  iterations,
 				NsPerOp:     nsPerOp,
-				BPerOp:      bPerOp,
-				AllocsPerOp: allocsPerOp,
+				BPerOp:      metrics["B/op"],
+				AllocsPerOp: metrics["allocs/op"],
+				Metrics:     metrics,
 			})
 		}
 	}
@@ -235,6 +392,9 @@ func aggregateBenchmarks(results []benchmarkResult) []benchmarkResult {
 			agg.NsPerOp += result.NsPerOp
 			agg.BPerOp += result.BPerOp
 			agg.AllocsPerOp += result.AllocsPerOp
+			for name, value := range result.Metrics {
+				agg.Metrics[name] += value
+			}
 			continue
 		}
 		copy := result
@@ -250,6 +410,9 @@ func aggregateBenchmarks(results []benchmarkResult) []benchmarkResult {
 		agg.NsPerOp /= samples
 		agg.BPerOp /= samples
 		agg.AllocsPerOp /= samples
+		for name, value := range agg.Metrics {
+			agg.Metrics[name] = value / samples
+		}
 		merged = append(merged, agg.benchmarkResult)
 	}
 	return merged
@@ -301,6 +464,13 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
 
 CREATE INDEX IF NOT EXISTS benchmark_results_lookup_idx
 ON benchmark_results (package_name, benchmark_name, run_id);
+
+CREATE TABLE IF NOT EXISTS benchmark_metrics (
+	result_id INTEGER NOT NULL REFERENCES benchmark_results(id) ON DELETE CASCADE,
+	metric_name TEXT NOT NULL,
+	metric_value REAL NOT NULL,
+	PRIMARY KEY (result_id, metric_name)
+);
 `
 	if _, err := db.Exec(schema); err != nil {
 		return err
@@ -314,6 +484,7 @@ ON benchmark_results (package_name, benchmark_name, run_id);
 
 func resetHistory(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
+DELETE FROM benchmark_metrics;
 DELETE FROM benchmark_results;
 DELETE FROM benchmark_runs;
 DELETE FROM sqlite_sequence WHERE name IN ('benchmark_results', 'benchmark_runs');
@@ -365,9 +536,14 @@ INSERT INTO benchmark_results (
 	defer func() {
 		_ = stmt.Close()
 	}()
+	metricsStmt, err := tx.PrepareContext(ctx, `INSERT INTO benchmark_metrics (result_id, metric_name, metric_value) VALUES (?, ?, ?)`)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = metricsStmt.Close() }()
 
 	for _, result := range results {
-		if _, err := stmt.ExecContext(
+		inserted, err := stmt.ExecContext(
 			ctx,
 			runID,
 			result.Package,
@@ -377,8 +553,23 @@ INSERT INTO benchmark_results (
 			result.NsPerOp,
 			result.BPerOp,
 			result.AllocsPerOp,
-		); err != nil {
+		)
+		if err != nil {
 			return 0, err
+		}
+		resultID, err := inserted.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+		names := make([]string, 0, len(result.Metrics))
+		for name := range result.Metrics {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if _, err := metricsStmt.ExecContext(ctx, resultID, name, result.Metrics[name]); err != nil {
+				return 0, err
+			}
 		}
 	}
 

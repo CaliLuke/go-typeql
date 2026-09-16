@@ -132,6 +132,8 @@ func BenchmarkNativeClosePolicies(b *testing.B) {
 			b.ReportMetric(float64(peakNative), "peak-native")
 			b.ReportMetric(float64(stats.QueueWaitTotal)/float64(time.Millisecond), "queue-wait-ms")
 			b.ReportMetric(float64(stats.NativeCloseTotal)/float64(time.Millisecond), "native-close-ms")
+			b.ReportMetric(1, "queries/op")
+			b.ReportMetric(callers, "callers")
 		})
 	}
 }
