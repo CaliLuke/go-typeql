@@ -65,22 +65,134 @@ type Transaction struct {
 }
 
 type transactionCloseJob struct {
-	ptr    unsafe.Pointer
-	id     uint64
-	dbName string
-	txType TransactionType
-	start  time.Time
-	onDone func(error)
+	ptr       unsafe.Pointer
+	id        uint64
+	cleanupID uint64
+	cleanup   *transactionCleanupTracker
+	enqueued  time.Time
+	dbName    string
+	txType    TransactionType
+	start     time.Time
+	onDone    func(error)
 }
 
 type transactionCloseWorker struct {
-	mu     sync.Mutex
-	jobs   chan transactionCloseJob
-	done   chan struct{}
-	closed bool
+	mu      sync.Mutex
+	jobs    chan transactionCloseJob
+	done    chan struct{}
+	closed  bool
+	cleanup *transactionCleanupTracker
 }
 
 const transactionCloseQueueSize = 1024
+
+// TransactionCleanupStats is a per-driver snapshot of native transaction
+// cleanup. Pending includes queued, running, and synchronous closes after the
+// caller has relinquished the handle; it excludes still-running abandoned
+// queries until their native handle can be detached. Durations are cumulative.
+// QueueFullFallbacks includes failed admission after driver shutdown.
+type TransactionCleanupStats struct {
+	Pending            int
+	Queued             int
+	OldestPendingAge   time.Duration
+	NativeCompletions  uint64
+	NativeFailures     uint64
+	QueueFullFallbacks uint64
+	QueueWaitTotal     time.Duration
+	NativeCloseTotal   time.Duration
+}
+
+type transactionCleanupTracker struct {
+	mu      sync.Mutex
+	next    uint64
+	started map[uint64]time.Time
+	stats   TransactionCleanupStats
+}
+
+func newTransactionCleanupTracker() *transactionCleanupTracker {
+	return &transactionCleanupTracker{started: make(map[uint64]time.Time)}
+}
+
+func (c *transactionCleanupTracker) begin(job *transactionCloseJob) {
+	if c == nil || job.ptr == nil {
+		return
+	}
+	c.mu.Lock()
+	c.next++
+	job.cleanupID = c.next
+	job.cleanup = c
+	c.started[job.cleanupID] = time.Now()
+	c.stats.Pending++
+	c.mu.Unlock()
+}
+
+func (c *transactionCleanupTracker) enqueued() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.stats.Queued++
+	c.mu.Unlock()
+}
+
+func (c *transactionCleanupTracker) enqueueFailed() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.stats.Queued--
+	c.mu.Unlock()
+}
+
+func (c *transactionCleanupTracker) dequeued(job transactionCloseJob) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.stats.Queued--
+	c.stats.QueueWaitTotal += time.Since(job.enqueued)
+	c.mu.Unlock()
+}
+
+func (c *transactionCleanupTracker) finish(job transactionCloseJob, native bool, err error, duration time.Duration, fallback bool) {
+	if c == nil || job.cleanupID == 0 {
+		return
+	}
+	c.mu.Lock()
+	delete(c.started, job.cleanupID)
+	c.stats.Pending--
+	if native {
+		c.stats.NativeCompletions++
+		if err != nil {
+			c.stats.NativeFailures++
+		}
+		c.stats.NativeCloseTotal += duration
+	}
+	if fallback {
+		c.stats.QueueFullFallbacks++
+	}
+	c.mu.Unlock()
+}
+
+func (c *transactionCleanupTracker) snapshot() TransactionCleanupStats {
+	if c == nil {
+		return TransactionCleanupStats{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	stats := c.stats
+	now := time.Now()
+	for _, started := range c.started {
+		stats.OldestPendingAge = max(stats.OldestPendingAge, now.Sub(started))
+	}
+	return stats
+}
+
+// CleanupStats returns this driver's cleanup counts, including after Close
+// drains its worker. Other drivers have independent counters.
+func (d *Driver) CleanupStats() TransactionCleanupStats {
+	return d.cleanup.snapshot()
+}
 
 type transactionCloseTracker struct {
 	mu      sync.Mutex
@@ -127,10 +239,11 @@ func (t *transactionCloseTracker) wait(ctx context.Context) error {
 	}
 }
 
-func newTransactionCloseWorker() *transactionCloseWorker {
+func newTransactionCloseWorker(cleanup *transactionCleanupTracker) *transactionCloseWorker {
 	w := &transactionCloseWorker{
-		jobs: make(chan transactionCloseJob, transactionCloseQueueSize),
-		done: make(chan struct{}),
+		jobs:    make(chan transactionCloseJob, transactionCloseQueueSize),
+		done:    make(chan struct{}),
+		cleanup: cleanup,
 	}
 	go w.run()
 	return w
@@ -146,10 +259,13 @@ func (w *transactionCloseWorker) enqueue(job transactionCloseJob) bool {
 		return false
 	}
 	pendingTransactionCloses.add()
+	job.enqueued = time.Now()
+	w.cleanup.enqueued()
 	select {
 	case w.jobs <- job:
 		return true
 	default:
+		w.cleanup.enqueueFailed()
 		pendingTransactionCloses.done()
 		return false
 	}
@@ -158,6 +274,7 @@ func (w *transactionCloseWorker) enqueue(job transactionCloseJob) bool {
 func (w *transactionCloseWorker) run() {
 	defer close(w.done)
 	for job := range w.jobs {
+		w.cleanup.dequeued(job)
 		runTransactionCloseJob(job)
 		pendingTransactionCloses.done()
 	}
@@ -174,10 +291,13 @@ func (w *transactionCloseWorker) close() {
 }
 
 func runTransactionCloseJob(job transactionCloseJob) {
+	start := time.Now()
 	var closeErr *C.char
 	C.typedb_transaction_close(job.ptr, &closeErr)
+	duration := time.Since(start)
 	err := getError(closeErr)
 	logTransactionClose(job, err)
+	job.cleanup.finish(job, true, err, duration, false)
 	if job.onDone != nil {
 		job.onDone(err)
 	}
@@ -243,6 +363,7 @@ func (t *Transaction) finalize() {
 		return
 	}
 	C.typedb_transaction_drop(job.ptr)
+	job.cleanup.finish(job, false, nil, 0, true)
 }
 
 // abandon marks the transaction abandoned after a context cancellation while
@@ -302,10 +423,14 @@ func (t *Transaction) finishContextCall() {
 		return
 	}
 	logFFIDebugLazy("tx.abandoned.close", func() []any { return []any{"tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType)} })
+	if t.closer != nil {
+		t.closer.cleanup.begin(&job)
+	}
 	if t.closer.enqueue(job) {
 		return
 	}
 	C.typedb_transaction_drop(job.ptr)
+	job.cleanup.finish(job, false, nil, 0, true)
 }
 
 type queryMetadata struct {
@@ -973,6 +1098,7 @@ func (t *Transaction) CloseAsync(onDone func(error)) {
 	}
 
 	C.typedb_transaction_drop(job.ptr)
+	job.cleanup.finish(job, false, nil, 0, true)
 	if job.onDone != nil {
 		job.onDone(nil)
 	}
@@ -988,10 +1114,13 @@ func (t *Transaction) CloseChecked() error {
 		return nil
 	}
 
+	closeStart := time.Now()
 	var closeErr *C.char
 	C.typedb_transaction_close(job.ptr, &closeErr)
+	duration := time.Since(closeStart)
 	err := getError(closeErr)
 	logTransactionClose(job, err)
+	job.cleanup.finish(job, true, err, duration, false)
 	return err
 }
 
@@ -1020,5 +1149,8 @@ func (t *Transaction) detachCloseJob(start time.Time, onDone func(error)) transa
 	}
 	t.ptr = nil
 	t.markClosedLocked("close")
+	if t.closer != nil {
+		t.closer.cleanup.begin(&job)
+	}
 	return job
 }

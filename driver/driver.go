@@ -59,6 +59,7 @@ type Driver struct {
 	// only while Close drops it.
 	mu          sync.RWMutex
 	closeWorker *transactionCloseWorker
+	cleanup     *transactionCleanupTracker
 	txMu        sync.Mutex
 	// txs tracks locally opened transactions by id. Entries are weak so an
 	// abandoned *Transaction can still be garbage-collected, letting its
@@ -137,7 +138,9 @@ func OpenWithOptions(address, username, password string, opts DriverOptions) (*D
 
 	ensureLoggingInitialized()
 	start := time.Now()
-	logFFIDebugLazy("driver.open.start", func() []any { return []any{"address", address, "tls_enabled", opts.TLSEnabled, "has_tls_ca", opts.TLSRootCA != ""} })
+	logFFIDebugLazy("driver.open.start", func() []any {
+		return []any{"address", address, "tls_enabled", opts.TLSEnabled, "has_tls_ca", opts.TLSRootCA != ""}
+	})
 
 	creds, driverOpts, cleanup, err := openInputs(username, password, opts)
 	if err != nil {
@@ -195,7 +198,9 @@ func OpenWithAddressTranslation(addressTranslation map[string]string, username, 
 func openWithAddressSet(publicAddresses, privateAddresses []string, username, password string, opts DriverOptions) (*Driver, error) {
 	ensureLoggingInitialized()
 	start := time.Now()
-	logFFIDebugLazy("driver.open_addresses.start", func() []any { return []any{"address_count", len(publicAddresses), "translated", privateAddresses != nil} })
+	logFFIDebugLazy("driver.open_addresses.start", func() []any {
+		return []any{"address_count", len(publicAddresses), "translated", privateAddresses != nil}
+	})
 
 	if len(publicAddresses) == 0 {
 		return nil, &DriverError{Message: "driver: at least one address is required"}
@@ -209,7 +214,9 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 
 	creds, driverOpts, cleanup, err := openInputs(username, password, opts)
 	if err != nil {
-		logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "error", "error", err.Error()} })
+		logFFIDurationLazy("driver.open_addresses", start, func() []any {
+			return []any{"address_count", len(publicAddresses), "result", "error", "error", err.Error()}
+		})
 		return nil, err
 	}
 	defer cleanup()
@@ -245,10 +252,14 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 	)
 	if ptr == nil {
 		if err := getError(openErr); err != nil {
-			logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "error", "error", err.Error()} })
+			logFFIDurationLazy("driver.open_addresses", start, func() []any {
+				return []any{"address_count", len(publicAddresses), "result", "error", "error", err.Error()}
+			})
 			return nil, err
 		}
-		logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "error", "error_type", "nil_driver_ptr"} })
+		logFFIDurationLazy("driver.open_addresses", start, func() []any {
+			return []any{"address_count", len(publicAddresses), "result", "error", "error_type", "nil_driver_ptr"}
+		})
 		return nil, ErrNilPointer
 	}
 
@@ -257,9 +268,11 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 }
 
 func newDriver(ptr unsafe.Pointer) *Driver {
+	cleanup := newTransactionCleanupTracker()
 	return &Driver{
 		ptr:         ptr,
-		closeWorker: newTransactionCloseWorker(),
+		closeWorker: newTransactionCloseWorker(cleanup),
+		cleanup:     cleanup,
 		txs:         make(map[uint64]weak.Pointer[Transaction]),
 	}
 }
@@ -533,7 +546,9 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 	defer d.mu.RUnlock()
 
 	if d.ptr == nil {
-		logFFIDurationLazy("tx.open", start, func() []any { return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", ErrNotConnected.Error()} })
+		logFFIDurationLazy("tx.open", start, func() []any {
+			return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", ErrNotConnected.Error()}
+		})
 		return nil, ErrNotConnected
 	}
 
@@ -549,10 +564,14 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 	ptr := C.typedb_transaction_open(d.ptr, cName, C.int(txnType), cOpts, &txErr)
 	if ptr == nil {
 		if err := getError(txErr); err != nil {
-			logFFIDurationLazy("tx.open", start, func() []any { return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", err.Error()} })
+			logFFIDurationLazy("tx.open", start, func() []any {
+				return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", err.Error()}
+			})
 			return nil, err
 		}
-		logFFIDurationLazy("tx.open", start, func() []any { return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error_type", "nil_tx_ptr"} })
+		logFFIDurationLazy("tx.open", start, func() []any {
+			return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error_type", "nil_tx_ptr"}
+		})
 		return nil, ErrNilPointer
 	}
 

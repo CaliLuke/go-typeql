@@ -275,6 +275,21 @@ if err := driver.WaitForPendingCloses(ctx); err != nil {
 }
 ```
 
+For per-connection cleanup visibility, inspect `drv.CleanupStats()`. `Pending`
+counts native transaction handles detached from callers but not yet cleaned up
+(queued, running, or synchronous closes); it is distinct from transactions
+still open to callers. `Queued` excludes a close currently running. The oldest
+pending age is calculated at snapshot time. `NativeCompletions` and
+`NativeFailures` count checked native closes, while `QueueFullFallbacks` counts
+handles dropped locally when asynchronous admission fails, including after
+driver shutdown. `QueueWaitTotal` measures accepted-job enqueue to worker
+start; `NativeCloseTotal` measures only the native checked-close call. These
+counts belong to one driver, remain readable after `drv.Close()` drains it,
+and do not include other driver instances. A cancelled query retains its
+handle until the blocking native call returns; only then can cleanup enter
+`Pending`. `WaitForPendingCloses` remains the process-wide drain for accepted
+asynchronous jobs. The Go counters do not measure native/Rust memory usage.
+
 ## Database Management
 
 ```go
