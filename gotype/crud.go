@@ -619,6 +619,9 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 
 	pendingIIDs := make([]string, len(instances))
 	err := m.withWriteTx(ctx, "insert_many", m.newWriteTx, func(tx Tx) error {
+		if used, err := m.insertManyBatched(ctx, tx, instances, pendingIIDs); used {
+			return err
+		}
 		for i, inst := range instances {
 			if inst == nil {
 				return fmt.Errorf("insert_many %s[%d]: instance must not be nil", m.info.TypeName, i)

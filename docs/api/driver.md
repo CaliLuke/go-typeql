@@ -128,6 +128,15 @@ if err != nil {
 err = txn.Commit()
 ```
 
+The ORM's scalar `InsertMany` batches use the pure-Go `given.TypedRows` implementation of `given.Rows`,
+so `gotype` does not import this CGo-gated package. The driver transaction's
+`QueryWithGivenRows(ctx, query, rows)` passes those rows to its existing
+`QueryWithContextAndOptions` input-row path. Other `gotype.Tx`
+implementations need not support typed rows; they retain the per-instance
+fallback. This optional method accepts a bounded row group and honors caller
+cancellation under the same in-flight native-call contract as other driver
+queries.
+
 Transaction types: `Read` (0), `Write` (1), `Schema` (2).
 
 ### Context Cancellation and Abandonment

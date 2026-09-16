@@ -130,6 +130,17 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 		assertTypeQL(t, "grouped delete", writeTx.queries[0], "")
 	})
 
+	t.Run("batch insert with typed rows", func(t *testing.T) {
+		defer registerTestTypes(t)
+		batchTx := &batchTestTx{}
+		mgr := batchTestManager(t, batchTx)
+		instances := []*testCompany{{Name: "Acme", Industry: "Tools"}, {Name: "Beta", Industry: "Tools"}}
+		if err := mgr.InsertMany(context.Background(), instances); err != nil {
+			t.Fatalf("InsertMany failed: %v", err)
+		}
+		assertTypeQL(t, "batch insert", batchTx.queriesWithRows[0], "")
+	})
+
 	t.Run("update scalar attributes", func(t *testing.T) {
 		writeTx := &mockTx{responses: [][]map[string]any{nil}}
 		conn := &mockConn{txs: []*mockTx{writeTx}}

@@ -26,9 +26,15 @@ err := persons.Insert(ctx, alice)
 // alice.GetIID() is now set (e.g., "0x826e80018000000000000001")
 ```
 
-`InsertMany` inserts multiple instances in a single write transaction; IIDs are fetched
-inside that same transaction and applied after the commit succeeds. `PutMany` works the
-same way (one transaction total).
+`InsertMany` inserts multiple instances in a single write transaction. With the
+bundled driver and a scalar entity model that has one string key and no absent
+optional values or slice fields, it uses typed input rows in groups of at most
+32 (one query per group). It maps returned IIDs by key rather than result order
+and assigns them only after successful completion. Relations, decimals, list
+fields, absent optional values, and custom `Tx` implementations without typed
+row support use the compatible one-query-per-instance path. Both paths keep
+the transaction atomic. `PutMany` also uses one transaction but has its own
+query behavior.
 
 Insert and Put (and their Many variants) validate key attributes before writing: a
 zero-value key (`""`, `0`, nil pointer) returns a `*KeyAttributeError` instead of

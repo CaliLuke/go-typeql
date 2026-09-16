@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Quality gates for day-to-day development. Scoped to unit packages
-# (ast/, given/, gotype/, tqlgen/, cmd/) — driver/ needs CGo + built Rust lib,
-# which is the province of release-checks and `make test-integration`.
+# (ast/, given/, gotype/, tqlgen/, cmd/, internal/) — driver/ needs CGo + built Rust lib, which
+# is the province of release-checks and `make test-integration`.
 #
 # Usage:
 #   ./check.sh          run all gates

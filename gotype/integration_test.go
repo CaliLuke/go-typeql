@@ -4,6 +4,7 @@ package gotype_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -156,6 +157,55 @@ func TestIntegration_InsertMany(t *testing.T) {
 			t.Errorf("expected to find %q in results", expected)
 		}
 	}
+}
+
+func TestIntegration_InsertMany_MultipleTypedBatchesAndOptionalFallback(t *testing.T) {
+	db := setupTestDBDefault(t)
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Person](db)
+	people := make([]*Person, 65)
+	for i := range people {
+		people[i] = &Person{Name: fmt.Sprintf("batch-%02d", i), Email: fmt.Sprintf("batch-%02d@test.com", i), Age: new(20 + i)}
+	}
+	assertInsertMany(t, ctx, mgr, people)
+	for i, person := range people {
+		if person.GetIID() == "" {
+			t.Fatalf("person %d missing IID", i)
+		}
+		fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": person.Name})
+		if fetched.GetIID() != person.GetIID() {
+			t.Fatalf("person %d: IID %q differs from fetched %q", i, person.GetIID(), fetched.GetIID())
+		}
+	}
+	optional := []*Person{
+		{Name: "optional-a", Email: "optional-a@test.com"},
+		{Name: "optional-b", Email: "optional-b@test.com"},
+	}
+	assertInsertMany(t, ctx, mgr, optional)
+	if optional[0].GetIID() == "" || optional[1].GetIID() == "" {
+		t.Fatal("fallback did not return IIDs")
+	}
+}
+
+func TestIntegration_InsertMany_BatchFailureRollsBackEarlierGroups(t *testing.T) {
+	db := setupTestDBDefault(t)
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Person](db)
+	assertInsert(t, ctx, mgr, &Person{Name: "existing", Email: "existing@test.com", Age: new(30)})
+	people := make([]*Person, 33)
+	for i := range people {
+		people[i] = &Person{Name: fmt.Sprintf("new-%02d", i), Email: fmt.Sprintf("new-%02d@test.com", i), Age: new(30)}
+	}
+	people[32].Name = "existing" // Collision in the second batch.
+	if err := mgr.InsertMany(ctx, people); err == nil {
+		t.Fatal("expected duplicate key error")
+	}
+	for i, person := range people {
+		if person.GetIID() != "" {
+			t.Fatalf("person %d received IID despite failed transaction", i)
+		}
+	}
+	assertCount(t, ctx, mgr, 1)
 }
 
 // ---------------------------------------------------------------------------
