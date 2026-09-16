@@ -89,7 +89,10 @@ are checked and deleted once.
 
 ## Put (Upsert)
 
-Inserts if the entity doesn't exist, updates if it does (matched by key attributes). After a successful put, the instance's IID is populated.
+Inserts if the entity doesn't exist, or returns the matching instance when the
+specified attributes already agree. A changed non-key value on an existing
+unique-key entity can produce a TypeDB key conflict; use `Update` for that
+change. After a successful put, the instance's IID is populated.
 
 ```go
 persons.Put(ctx, &Person{Name: "Alice", Email: "alice@newdomain.com"})
@@ -98,7 +101,11 @@ persons.Put(ctx, &Person{Name: "Alice", Email: "alice@newdomain.com"})
 For keyed models, `Put` fetches the IID in the same query as the upsert, avoiding
 a second key-match query. Keyless relations retain their existing behavior and
 do not receive an IID from `Put`. `PutMany` upserts multiple instances in one
-transaction, using one query per instance; IIDs are assigned only after commit.
+transaction; IIDs are assigned only after commit.
+When all rows are scalar entities with one string key and the driver supports
+typed input rows, `PutMany` batches up to 32 rows per query and matches returned
+IIDs by key, regardless of result order. Duplicate keys, relations, and
+unsupported optional, slice, or decimal values use the per-instance path.
 
 `UpdateMany` and query `UpdateWith` batch compatible scalar entity updates
 using typed rows in groups of eight, matching each row by its IID. Updates

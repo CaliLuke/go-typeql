@@ -554,6 +554,9 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 	hasKeys := len(m.info.KeyFields) > 0
 	pendingIIDs := make([]string, len(instances))
 	err := m.withWriteTx(ctx, "put_many", m.newWriteTx, func(tx Tx) error {
+		if used, err := m.putManyBatched(ctx, tx, instances, pendingIIDs); used {
+			return err
+		}
 		for i, inst := range instances {
 			varName := fmt.Sprintf("e%d", i)
 			putQuery, err := m.buildPutWithIID(inst, varName)

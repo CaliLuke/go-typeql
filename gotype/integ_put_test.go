@@ -4,6 +4,7 @@ package gotype_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/CaliLuke/go-typeql/gotype"
@@ -129,6 +130,71 @@ func TestIntegration_PutMany_DuplicateKey(t *testing.T) {
 		t.Errorf("duplicate key should return one IID, got %q and %q", first.GetIID(), second.GetIID())
 	}
 	assertCount(t, ctx, mgr, 1)
+}
+
+func TestIntegration_PutMany_BatchedMixedExistingAndNew(t *testing.T) {
+	db := setupTestDBWith(t, func() { gotype.MustRegister[Company]() })
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Company](db)
+	existing := &Company{Name: "Existing", Industry: "Before"}
+	if err := mgr.Insert(ctx, existing); err != nil {
+		t.Fatal(err)
+	}
+	companies := make([]*Company, 40) // crosses the 32-row chunk boundary
+	companies[0] = &Company{Name: "Existing", Industry: "Before"}
+	for i := 1; i < len(companies); i++ {
+		companies[i] = &Company{Name: fmt.Sprintf("BatchCo-%d", i), Industry: "Tools"}
+	}
+	if err := mgr.PutMany(ctx, companies); err != nil {
+		t.Fatalf("mixed PutMany failed: %v", err)
+	}
+	if companies[0].GetIID() != existing.GetIID() {
+		t.Errorf("existing IID %q changed to %q", existing.GetIID(), companies[0].GetIID())
+	}
+	for i, company := range companies {
+		if company.GetIID() == "" {
+			t.Errorf("companies[%d] missing IID", i)
+		}
+	}
+	assertCount(t, ctx, mgr, 40)
+}
+
+func TestIntegration_PutMany_ChangedNonKeyMatchesSinglePutError(t *testing.T) {
+	db := setupTestDBWith(t, func() { gotype.MustRegister[Company]() })
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Company](db)
+	if err := mgr.Insert(ctx, &Company{Name: "Existing", Industry: "Before"}); err != nil {
+		t.Fatal(err)
+	}
+	// TypeDB put matches all specified attributes. Changing a non-key value
+	// conflicts with the existing key in both the single and batched paths.
+	if err := mgr.Put(ctx, &Company{Name: "Existing", Industry: "After"}); err == nil {
+		t.Fatal("expected single Put to reject changed non-key value")
+	}
+	rows := []*Company{{Name: "Existing", Industry: "After"}, {Name: "New", Industry: "Tools"}}
+	if err := mgr.PutMany(ctx, rows); err == nil {
+		t.Fatal("expected batched PutMany to reject changed non-key value")
+	}
+	if rows[0].GetIID() != "" || rows[1].GetIID() != "" {
+		t.Fatal("IIDs assigned after failed batch")
+	}
+	assertCount(t, ctx, mgr, 1)
+}
+
+func TestIntegration_PutMany_BatchedPresentOptional(t *testing.T) {
+	db := setupTestDBDefault(t)
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Person](db)
+	rows := []*Person{{Name: "OptionalA", Email: "optional-a@test.com", Age: new(31)}, {Name: "OptionalB", Email: "optional-b@test.com", Age: new(32)}}
+	if err := mgr.PutMany(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": row.Name})
+		if fetched.GetIID() != row.GetIID() || fetched.Age == nil || *fetched.Age != *row.Age {
+			t.Fatalf("optional row mismatch: put=%+v fetched=%+v", row, fetched)
+		}
+	}
 }
 
 func TestIntegration_Put_KeyedRelation(t *testing.T) {

@@ -32,7 +32,7 @@ func (m *Manager[T]) insertManyBatched(ctx context.Context, tx Tx, instances []*
 		return supported, err
 	}
 	query, variables := buildBatchInsertQuery(m.info, keyIndex)
-	return true, m.executeBatchInsert(ctx, batchTx, query, variables, values, seen, pendingIIDs)
+	return true, m.executeBatchRows(ctx, batchTx, query, variables, values, seen, pendingIIDs, "insert_many")
 }
 
 func (m *Manager[T]) batchKeyIndex() (int, bool) {
@@ -79,37 +79,37 @@ func (m *Manager[T]) prepareBatchValues(instances []*T, keyIndex int) ([][]given
 	return valuesByInstance, seen, true, nil
 }
 
-func (m *Manager[T]) executeBatchInsert(ctx context.Context, tx batchInsertTx, query string, variables []string, values [][]given.Value, seen map[string]int, pendingIIDs []string) error {
+func (m *Manager[T]) executeBatchRows(ctx context.Context, tx batchInsertTx, query string, variables []string, values [][]given.Value, seen map[string]int, pendingIIDs []string, op string) error {
 	for start := 0; start < len(values); start += insertBatchSize {
 		end := min(start+insertBatchSize, len(values))
 		rows := given.NewRows(variables...)
 		for i := start; i < end; i++ {
 			if err := rows.Add(values[i]...); err != nil {
-				return fmt.Errorf("insert_many %s[%d]: %w", m.info.TypeName, i, err)
+				return fmt.Errorf("%s %s[%d]: %w", op, m.info.TypeName, i, err)
 			}
 		}
 		results, err := tx.QueryWithGivenRows(ctx, query, rows)
 		if err != nil {
-			return fmt.Errorf("insert_many %s[%d:%d]: %w", m.info.TypeName, start, end, err)
+			return fmt.Errorf("%s %s[%d:%d]: %w", op, m.info.TypeName, start, end, err)
 		}
 		if len(results) != end-start {
-			return fmt.Errorf("insert_many %s[%d:%d]: expected %d IID results, got %d", m.info.TypeName, start, end, end-start, len(results))
+			return fmt.Errorf("%s %s[%d:%d]: expected %d IID results, got %d", op, m.info.TypeName, start, end, end-start, len(results))
 		}
-		if err := m.mapBatchIIDs(results, seen, pendingIIDs, start, end); err != nil {
+		if err := m.mapBatchIIDs(results, seen, pendingIIDs, start, end, op); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Manager[T]) mapBatchIIDs(results []map[string]any, seen map[string]int, pendingIIDs []string, start, end int) error {
+func (m *Manager[T]) mapBatchIIDs(results []map[string]any, seen map[string]int, pendingIIDs []string, start, end int, op string) error {
 	for _, result := range results {
 		keyValue, ok := lookupResultValue(result, "_key")
 		key, keyOK := keyValue.(string)
 		i, expected := seen[key]
 		iid := extractIID(result)
 		if !ok || !keyOK || !expected || i < start || i >= end || iid == "" || pendingIIDs[i] != "" {
-			return fmt.Errorf("insert_many %s[%d:%d]: invalid IID mapping in batch result", m.info.TypeName, start, end)
+			return fmt.Errorf("%s %s[%d:%d]: invalid IID mapping in batch result", op, m.info.TypeName, start, end)
 		}
 		pendingIIDs[i] = iid
 	}
@@ -117,6 +117,10 @@ func (m *Manager[T]) mapBatchIIDs(results []map[string]any, seen map[string]int,
 }
 
 func buildBatchInsertQuery(info *ModelInfo, keyIndex int) (string, []string) {
+	return buildBatchWriteQuery(info, keyIndex, "insert")
+}
+
+func buildBatchWriteQuery(info *ModelInfo, keyIndex int, keyword string) (string, []string) {
 	variables := make([]string, len(info.Fields))
 	var b strings.Builder
 	b.WriteString("given ")
@@ -127,7 +131,7 @@ func buildBatchInsertQuery(info *ModelInfo, keyIndex int) (string, []string) {
 		variables[i] = fmt.Sprintf("v%d", i)
 		fmt.Fprintf(&b, "$%s: %s", variables[i], fi.ValueType)
 	}
-	fmt.Fprintf(&b, ";\ninsert $e isa %s", info.TypeName)
+	fmt.Fprintf(&b, ";\n%s $e isa %s", keyword, info.TypeName)
 	for i, fi := range info.Fields {
 		fmt.Fprintf(&b, ", has %s == $%s", fi.Tag.Name, variables[i])
 	}
