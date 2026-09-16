@@ -32,7 +32,7 @@ TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 \
   go run ./cmd/benchdb -group=bulk
 ```
 
-Replace `bulk` with `projections`, `typed-reads`, `result-reads`, or `lifecycle`. Live groups
+Replace `bulk` with `projections`, `typed-reads`, `result-reads`, `lifecycle`, or `pool`. Live groups
 are opt-in; the runner executes five separate test processes by default, so
 each sample starts with a fresh database fixture. `-benchtime=20x` and
 `-count=5` can override a group's defaults. Do not compare samples from
@@ -47,6 +47,7 @@ different server versions, fixture sizes, machine loads, or concurrency.
 | `typed-reads` | One model by IID/key, all fixture models, or one relation with roles | 1 |
 | `result-reads` | Materialized 64/256-row results with 16/512-byte names; two-chunk 512-row/512-byte stream with first-row timing | 1 |
 | `lifecycle` | 100 completed empty-result reads, 49-byte query, including close/drain | 10 |
+| `pool` | 100 reads of 25 named people with checked native close; shared driver vs pools of 1/4 | 1/4/10 |
 
 The ORM live fixture starts with 256 people, five companies, and 256 employments;
 bulk inserts grow it within each independent process. The driver result-read

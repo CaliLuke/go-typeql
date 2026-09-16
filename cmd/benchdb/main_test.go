@@ -48,7 +48,7 @@ func TestInsertRunPreservesMetricSeries(t *testing.T) {
 }
 
 func TestBenchmarkGroupsAreExplicit(t *testing.T) {
-	for _, name := range []string{"unit", "decode", "bulk", "projections", "typed-reads", "result-reads", "lifecycle"} {
+	for _, name := range []string{"unit", "decode", "bulk", "projections", "typed-reads", "result-reads", "lifecycle", "pool"} {
 		spec, err := benchmarkGroup(name)
 		if err != nil || spec.pattern == "" || len(spec.packages) == 0 {
 			t.Fatalf("group %s: %+v, %v", name, spec, err)
@@ -101,5 +101,22 @@ func TestValidateGroupSeriesRejectsMissingBenchmark(t *testing.T) {
 	}
 	if err := validateGroupSeries(spec, results[:len(results)-1]); err == nil {
 		t.Fatal("missing benchmark was accepted")
+	}
+}
+
+func TestValidatePoolGroupRequiresAllConcurrencyCases(t *testing.T) {
+	spec, err := benchmarkGroup("pool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := make([]benchmarkResult, len(spec.required))
+	for i, name := range spec.required {
+		results[i] = benchmarkResult{Name: name}
+	}
+	if err := validateGroupSeries(spec, results); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateGroupSeries(spec, results[:len(results)-1]); err == nil {
+		t.Fatal("missing concurrency case was accepted")
 	}
 }

@@ -73,6 +73,12 @@ func benchmarkGroup(name string) (groupSpec, error) {
 		return groupSpec{pattern: "^BenchmarkNativeClosePolicies$", tags: "cgo,typedb,integration", benchTime: "100x", packages: []string{"./driver/..."}, live: true, required: []string{"BenchmarkNativeClosePolicies"}}, nil
 	case "result-reads":
 		return groupSpec{pattern: "^BenchmarkLiveResult(Materialization|Streaming)$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./driver/..."}, live: true, required: []string{"BenchmarkLiveResultMaterialization", "BenchmarkLiveResultStreaming"}}, nil
+	case "pool":
+		return groupSpec{pattern: "^BenchmarkLivePoolRead$", tags: "cgo,typedb,integration", benchTime: "100x", packages: []string{"./gotype/..."}, live: true, required: []string{
+			"BenchmarkLivePoolRead/shared/callers=1", "BenchmarkLivePoolRead/pool-1/callers=1", "BenchmarkLivePoolRead/pool-4/callers=1",
+			"BenchmarkLivePoolRead/shared/callers=4", "BenchmarkLivePoolRead/pool-1/callers=4", "BenchmarkLivePoolRead/pool-4/callers=4",
+			"BenchmarkLivePoolRead/shared/callers=10", "BenchmarkLivePoolRead/pool-1/callers=10", "BenchmarkLivePoolRead/pool-4/callers=10",
+		}}, nil
 	default:
 		return groupSpec{}, fmt.Errorf("unknown benchmark group %q", name)
 	}
@@ -89,7 +95,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("benchdb", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "record reviewed results in this sqlite database (omit for exploratory stdout only)")
 	count := fs.Int("count", 5, "benchmark sample count")
-	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads")
+	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool")
 	bench := fs.String("bench", "", "override the group's benchmark regex")
 	benchTime := fs.String("benchtime", "", "override the group's benchmark duration or fixed iterations")
 	reset := fs.Bool("reset", false, "clear existing benchmark history before saving the new run")
@@ -163,6 +169,7 @@ func validateGroupSeries(spec groupSpec, results []benchmarkResult) error {
 	for _, result := range results {
 		name, _, _ := strings.Cut(result.Name, "/")
 		present[name] = true
+		present[result.Name] = true
 	}
 	for _, name := range spec.required {
 		if !present[name] {
