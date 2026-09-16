@@ -135,6 +135,14 @@ func TestIntegration_CountDistinctMultiValued(t *testing.T) {
 	if count != 2 {
 		t.Fatalf("expected distinct count 2, got %d", count)
 	}
+	exists, err := mgr.Query().Filter(gotype.Contains("doc-tag", "x-")).Exists(ctx)
+	if err != nil || !exists {
+		t.Fatalf("Exists with duplicate answer rows = %v, %v; want true", exists, err)
+	}
+	exists, err = mgr.Query().Filter(gotype.And(gotype.Contains("doc-tag", "x-"), gotype.Eq("doc-id", "missing"))).Exists(ctx)
+	if err != nil || exists {
+		t.Fatalf("Exists with compound absent filter = %v, %v; want false", exists, err)
+	}
 
 	// Delete must report the same distinct number and remove exactly those.
 	deleted, err := mgr.Query().Filter(gotype.Contains("doc-tag", "x-")).Delete(ctx)

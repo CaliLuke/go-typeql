@@ -58,8 +58,13 @@ func (q *Query[T]) Offset(n int) *Query[T] {
 }
 
 // Exists returns true if the query matches at least one instance in the database.
+// Like Count, it considers all matching instances regardless of Limit and Offset.
 func (q *Query[T]) Exists(ctx context.Context) (bool, error) {
-	count, err := q.Count(ctx)
+	query, err := q.buildCountQueryWithLimit(1)
+	if err != nil {
+		return false, fmt.Errorf("exists %s: build: %w", q.mgr.info.TypeName, err)
+	}
+	count, err := q.readCount(ctx, query, "exists")
 	if err != nil {
 		return false, err
 	}
@@ -103,22 +108,27 @@ func (q *Query[T]) First(ctx context.Context) (*T, error) {
 
 // Count returns the number of distinct instances matching the query filters.
 // Instances matched multiple times (e.g. via several values of a filtered
-// multi-valued attribute) are counted once.
+// multi-valued attribute) are counted once. Limit and Offset do not affect
+// the count; only the query filters do.
 func (q *Query[T]) Count(ctx context.Context) (int64, error) {
 	query, err := q.buildCountQuery()
 	if err != nil {
 		return 0, fmt.Errorf("count %s: build: %w", q.mgr.info.TypeName, err)
 	}
+	return q.readCount(ctx, query, "count")
+}
+
+func (q *Query[T]) readCount(ctx context.Context, query, op string) (int64, error) {
 	results, err := q.mgr.readQuery(ctx, query)
 	if err != nil {
-		return 0, fmt.Errorf("count %s: %w", q.mgr.info.TypeName, err)
+		return 0, fmt.Errorf("%s %s: %w", op, q.mgr.info.TypeName, err)
 	}
 	if len(results) == 0 {
 		return 0, nil
 	}
 	count, err := countFromResult(results[0])
 	if err != nil {
-		return 0, fmt.Errorf("count %s: %w", q.mgr.info.TypeName, err)
+		return 0, fmt.Errorf("%s %s: %w", op, q.mgr.info.TypeName, err)
 	}
 	return count, nil
 }
@@ -258,6 +268,10 @@ func (q *Query[T]) buildQuery() (string, error) {
 }
 
 func (q *Query[T]) buildCountQuery() (string, error) {
+	return q.buildCountQueryWithLimit(0)
+}
+
+func (q *Query[T]) buildCountQueryWithLimit(maxMatches int) (string, error) {
 	match, err := q.buildMatchClause()
 	if err != nil {
 		return "", err
@@ -269,6 +283,11 @@ func (q *Query[T]) buildCountQuery() (string, error) {
 	// instance variable before counting so the result is a distinct-entity count.
 	b.WriteString("\nselect $e;")
 	b.WriteString("\ndistinct;")
+	if maxMatches > 0 {
+		b.WriteString("\nlimit ")
+		b.WriteString(strconv.Itoa(maxMatches))
+		b.WriteString(";")
+	}
 	b.WriteString("\nreduce $count = count($e);")
 	return b.String(), nil
 }

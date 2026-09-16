@@ -233,6 +233,58 @@ fetch {
 	return nil
 }
 
+// BenchmarkLiveExists compares bounded existence checks with full distinct
+// counts. The fixture is expanded between groups, outside the timed loops.
+// Run explicitly against the compose server with -bench '^BenchmarkLiveExists$'
+// and -count=1 in five independent processes; its fixture grows during each
+// run, so repeated benchmarks in one process would reuse the expanded data.
+func BenchmarkLiveExists(b *testing.B) {
+	f := liveBenchSetup(b)
+	ctx := context.Background()
+	seeded := liveBenchPersonCount
+	for _, size := range []int{256, 512, 1000} {
+		for i := seeded; i < size; i++ {
+			p := &liveBenchPerson{
+				Name:  fmt.Sprintf("person-%05d", i),
+				Email: fmt.Sprintf("person-%05d@example.test", i),
+				Age:   30,
+			}
+			if err := f.personMgr.Insert(ctx, p); err != nil {
+				b.Fatalf("seed person %d: %v", i, err)
+			}
+		}
+		seeded = size
+		for _, workload := range []struct {
+			name   string
+			filter Filter
+			found  bool
+		}{
+			{"absent", Eq("name", "not-present"), false},
+			{"unique", Eq("name", "person-00"), true},
+			{"broad", Gte("age", 0), true},
+		} {
+			b.Run(fmt.Sprintf("rows=%d/%s/exists", size, workload.name), func(b *testing.B) {
+				b.ReportAllocs()
+				for range b.N {
+					got, err := f.personMgr.Query().Filter(workload.filter).Exists(ctx)
+					if err != nil || got != workload.found {
+						b.Fatalf("Exists = %v, %v; want %v", got, err, workload.found)
+					}
+				}
+			})
+			b.Run(fmt.Sprintf("rows=%d/%s/count", size, workload.name), func(b *testing.B) {
+				b.ReportAllocs()
+				for range b.N {
+					got, err := f.personMgr.Query().Filter(workload.filter).Count(ctx)
+					if err != nil || (got > 0) != workload.found {
+						b.Fatalf("Count = %d, %v; expected match %v", got, err, workload.found)
+					}
+				}
+			})
+		}
+	}
+}
+
 func BenchmarkLiveRead_GetByIID(b *testing.B) {
 	f := liveBenchSetup(b)
 	ctx := context.Background()

@@ -297,6 +297,26 @@ func TestIntegration_Query_Count(t *testing.T) {
 	}
 }
 
+func TestIntegration_Query_Exists_OptionalAndBoundTransaction(t *testing.T) {
+	db, _ := setupQueryDB(t)
+	ctx := context.Background()
+	tx, err := db.BeginContext(ctx, gotype.ReadTransaction)
+	if err != nil {
+		t.Fatalf("begin read: %v", err)
+	}
+	defer tx.Close()
+	mgr := gotype.MustNewManagerWithTx[Person](tx)
+
+	exists, err := mgr.Query().Filter(gotype.And(gotype.HasAttr("age"), gotype.Gt("age", 28))).Exists(ctx)
+	if err != nil || !exists {
+		t.Fatalf("matching optional age: Exists = %v, %v; want true", exists, err)
+	}
+	exists, err = mgr.Query().Filter(gotype.And(gotype.HasAttr("age"), gotype.Gt("age", 100))).Exists(ctx)
+	if err != nil || exists {
+		t.Fatalf("absent compound filter: Exists = %v, %v; want false", exists, err)
+	}
+}
+
 func TestIntegration_Query_OrderAsc(t *testing.T) {
 	_, mgr := setupQueryDB(t)
 	ctx := context.Background()

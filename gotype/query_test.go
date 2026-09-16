@@ -44,6 +44,25 @@ func TestQuery_Execute(t *testing.T) {
 	assertContains(t, q, "fetch")
 }
 
+func TestQuery_Exists_BoundsDistinctMatchesWithoutChangingPagination(t *testing.T) {
+	registerTestTypes(t)
+	readTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}}}
+	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{readTx}}, "test_db"))
+
+	exists, err := mgr.Query().Filter(Or(Eq("name", "Alice"), Eq("name", "Bob"))).Limit(2).Offset(50).Exists(context.Background())
+	if err != nil || !exists {
+		t.Fatalf("Exists = %v, %v; want true", exists, err)
+	}
+	if len(readTx.queries) != 1 {
+		t.Fatalf("queries = %d; want 1", len(readTx.queries))
+	}
+	query := readTx.queries[0]
+	assertContains(t, query, "select $e;\ndistinct;\nlimit 1;\nreduce $count = count($e);")
+	if strings.Contains(query, "offset 50;") || strings.Contains(query, "limit 2;") {
+		t.Fatalf("Exists unexpectedly applied pagination: %s", query)
+	}
+}
+
 func TestQuery_MultipleFilters(t *testing.T) {
 	registerTestTypes(t)
 

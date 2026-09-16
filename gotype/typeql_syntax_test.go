@@ -113,6 +113,15 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 		}
 	})
 
+	t.Run("exists with bounded distinct matches", func(t *testing.T) {
+		readTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}}}
+		mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{readTx}}, "test_db"))
+		if _, err := mgr.Query().Filter(Or(Eq("name", "Alice"), Eq("name", "Bob"))).Exists(context.Background()); err != nil {
+			t.Fatalf("exists failed: %v", err)
+		}
+		assertTypeQL(t, "exists query", readTx.queries[0], "")
+	})
+
 	t.Run("filtered delete with distinct pipeline", func(t *testing.T) {
 		writeTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}, nil}}
 		conn := &mockConn{txs: []*mockTx{writeTx}}
