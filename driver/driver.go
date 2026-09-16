@@ -137,11 +137,11 @@ func OpenWithOptions(address, username, password string, opts DriverOptions) (*D
 
 	ensureLoggingInitialized()
 	start := time.Now()
-	logFFIDebug("driver.open.start", "address", address, "tls_enabled", opts.TLSEnabled, "has_tls_ca", opts.TLSRootCA != "")
+	logFFIDebugLazy("driver.open.start", func() []any { return []any{"address", address, "tls_enabled", opts.TLSEnabled, "has_tls_ca", opts.TLSRootCA != ""} })
 
 	creds, driverOpts, cleanup, err := openInputs(username, password, opts)
 	if err != nil {
-		logFFIDuration("driver.open", start, "address", address, "result", "error", "error", err.Error())
+		logFFIDurationLazy("driver.open", start, func() []any { return []any{"address", address, "result", "error", "error", err.Error()} })
 		return nil, err
 	}
 	defer cleanup()
@@ -153,14 +153,14 @@ func OpenWithOptions(address, username, password string, opts DriverOptions) (*D
 	ptr := C.typedb_driver_open(cAddr, creds, driverOpts, &openErr)
 	if ptr == nil {
 		if err := getError(openErr); err != nil {
-			logFFIDuration("driver.open", start, "address", address, "result", "error", "error", err.Error())
+			logFFIDurationLazy("driver.open", start, func() []any { return []any{"address", address, "result", "error", "error", err.Error()} })
 			return nil, err
 		}
-		logFFIDuration("driver.open", start, "address", address, "result", "error", "error_type", "nil_driver_ptr")
+		logFFIDurationLazy("driver.open", start, func() []any { return []any{"address", address, "result", "error", "error_type", "nil_driver_ptr"} })
 		return nil, ErrNilPointer
 	}
 
-	logFFIDuration("driver.open", start, "address", address, "result", "ok")
+	logFFIDurationLazy("driver.open", start, func() []any { return []any{"address", address, "result", "ok"} })
 	return newDriver(ptr), nil
 }
 
@@ -195,7 +195,7 @@ func OpenWithAddressTranslation(addressTranslation map[string]string, username, 
 func openWithAddressSet(publicAddresses, privateAddresses []string, username, password string, opts DriverOptions) (*Driver, error) {
 	ensureLoggingInitialized()
 	start := time.Now()
-	logFFIDebug("driver.open_addresses.start", "address_count", len(publicAddresses), "translated", privateAddresses != nil)
+	logFFIDebugLazy("driver.open_addresses.start", func() []any { return []any{"address_count", len(publicAddresses), "translated", privateAddresses != nil} })
 
 	if len(publicAddresses) == 0 {
 		return nil, &DriverError{Message: "driver: at least one address is required"}
@@ -209,7 +209,7 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 
 	creds, driverOpts, cleanup, err := openInputs(username, password, opts)
 	if err != nil {
-		logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "error", "error", err.Error())
+		logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "error", "error", err.Error()} })
 		return nil, err
 	}
 	defer cleanup()
@@ -245,14 +245,14 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 	)
 	if ptr == nil {
 		if err := getError(openErr); err != nil {
-			logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "error", "error", err.Error())
+			logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "error", "error", err.Error()} })
 			return nil, err
 		}
-		logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "error", "error_type", "nil_driver_ptr")
+		logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "error", "error_type", "nil_driver_ptr"} })
 		return nil, ErrNilPointer
 	}
 
-	logFFIDuration("driver.open_addresses", start, "address_count", len(publicAddresses), "result", "ok")
+	logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "ok"} })
 	return newDriver(ptr), nil
 }
 
@@ -433,7 +433,7 @@ func (d *Driver) Close() {
 		start := time.Now()
 		C.typedb_driver_close(d.ptr)
 		d.ptr = nil
-		logFFIDuration("driver.close", start, "result", "ok")
+		logFFIDurationLazy("driver.close", start, func() []any { return []any{"result", "ok"} })
 	}
 }
 
@@ -533,7 +533,7 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 	defer d.mu.RUnlock()
 
 	if d.ptr == nil {
-		logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", ErrNotConnected.Error())
+		logFFIDurationLazy("tx.open", start, func() []any { return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", ErrNotConnected.Error()} })
 		return nil, ErrNotConnected
 	}
 
@@ -549,16 +549,16 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 	ptr := C.typedb_transaction_open(d.ptr, cName, C.int(txnType), cOpts, &txErr)
 	if ptr == nil {
 		if err := getError(txErr); err != nil {
-			logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", err.Error())
+			logFFIDurationLazy("tx.open", start, func() []any { return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error", err.Error()} })
 			return nil, err
 		}
-		logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error_type", "nil_tx_ptr")
+		logFFIDurationLazy("tx.open", start, func() []any { return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "error", "error_type", "nil_tx_ptr"} })
 		return nil, ErrNilPointer
 	}
 
 	tx := newTransaction(ptr, txID, databaseName, txnType, d, d.closeWorker)
 	d.registerTransaction(tx)
-	logFFIDuration("tx.open", start, "tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "ok")
+	logFFIDurationLazy("tx.open", start, func() []any { return []any{"tx_id", txID, "db", databaseName, "tx_type", int(txnType), "result", "ok"} })
 	return tx, nil
 }
 

@@ -97,10 +97,14 @@ func updateHighWater(current int64, highWater *atomic.Int64) int64 {
 	}
 }
 
-func logInFlight(name string, current int64, highWater int64, threshold int64, attrs ...any) {
+func logInFlightLazy(name string, current int64, highWater int64, threshold int64, attrs func() []any) {
+	debug := debugEnabled()
+	if !debug && current <= threshold {
+		return
+	}
 	base := []any{"active", current, "high_water", highWater, "warn_threshold", threshold}
-	base = append(base, attrs...)
-	if debugEnabled() {
+	base = append(base, attrs()...)
+	if debug {
 		slog.Info("typedb_go."+name, base...)
 	}
 	if current > threshold {
@@ -108,53 +112,55 @@ func logInFlight(name string, current int64, highWater int64, threshold int64, a
 	}
 }
 
-func incrementInFlight(counter *atomic.Int64, highWater *atomic.Int64, threshold int64, name string, attrs ...any) {
+func incrementInFlightLazy(counter *atomic.Int64, highWater *atomic.Int64, threshold int64, name string, attrs func() []any) {
 	current := counter.Add(1)
 	high := updateHighWater(current, highWater)
-	logInFlight(name, current, high, threshold, attrs...)
+	logInFlightLazy(name, current, high, threshold, attrs)
 }
 
-func decrementInFlight(counter *atomic.Int64, highWater *atomic.Int64, threshold int64, name string, attrs ...any) {
+func decrementInFlightLazy(counter *atomic.Int64, highWater *atomic.Int64, threshold int64, name string, attrs func() []any) {
 	current := counter.Add(-1)
 	if current < 0 {
 		counter.Store(0)
 		current = 0
 	}
 	high := highWater.Load()
-	logInFlight(name, current, high, threshold, attrs...)
+	logInFlightLazy(name, current, high, threshold, attrs)
 }
 
-func incActiveTxOpen(attrs ...any) {
-	incrementInFlight(&activeTxOpen, &activeTxOpenHighWater, txOpenWarnThreshold(), "tx.open_inflight", attrs...)
+func incActiveTxOpenLazy(attrs func() []any) {
+	incrementInFlightLazy(&activeTxOpen, &activeTxOpenHighWater, txOpenWarnThreshold(), "tx.open_inflight", attrs)
 }
 
-func decActiveTxOpen(attrs ...any) {
-	decrementInFlight(&activeTxOpen, &activeTxOpenHighWater, txOpenWarnThreshold(), "tx.open_inflight", attrs...)
+func decActiveTxOpenLazy(attrs func() []any) {
+	decrementInFlightLazy(&activeTxOpen, &activeTxOpenHighWater, txOpenWarnThreshold(), "tx.open_inflight", attrs)
 }
 
-func incActiveTxQuery(attrs ...any) {
-	incrementInFlight(&activeTxQuery, &activeTxQueryHighWater, txQueryWarnThreshold(), "tx.query_inflight", attrs...)
+func incActiveTxQueryLazy(attrs func() []any) {
+	incrementInFlightLazy(&activeTxQuery, &activeTxQueryHighWater, txQueryWarnThreshold(), "tx.query_inflight", attrs)
 }
 
-func decActiveTxQuery(attrs ...any) {
-	decrementInFlight(&activeTxQuery, &activeTxQueryHighWater, txQueryWarnThreshold(), "tx.query_inflight", attrs...)
+func decActiveTxQueryLazy(attrs func() []any) {
+	decrementInFlightLazy(&activeTxQuery, &activeTxQueryHighWater, txQueryWarnThreshold(), "tx.query_inflight", attrs)
 }
 
-func logFFIDebug(event string, attrs ...any) {
-	if !debugEnabled() {
-		return
-	}
-	slog.Info("typedb_go."+event, attrs...)
-}
-
-func logFFIDuration(event string, start time.Time, attrs ...any) {
-	elapsed := time.Since(start)
-	attrs = append(attrs, "elapsed_ms", elapsed.Milliseconds())
-	if elapsed >= slowThreshold() {
-		slog.Warn("typedb_go."+event+".slow", attrs...)
-		return
-	}
+func logFFIDebugLazy(event string, attrs func() []any) {
 	if debugEnabled() {
-		slog.Info("typedb_go."+event, attrs...)
+		slog.Info("typedb_go."+event, attrs()...)
 	}
+}
+
+func logFFIDurationLazy(event string, start time.Time, attrs func() []any) {
+	elapsed := time.Since(start)
+	slow := elapsed >= slowThreshold()
+	debug := debugEnabled()
+	if !slow && !debug {
+		return
+	}
+	fields := append(attrs(), "elapsed_ms", elapsed.Milliseconds())
+	if slow {
+		slog.Warn("typedb_go."+event+".slow", fields...)
+		return
+	}
+	slog.Info("typedb_go."+event, fields...)
 }

@@ -182,11 +182,23 @@ func runTransactionCloseJob(job transactionCloseJob) {
 }
 
 func logTransactionClose(job transactionCloseJob, err error) {
-	if err != nil {
-		logFFIDuration("tx.close", job.start, "tx_id", job.id, "db", job.dbName, "tx_type", int(job.txType), "result", "error", "error", err.Error())
-		return
-	}
-	logFFIDuration("tx.close", job.start, "tx_id", job.id, "db", job.dbName, "tx_type", int(job.txType), "result", "ok")
+	logFFIDurationLazy("tx.close", job.start, func() []any {
+		fields := []any{"tx_id", job.id, "db", job.dbName, "tx_type", int(job.txType)}
+		if err != nil {
+			return append(fields, "result", "error", "error", err.Error())
+		}
+		return append(fields, "result", "ok")
+	})
+}
+
+func (t *Transaction) logTransactionDuration(event string, start time.Time, err error) {
+	logFFIDurationLazy(event, start, func() []any {
+		fields := []any{"tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType)}
+		if err != nil {
+			return append(fields, "result", "error", "error", err.Error())
+		}
+		return append(fields, "result", "ok")
+	})
 }
 
 // WaitForPendingCloses waits for already accepted asynchronous transaction close
@@ -198,7 +210,7 @@ func WaitForPendingCloses(ctx context.Context) error {
 
 func newTransaction(ptr unsafe.Pointer, id uint64, dbName string, txType TransactionType, owner *Driver, closer *transactionCloseWorker) *Transaction {
 	t := &Transaction{ptr: ptr, id: id, dbName: dbName, txType: txType, opened: true, owner: owner, closer: closer}
-	incActiveTxOpen("tx_id", id, "db", dbName, "tx_type", int(txType), "reason", "open")
+	incActiveTxOpenLazy(func() []any { return []any{"tx_id", id, "db", dbName, "tx_type", int(txType), "reason", "open"} })
 	runtime.SetFinalizer(t, (*Transaction).finalize)
 	return t
 }
@@ -211,7 +223,7 @@ func (t *Transaction) markClosedLocked(reason string) {
 	if t.owner != nil {
 		t.owner.unregisterTransaction(t.id)
 	}
-	decActiveTxOpen("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "reason", reason)
+	decActiveTxOpenLazy(func() []any { return []any{"tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "reason", reason} })
 }
 
 // finalize is a garbage-collection backstop for transactions that were never
@@ -287,29 +299,43 @@ func (t *Transaction) finishContextCall() {
 	if job.ptr == nil {
 		return
 	}
-	logFFIDebug("tx.abandoned.close", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType))
+	logFFIDebugLazy("tx.abandoned.close", func() []any { return []any{"tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType)} })
 	if t.closer.enqueue(job) {
 		return
 	}
 	C.typedb_transaction_drop(job.ptr)
 }
 
-func (t *Transaction) logQueryDuration(start time.Time, query string, queryOp, queryFP string, rows int, byteCount int, err error, extra ...any) {
-	fields := []any{
-		"tx_id", t.id,
-		"db", t.dbName,
-		"tx_type", int(t.txType),
-		"query_len", len(query),
-		"query_op", queryOp,
-		"query_fingerprint", queryFP,
-	}
-	fields = append(fields, extra...)
-	if err != nil {
-		fields = append(fields, "result", "error", "error", err.Error())
-	} else {
-		fields = append(fields, "result", "ok", "rows", rows, "bytes", byteCount)
-	}
-	logFFIDuration("tx.query", start, fields...)
+type queryMetadata struct {
+	query       string
+	once        sync.Once
+	operation   string
+	fingerprint string
+}
+
+func (m *queryMetadata) values() (string, string) {
+	m.once.Do(func() {
+		m.operation = queryOperation(m.query)
+		m.fingerprint = queryFingerprint(m.query)
+	})
+	return m.operation, m.fingerprint
+}
+
+func (t *Transaction) queryLogFields(meta *queryMetadata, extra ...any) []any {
+	op, fp := meta.values()
+	fields := []any{"tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(meta.query), "query_op", op, "query_fingerprint", fp}
+	return append(fields, extra...)
+}
+
+func (t *Transaction) logQueryDuration(start time.Time, meta *queryMetadata, rows int, byteCount int, err error, extra func() []any) {
+	logFFIDurationLazy("tx.query", start, func() []any {
+		fields := t.queryLogFields(meta)
+		fields = append(fields, extra()...)
+		if err != nil {
+			return append(fields, "result", "error", "error", err.Error())
+		}
+		return append(fields, "result", "ok", "rows", rows, "bytes", byteCount)
+	})
 }
 
 // IsOpen returns true if the transaction is active and has not been committed,
@@ -349,8 +375,12 @@ func (t *Transaction) QueryWithOptionsAndRows(query string, opts *QueryOptions, 
 }
 
 func (t *Transaction) query(query string, opts *QueryOptions, rows given.Rows, logExtra ...any) ([]map[string]any, error) {
+	return t.queryWithMeta(&queryMetadata{query: query}, opts, rows, logExtra...)
+}
+
+func (t *Transaction) queryWithMeta(meta *queryMetadata, opts *QueryOptions, rows given.Rows, logExtra ...any) ([]map[string]any, error) {
 	var results []map[string]any
-	err := t.queryDecoded(query, opts, rows, func(buf *C.uchar, outLen C.size_t) (int, error) {
+	err := t.queryDecoded(meta, opts, rows, func(buf *C.uchar, outLen C.size_t) (int, error) {
 		var decodeErr error
 		results, decodeErr = decodeMsgpack(buf, outLen)
 		return len(results), decodeErr
@@ -363,19 +393,18 @@ type queryDecoder func(buf *C.uchar, outLen C.size_t) (int, error)
 const queryStreamChunkRows = 256
 
 func (t *Transaction) queryDecoded(
-	query string,
+	meta *queryMetadata,
 	opts *QueryOptions,
 	rows given.Rows,
 	decode queryDecoder,
 	logExtra ...any,
 ) error {
+	query := meta.query
 	start := time.Now()
-	queryOp := queryOperation(query)
-	queryFP := queryFingerprint(query)
-	logFields := append([]any{"with_options", opts != nil, "with_rows", rows != nil}, logExtra...)
+	logFields := func() []any { return append([]any{"with_options", opts != nil, "with_rows", rows != nil}, logExtra...) }
 
 	if t.isAbandoned() {
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrTransactionAbandoned, logFields...)
+		t.logQueryDuration(start, meta, 0, 0, ErrTransactionAbandoned, logFields)
 		return ErrTransactionAbandoned
 	}
 
@@ -385,7 +414,7 @@ func (t *Transaction) queryDecoded(
 		rowsJSON, err = rows.MarshalGivenRows()
 		if err != nil {
 			err = withQuery(err, query)
-			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, logFields...)
+			t.logQueryDuration(start, meta, 0, 0, err, logFields)
 			return err
 		}
 	}
@@ -394,7 +423,7 @@ func (t *Transaction) queryDecoded(
 	defer t.mu.Unlock()
 
 	if t.ptr == nil {
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrNotConnected, logFields...)
+		t.logQueryDuration(start, meta, 0, 0, ErrNotConnected, logFields)
 		return ErrNotConnected
 	}
 
@@ -408,8 +437,8 @@ func (t *Transaction) queryDecoded(
 		registerConcepts = opts.conceptHandles
 	}
 
-	incActiveTxQuery("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_op", queryOp, "query_fingerprint", queryFP, "reason", "start")
-	defer decActiveTxQuery("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_op", queryOp, "query_fingerprint", queryFP, "reason", "finish")
+	incActiveTxQueryLazy(func() []any { return t.queryLogFields(meta, "reason", "start") })
+	defer decActiveTxQueryLazy(func() []any { return t.queryLogFields(meta, "reason", "finish") })
 
 	var outLen C.size_t
 	var queryErr *C.char
@@ -423,20 +452,20 @@ func (t *Transaction) queryDecoded(
 	}
 	if buf == nil {
 		if err := withQuery(getError(queryErr), query); err != nil {
-			t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, logFields...)
+			t.logQueryDuration(start, meta, 0, 0, err, logFields)
 			return err
 		}
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, nil, logFields...)
+		t.logQueryDuration(start, meta, 0, 0, nil, logFields)
 		return nil
 	}
 	defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
 	rowCount, err := decode(buf, outLen)
 	err = withQuery(err, query)
 	if err != nil {
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, int(outLen), err, logFields...)
+		t.logQueryDuration(start, meta, 0, int(outLen), err, logFields)
 		return err
 	}
-	t.logQueryDuration(start, query, queryOp, queryFP, rowCount, int(outLen), nil, logFields...)
+	t.logQueryDuration(start, meta, rowCount, int(outLen), nil, logFields)
 	return nil
 }
 
@@ -445,28 +474,35 @@ func (t *Transaction) queryEach(
 	fn func(rowCount int, row map[string]any) error,
 	logExtra ...any,
 ) error {
+	return t.queryEachWithMeta(&queryMetadata{query: query}, fn, logExtra...)
+}
+
+func (t *Transaction) queryEachWithMeta(
+	meta *queryMetadata,
+	fn func(rowCount int, row map[string]any) error,
+	logExtra ...any,
+) error {
+	query := meta.query
 	start := time.Now()
-	queryOp := queryOperation(query)
-	queryFP := queryFingerprint(query)
-	logFields := append([]any{"row_consumer", true}, logExtra...)
+	logFields := func() []any { return append([]any{"row_consumer", true}, logExtra...) }
 
 	if t.isAbandoned() {
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrTransactionAbandoned, logFields...)
+		t.logQueryDuration(start, meta, 0, 0, ErrTransactionAbandoned, logFields)
 		return ErrTransactionAbandoned
 	}
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.ptr == nil {
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, ErrNotConnected, logFields...)
+		t.logQueryDuration(start, meta, 0, 0, ErrNotConnected, logFields)
 		return ErrNotConnected
 	}
 
 	cQuery := C.CString(query)
 	defer C.free(unsafe.Pointer(cQuery))
 
-	incActiveTxQuery("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_op", queryOp, "query_fingerprint", queryFP, "reason", "start")
-	defer decActiveTxQuery("tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_op", queryOp, "query_fingerprint", queryFP, "reason", "finish")
+	incActiveTxQueryLazy(func() []any { return t.queryLogFields(meta, "reason", "start") })
+	defer decActiveTxQueryLazy(func() []any { return t.queryLogFields(meta, "reason", "finish") })
 
 	var queryErr *C.char
 	stream := C.typedb_transaction_query_stream_open(t.ptr, cQuery, nil, false, &queryErr)
@@ -475,7 +511,7 @@ func (t *Transaction) queryEach(
 		if err == nil {
 			err = withQuery(ErrNilPointer, query)
 		}
-		t.logQueryDuration(start, query, queryOp, queryFP, 0, 0, err, logFields...)
+		t.logQueryDuration(start, meta, 0, 0, err, logFields)
 		return err
 	}
 	defer C.typedb_query_stream_drop(stream)
@@ -496,7 +532,7 @@ func (t *Transaction) queryEach(
 			&nextErr,
 		)
 		if err := withQuery(getError(nextErr), query); err != nil {
-			t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, err, logFields...)
+			t.logQueryDuration(start, meta, rowCount, byteCount, err, logFields)
 			return err
 		}
 
@@ -505,24 +541,24 @@ func (t *Transaction) queryEach(
 			C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
 			if err != nil {
 				err = withQuery(err, query)
-				t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, err, logFields...)
+				t.logQueryDuration(start, meta, rowCount, byteCount, err, logFields)
 				return err
 			}
 			if decodedRows != int(chunkRows) {
 				err := withQuery(fmt.Errorf("driver: decoded %d rows from a %d-row query chunk", decodedRows, uint64(chunkRows)), query)
-				t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, err, logFields...)
+				t.logQueryDuration(start, meta, rowCount, byteCount, err, logFields)
 				return err
 			}
 			rowCount += decodedRows
 			byteCount += int(outLen)
 		} else if outLen != 0 || chunkRows != 0 {
 			err := withQuery(ErrNilPointer, query)
-			t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, err, logFields...)
+			t.logQueryDuration(start, meta, rowCount, byteCount, err, logFields)
 			return err
 		}
 
 		if bool(done) {
-			t.logQueryDuration(start, query, queryOp, queryFP, rowCount, byteCount, nil, logFields...)
+			t.logQueryDuration(start, meta, rowCount, byteCount, nil, logFields)
 			return nil
 		}
 	}
@@ -539,10 +575,11 @@ func (t *Transaction) QueryEachWithContext(
 	if fn == nil {
 		return fmt.Errorf("driver: row function must not be nil")
 	}
-	queryOp := queryOperation(query)
-	queryFP := queryFingerprint(query)
+	meta := &queryMetadata{query: query}
 	if deadline, ok := ctx.Deadline(); ok {
-		logFFIDebug("tx.query_each_with_context.start", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "deadline_remaining_ms", time.Until(deadline).Milliseconds())
+		logFFIDebugLazy("tx.query_each_with_context.start", func() []any {
+			return t.queryLogFields(meta, "deadline_remaining_ms", time.Until(deadline).Milliseconds())
+		})
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -557,7 +594,7 @@ func (t *Transaction) QueryEachWithContext(
 		return fn(rowCount, row)
 	}
 	run := func(logExtra ...any) error {
-		return t.queryEach(query, consume, logExtra...)
+		return t.queryEachWithMeta(meta, consume, logExtra...)
 	}
 	if ctx.Done() == nil {
 		return run()
@@ -580,7 +617,9 @@ func (t *Transaction) QueryEachWithContext(
 		// context before they call user code.
 		callbackMu.Lock()
 		callbackMu.Unlock()
-		logFFIDebug("tx.query_each_with_context.cancelled", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "error", ctx.Err().Error())
+		logFFIDebugLazy("tx.query_each_with_context.cancelled", func() []any {
+			return t.queryLogFields(meta, "error", ctx.Err().Error())
+		})
 		return ctx.Err()
 	case err := <-ch:
 		return err
@@ -621,19 +660,22 @@ func (t *Transaction) QueryWithContextAndRows(ctx context.Context, query string,
 // the driver returns; do not call opts.Close until the transaction's pending
 // closes have drained (see WaitForPendingCloses).
 func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query string, opts *QueryOptions, rows given.Rows) ([]map[string]any, error) {
-	queryOp := queryOperation(query)
-	queryFP := queryFingerprint(query)
+	meta := &queryMetadata{query: query}
 	if deadline, ok := ctx.Deadline(); ok {
-		logFFIDebug("tx.query_with_context.start", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "deadline_remaining_ms", time.Until(deadline).Milliseconds())
+		logFFIDebugLazy("tx.query_with_context.start", func() []any {
+			return t.queryLogFields(meta, "deadline_remaining_ms", time.Until(deadline).Milliseconds())
+		})
 	}
 
 	// Fast path: bail immediately if already cancelled
 	if err := ctx.Err(); err != nil {
-		logFFIDebug("tx.query_with_context.cancelled", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "error", err.Error())
+		logFFIDebugLazy("tx.query_with_context.cancelled", func() []any {
+			return t.queryLogFields(meta, "error", err.Error())
+		})
 		return nil, err
 	}
 	if ctx.Done() == nil {
-		return t.query(query, opts, rows)
+		return t.queryWithMeta(meta, opts, rows)
 	}
 	if !t.beginContextCall() {
 		return nil, ErrTransactionAbandoned
@@ -649,7 +691,7 @@ func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query stri
 	// FFI call. It does not make the underlying driver operation
 	// interruptible.
 	go func() {
-		results, err := t.query(query, opts, rows, "with_context", true)
+		results, err := t.queryWithMeta(meta, opts, rows, "with_context", true)
 		t.finishContextCall()
 		ch <- queryResult{results: results, err: err}
 	}()
@@ -657,7 +699,9 @@ func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query stri
 	select {
 	case <-ctx.Done():
 		t.abandon()
-		logFFIDebug("tx.query_with_context.cancelled", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "query_len", len(query), "query_op", queryOp, "query_fingerprint", queryFP, "error", ctx.Err().Error())
+		logFFIDebugLazy("tx.query_with_context.cancelled", func() []any {
+			return t.queryLogFields(meta, "error", ctx.Err().Error())
+		})
 		return nil, ctx.Err()
 	case res := <-ch:
 		return res.results, res.err
@@ -767,14 +811,14 @@ func decodeMsgpackEachBytes(
 func (t *Transaction) Commit() error {
 	start := time.Now()
 	if t.isAbandoned() {
-		logFFIDuration("tx.commit", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", ErrTransactionAbandoned.Error())
+		t.logTransactionDuration("tx.commit", start, ErrTransactionAbandoned)
 		return ErrTransactionAbandoned
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.ptr == nil {
-		logFFIDuration("tx.commit", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", ErrNotConnected.Error())
+		t.logTransactionDuration("tx.commit", start, ErrNotConnected)
 		return ErrNotConnected
 	}
 
@@ -783,10 +827,10 @@ func (t *Transaction) Commit() error {
 	t.ptr = nil // consumed by commit
 	t.markClosedLocked("commit")
 	if err := getError(commitErr); err != nil {
-		logFFIDuration("tx.commit", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", err.Error())
+		t.logTransactionDuration("tx.commit", start, err)
 		return err
 	}
-	logFFIDuration("tx.commit", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "ok")
+	t.logTransactionDuration("tx.commit", start, nil)
 	return nil
 }
 
@@ -796,27 +840,27 @@ func (t *Transaction) Commit() error {
 func (t *Transaction) Rollback() error {
 	start := time.Now()
 	if t.isAbandoned() {
-		logFFIDuration("tx.rollback", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", ErrTransactionAbandoned.Error())
+		t.logTransactionDuration("tx.rollback", start, ErrTransactionAbandoned)
 		return ErrTransactionAbandoned
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.ptr == nil {
-		logFFIDuration("tx.rollback", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", ErrNotConnected.Error())
+		t.logTransactionDuration("tx.rollback", start, ErrNotConnected)
 		return ErrNotConnected
 	}
 
 	var rollbackErr *C.char
 	C.typedb_transaction_rollback(t.ptr, &rollbackErr)
 	if err := getError(rollbackErr); err != nil {
-		logFFIDuration("tx.rollback", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "error", "error", err.Error())
+		t.logTransactionDuration("tx.rollback", start, err)
 		return err
 	}
 	C.typedb_transaction_drop(t.ptr)
 	t.ptr = nil
 	t.markClosedLocked("rollback")
-	logFFIDuration("tx.rollback", start, "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType), "result", "ok")
+	t.logTransactionDuration("tx.rollback", start, nil)
 	return nil
 }
 
