@@ -4,10 +4,99 @@ package gotype_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/CaliLuke/go-typeql/driver"
+	"github.com/CaliLuke/go-typeql/given"
 	"github.com/CaliLuke/go-typeql/gotype"
 )
+
+func TestIntegration_UpdateGivenIIDMatch(t *testing.T) {
+	db := setupTestDBWith(t, func() { gotype.MustRegister[Company]() })
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Company](db)
+	company := &Company{Name: "GivenCompany", Industry: "Before"}
+	if err := mgr.Insert(ctx, company); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.GetConn().Transaction(db.Name(), int(driver.Write))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Close()
+	rows := given.NewRows("id", "v")
+	if err := rows.Add(given.Value{Type: "string", Value: company.GetIID()}, given.Value{Type: "string", Value: "After"}); err != nil {
+		t.Fatal(err)
+	}
+	query := `given $id: string, $v: string; match $e isa company; iid($e) == $id; try { $e has industry $old; }; delete try { $old of $e; }; insert $e has industry == $v;`
+	if _, err := tx.(interface {
+		QueryWithGivenRows(context.Context, string, *given.TypedRows) ([]map[string]any, error)
+	}).QueryWithGivenRows(ctx, query, rows); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": "GivenCompany"})
+	if fetched.Industry != "After" {
+		t.Fatalf("industry = %q, want After", fetched.Industry)
+	}
+}
+
+func TestIntegration_UpdateMany_BatchedHeterogeneous(t *testing.T) {
+	db := setupTestDBWith(t, func() { gotype.MustRegister[Company]() })
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Company](db)
+	rows := make([]*Company, 40)
+	for i := range rows {
+		rows[i] = &Company{Name: fmt.Sprintf("UpdateCo-%d", i), Industry: "Before"}
+	}
+	if err := mgr.InsertMany(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	for i, row := range rows {
+		row.Industry = fmt.Sprintf("After-%d", i)
+	}
+	// IIDs are hexadecimal, and callers may retain a different case than the
+	// canonical spelling returned by TypeDB.
+	rows[1].SetIID("0x" + strings.ToUpper(strings.TrimPrefix(rows[1].GetIID(), "0x")))
+	if err := mgr.UpdateMany(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	for i, row := range rows {
+		fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": row.Name})
+		if fetched.Industry != fmt.Sprintf("After-%d", i) {
+			t.Fatalf("row %d industry = %s", i, fetched.Industry)
+		}
+	}
+}
+
+func TestIntegration_UpdateWith_BatchedHeterogeneous(t *testing.T) {
+	db := setupTestDBWith(t, func() { gotype.MustRegister[Company]() })
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Company](db)
+	for i := 0; i < 3; i++ {
+		if err := mgr.Insert(ctx, &Company{Name: fmt.Sprintf("CallbackCo-%d", i), Industry: "Before"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var callbackOrder []string
+	updated, err := mgr.Query().UpdateWith(ctx, func(c *Company) {
+		callbackOrder = append(callbackOrder, c.Name)
+		c.Industry = "After-" + c.Name
+	})
+	if err != nil || len(updated) != 3 || len(callbackOrder) != 3 {
+		t.Fatalf("UpdateWith: count=%d callbacks=%d err=%v", len(updated), len(callbackOrder), err)
+	}
+	for _, row := range updated {
+		fetched := assertGetOne(t, ctx, mgr, map[string]any{"name": row.Name})
+		if fetched.Industry != "After-"+row.Name {
+			t.Fatalf("row %s industry=%s", row.Name, fetched.Industry)
+		}
+	}
+}
 
 // ---------------------------------------------------------------------------
 // UpdateMany integration tests

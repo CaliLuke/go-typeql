@@ -100,6 +100,12 @@ a second key-match query. Keyless relations retain their existing behavior and
 do not receive an IID from `Put`. `PutMany` upserts multiple instances in one
 transaction, using one query per instance; IIDs are assigned only after commit.
 
+`UpdateMany` and query `UpdateWith` batch compatible scalar entity updates
+using typed rows in groups of eight, matching each row by its IID. Updates
+with absent optional values, slices, decimals, relations, or repeated IIDs
+retain the per-instance path so deletion and ordering semantics stay the same.
+`UpdateWith` runs all callbacks in fetched order before persistence.
+
 ## Query Builder
 
 `persons.Query()` returns a chainable query builder. See [Queries](queries.md) for the full guide.

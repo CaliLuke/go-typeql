@@ -307,7 +307,8 @@ func (q *Query[T]) buildDeleteQuery() (string, error) {
 	return b.String(), nil
 }
 
-// UpdateWith fetches all matching instances, applies fn to each, then updates them all.
+// UpdateWith fetches all matching instances, applies fn to each in fetch order,
+// then persists the updates. Compatible scalar updates are batched.
 // The fetch and update are performed within a single write transaction for
 // atomicity. When the Manager is bound to a transaction, that transaction is
 // reused and committed by its owner.
@@ -338,12 +339,7 @@ func (q *Query[T]) UpdateWith(ctx context.Context, fn func(*T)) ([]*T, error) {
 		}
 
 		// Phase 3: persist all updates in the same transaction
-		for i, inst := range results {
-			if err := q.mgr.updateInstanceInTx(ctx, tx, inst); err != nil {
-				return fmt.Errorf("update_with %s[%d]: %w", q.mgr.info.TypeName, i, err)
-			}
-		}
-		return nil
+		return q.mgr.persistUpdatesInTx(ctx, tx, results, "update_with")
 	})
 	if err != nil {
 		return nil, err

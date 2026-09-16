@@ -141,6 +141,20 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 		assertTypeQL(t, "batch insert", batchTx.queriesWithRows[0], "")
 	})
 
+	t.Run("batch heterogeneous update with typed rows", func(t *testing.T) {
+		defer registerTestTypes(t)
+		batchTx := &batchTestTx{}
+		mgr := batchTestManager(t, batchTx)
+		first := &testCompany{Name: "A", Industry: "New A"}
+		first.SetIID("0x01")
+		second := &testCompany{Name: "B", Industry: "New B"}
+		second.SetIID("0x02")
+		if err := mgr.UpdateMany(context.Background(), []*testCompany{first, second}); err != nil {
+			t.Fatal(err)
+		}
+		assertTypeQL(t, "batch heterogeneous update", batchTx.queriesWithRows[0], "")
+	})
+
 	t.Run("update scalar attributes", func(t *testing.T) {
 		writeTx := &mockTx{responses: [][]map[string]any{nil}}
 		conn := &mockConn{txs: []*mockTx{writeTx}}

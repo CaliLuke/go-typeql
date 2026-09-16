@@ -472,7 +472,9 @@ func (m *Manager[T]) deleteManyMatch(iids []string) string {
 	return fmt.Sprintf("match\n$e isa %s;\n%s\n", m.info.TypeName, IIDIn(iids...).ToPatterns("e")[0])
 }
 
-// UpdateMany updates multiple instances in a single transaction.
+// UpdateMany updates multiple instances in a single transaction. Compatible
+// scalar entity updates with distinct IIDs use bounded typed-row batches;
+// other shapes retain the per-instance update path.
 func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error {
 	if len(instances) == 0 {
 		return nil
@@ -489,12 +491,7 @@ func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error {
 	}
 
 	return m.withWriteTx(ctx, "update_many", m.writeTx, func(tx Tx) error {
-		for i, inst := range instances {
-			if err := m.updateInstanceInTx(ctx, tx, inst); err != nil {
-				return fmt.Errorf("update_many %s[%d]: %w", m.info.TypeName, i, err)
-			}
-		}
-		return nil
+		return m.persistUpdatesInTx(ctx, tx, instances, "update_many")
 	})
 }
 

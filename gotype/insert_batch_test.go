@@ -13,6 +13,13 @@ type batchTestTx struct {
 	mockTx
 	queriesWithRows []string
 	rows            []*given.TypedRows
+	failAt          int
+	events          []string
+}
+
+func (t *batchTestTx) QueryWithContext(ctx context.Context, query string) ([]map[string]any, error) {
+	t.events = append(t.events, "legacy")
+	return t.mockTx.QueryWithContext(ctx, query)
 }
 
 func (t *batchTestTx) QueryWithGivenRows(ctx context.Context, query string, rows *given.TypedRows) ([]map[string]any, error) {
@@ -21,6 +28,10 @@ func (t *batchTestTx) QueryWithGivenRows(ctx context.Context, query string, rows
 	}
 	t.queriesWithRows = append(t.queriesWithRows, query)
 	t.rows = append(t.rows, rows)
+	t.events = append(t.events, "batch")
+	if t.failAt == len(t.rows) {
+		return nil, fmt.Errorf("batch failed")
+	}
 	results := make([]map[string]any, len(rows.Rows))
 	for i, row := range rows.Rows {
 		key := row[0].Value.(string)
