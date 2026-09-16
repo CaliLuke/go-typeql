@@ -317,6 +317,31 @@ func TestIntegration_Query_Exists_OptionalAndBoundTransaction(t *testing.T) {
 	}
 }
 
+func TestIntegration_ReadScopeAcrossManagers(t *testing.T) {
+	db, persons := setupQueryDB(t)
+	ctx := context.Background()
+	alice := assertGetOne(t, ctx, persons, map[string]any{"name": "Alice"})
+	companies := gotype.MustNewManager[Company](db)
+	acme := &Company{Name: "Acme"}
+	assertInsert(t, ctx, companies, acme)
+
+	scope, err := db.BeginContext(ctx, gotype.ReadTransaction)
+	if err != nil {
+		t.Fatalf("begin read scope: %v", err)
+	}
+	defer scope.Close()
+	boundPersons := gotype.MustNewManagerWithTx[Person](scope)
+	boundCompanies := gotype.MustNewManagerWithTx[Company](scope)
+	gotPerson, err := boundPersons.GetByIID(ctx, alice.GetIID())
+	if err != nil || gotPerson == nil || gotPerson.Name != "Alice" {
+		t.Fatalf("bound person = %v, %v", gotPerson, err)
+	}
+	gotCompany, err := boundCompanies.GetByIID(ctx, acme.GetIID())
+	if err != nil || gotCompany == nil || gotCompany.Name != "Acme" {
+		t.Fatalf("bound company = %v, %v", gotCompany, err)
+	}
+}
+
 func TestIntegration_Query_OrderAsc(t *testing.T) {
 	_, mgr := setupQueryDB(t)
 	ctx := context.Background()

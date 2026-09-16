@@ -136,6 +136,60 @@ if err != nil {
 return tx.Commit()
 ```
 
+For several related reads, share one short-lived read snapshot across managers:
+
+```go
+scope, err := db.BeginContext(ctx, gotype.ReadTransaction)
+if err != nil {
+    return err
+}
+defer scope.Close() // The caller that opens the scope owns cleanup.
+
+persons := gotype.MustNewManagerWithTx[Person](scope)
+companies := gotype.MustNewManagerWithTx[Company](scope)
+alice, err := persons.GetByIID(ctx, personIID)
+if err != nil {
+    return err
+}
+acme, err := companies.GetByIID(ctx, companyIID)
+if err != nil {
+    return err
+}
+// Use alice and acme here, while the snapshot is still open.
+```
+
+`BeginContext` passes the caller's context to connections that support
+context-aware transaction opening; a plain `Conn` implementation falls back to
+its context-free `Transaction` method. Pass the context to reads; the bundled
+driver returns promptly on cancellation. Custom `Tx` implementations must
+honor `QueryWithContext` and, when they provide streamed reads,
+`QueryEachWithContext`. Always close the scope, including on errors or
+cancellation. Bound managers do not close it for
+you. Keep the unit of work bounded: a read transaction holds a snapshot until
+closed, and operations on the same native transaction must be serialized, not
+fanned out concurrently. For independent parallel reads, use separate scopes.
+The compiled [read-scope example](../../gotype/example_read_scope_test.go) and
+its [live integration test](../../gotype/integ_query_test.go) exercise this API.
+
+The [read-scope measurements](../../benchmarks/READ_SCOPE.md) compare fresh
+and shared transactions on the current server and fixture. The complete-scope
+benchmark includes transaction open and caller-visible close in both cases;
+the per-read variant deliberately excludes the shared scope's boundaries.
+
+These are Go allocation figures, not Rust/server memory. The driver's close
+may finish native cleanup asynchronously, so this does not measure close-drain
+time. The small sample and background host load make ratios directional; run
+`BenchmarkLiveReadScope` and `BenchmarkLiveReadScopePerRead` with the integration
+tags in five independent processes on your own workload before choosing scope
+size. Per-read measurements that exclude the initial open and final close
+overstate the benefit of reuse for short scopes.
+
+When *all* matching models need the same values, use the existing uniform-update
+API, `Query.Update`, instead of fetching each model and calling `Manager.Update`
+separately. For example, filter by status and pass
+`map[string]any{"status": "active"}` to `Query.Update`.
+Use `UpdateWith` only when the new value depends on each fetched model.
+
 ## Database
 
 `Database` wraps a `Conn` with a database name and provides convenience methods for executing queries:

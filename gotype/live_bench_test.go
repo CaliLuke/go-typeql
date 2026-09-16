@@ -301,6 +301,96 @@ func BenchmarkLiveRead_GetByIID(b *testing.B) {
 	}
 }
 
+// BenchmarkLiveReadScope includes the transaction open and caller-visible
+// close in both cases. The shared case serializes reads on one native
+// transaction; it does not measure asynchronous native close-drain time.
+func BenchmarkLiveReadScope(b *testing.B) {
+	f := liveBenchSetup(b)
+	ctx := context.Background()
+	for _, reads := range []int{2, 5, 10} {
+		b.Run(fmt.Sprintf("reads=%d/fresh", reads), func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				for j := range reads {
+					if j%2 == 0 {
+						if p, err := f.personMgr.GetByIID(ctx, f.personIID); err != nil || p == nil {
+							b.Fatalf("fresh person = %v, %v", p, err)
+						}
+					} else if c, err := f.companyMgr.GetByIID(ctx, f.company.GetIID()); err != nil || c == nil {
+						b.Fatalf("fresh company = %v, %v", c, err)
+					}
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("reads=%d/shared", reads), func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				scope, err := f.db.BeginContext(ctx, ReadTransaction)
+				if err != nil {
+					b.Fatal(err)
+				}
+				persons := MustNewManagerWithTx[liveBenchPerson](scope)
+				companies := MustNewManagerWithTx[liveBenchCompany](scope)
+				for j := range reads {
+					if j%2 == 0 {
+						if p, err := persons.GetByIID(ctx, f.personIID); err != nil || p == nil {
+							scope.Close()
+							b.Fatalf("shared person = %v, %v", p, err)
+						}
+					} else if c, err := companies.GetByIID(ctx, f.company.GetIID()); err != nil || c == nil {
+						scope.Close()
+						b.Fatalf("shared company = %v, %v", c, err)
+					}
+				}
+				scope.Close()
+			}
+		})
+	}
+}
+
+// BenchmarkLiveReadScopePerRead excludes the shared transaction's initial
+// open and final close to show why per-read-only comparisons are optimistic
+// for short scopes. Fresh reads still open and close their own transactions.
+func BenchmarkLiveReadScopePerRead(b *testing.B) {
+	f := liveBenchSetup(b)
+	ctx := context.Background()
+	b.Run("fresh", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := range b.N {
+			if i%2 == 0 {
+				if p, err := f.personMgr.GetByIID(ctx, f.personIID); err != nil || p == nil {
+					b.Fatalf("fresh person = %v, %v", p, err)
+				}
+			} else if c, err := f.companyMgr.GetByIID(ctx, f.company.GetIID()); err != nil || c == nil {
+				b.Fatalf("fresh company = %v, %v", c, err)
+			}
+		}
+	})
+	b.Run("shared", func(b *testing.B) {
+		scope, err := f.db.BeginContext(ctx, ReadTransaction)
+		if err != nil {
+			b.Fatal(err)
+		}
+		persons := MustNewManagerWithTx[liveBenchPerson](scope)
+		companies := MustNewManagerWithTx[liveBenchCompany](scope)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := range b.N {
+			if i%2 == 0 {
+				if p, err := persons.GetByIID(ctx, f.personIID); err != nil || p == nil {
+					scope.Close()
+					b.Fatalf("shared person = %v, %v", p, err)
+				}
+			} else if c, err := companies.GetByIID(ctx, f.company.GetIID()); err != nil || c == nil {
+				scope.Close()
+				b.Fatalf("shared company = %v, %v", c, err)
+			}
+		}
+		b.StopTimer()
+		scope.Close()
+	})
+}
+
 func BenchmarkLiveRead_Get(b *testing.B) {
 	f := liveBenchSetup(b)
 	ctx := context.Background()
