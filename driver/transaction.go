@@ -8,9 +8,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -751,15 +753,89 @@ func decodeMsgpackBytes(data []byte) ([]map[string]any, error) {
 	reader.Reset(data)
 
 	dec := msgpackDecoderPool.Get().(*msgpack.Decoder)
-	defer msgpackDecoderPool.Put(dec)
+	defer func() {
+		// The map callback closes over this result buffer and its key cache.
+		// Do not retain either through the pooled decoder.
+		dec.Reset(nil)
+		msgpackDecoderPool.Put(dec)
+	}()
 	dec.Reset(&reader)
 	dec.UseLooseInterfaceDecoding(true)
+	decodeKey := newMsgpackKeyDecoder(dec, &reader, data)
+	decodeMap := func(d *msgpack.Decoder) (any, error) {
+		n, err := d.DecodeMapLen()
+		if err != nil || n < 0 {
+			return map[string]any(nil), err
+		}
+		// A map32 header alone must not trigger a huge allocation. Each pair
+		// needs at least two encoded bytes (key and value).
+		row := make(map[string]any, min(n, 1_000_000, reader.Len()/2))
+		for range n {
+			key, err := decodeKey()
+			if err != nil {
+				return nil, err
+			}
+			value, err := d.DecodeInterfaceLoose()
+			if err != nil {
+				return nil, err
+			}
+			row[key] = value
+		}
+		return row, nil
+	}
+	dec.SetMapDecoder(decodeMap)
 
-	var results []map[string]any
-	if err := dec.Decode(&results); err != nil {
+	n, err := dec.DecodeArrayLen()
+	if err != nil {
 		return nil, &DriverError{Message: "failed to decode msgpack query results: " + err.Error()}
 	}
+	if n < 0 {
+		return nil, nil
+	}
+	results := make([]map[string]any, 0, min(n, 1_000_000, reader.Len()))
+	for range n {
+		row, err := decodeMap(dec)
+		if err != nil {
+			return nil, &DriverError{Message: "failed to decode msgpack query results: " + err.Error()}
+		}
+		results = append(results, row.(map[string]any))
+	}
 	return results, nil
+}
+
+// newMsgpackKeyDecoder interns a bounded number of field names per result
+// buffer. Lookup strings may briefly alias native memory, but every returned
+// string owns its bytes and remains valid after the caller frees the buffer.
+func newMsgpackKeyDecoder(dec *msgpack.Decoder, reader *bytes.Reader, data []byte) func() (string, error) {
+	keys := make(map[string]string)
+	keyBytes := 0
+	return func() (string, error) {
+		n, err := dec.DecodeBytesLen()
+		if err != nil {
+			return "", err
+		}
+		if n <= 0 {
+			return "", nil
+		}
+		if n > reader.Len() {
+			return "", io.ErrUnexpectedEOF
+		}
+		start := len(data) - reader.Len()
+		key := unsafe.String(&data[start], n)
+		cached, ok := keys[key]
+		if _, err := reader.Seek(int64(n), io.SeekCurrent); err != nil {
+			return "", err
+		}
+		if ok {
+			return cached, nil
+		}
+		owned := strings.Clone(key)
+		if len(keys) < 256 && keyBytes+n <= 16<<10 {
+			keys[owned] = owned
+			keyBytes += n
+		}
+		return owned, nil
+	}
 }
 
 func decodeMsgpackEachBytes(
@@ -770,9 +846,13 @@ func decodeMsgpackEachBytes(
 	reader.Reset(data)
 
 	dec := msgpackDecoderPool.Get().(*msgpack.Decoder)
-	defer msgpackDecoderPool.Put(dec)
+	defer func() {
+		dec.Reset(nil)
+		msgpackDecoderPool.Put(dec)
+	}()
 	dec.Reset(&reader)
 	dec.UseLooseInterfaceDecoding(true)
+	decodeKey := newMsgpackKeyDecoder(dec, &reader, data)
 
 	rowCount, err := dec.DecodeArrayLen()
 	if err != nil {
@@ -786,7 +866,7 @@ func decodeMsgpackEachBytes(
 			return 0, &DriverError{Message: "failed to decode msgpack query result: " + err.Error()}
 		}
 		for range fieldCount {
-			key, err := dec.DecodeString()
+			key, err := decodeKey()
 			if err != nil {
 				return 0, &DriverError{Message: "failed to decode msgpack query result key: " + err.Error()}
 			}
