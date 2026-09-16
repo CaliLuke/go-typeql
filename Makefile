@@ -1,8 +1,8 @@
 .PHONY: build-rust test-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang install-typeql-check
 
 # Version of the official TypeQL syntax checker (typedb/typedb-tools).
-# Use the newest published checker that is compatible with the TypeDB server.
-TYPEQL_CHECK_VERSION ?= 3.12.0
+# Keep in lockstep with the TypeDB server version pinned in docker-compose.yml.
+TYPEQL_CHECK_VERSION ?= 3.13.0
 
 # Build the Rust FFI static library
 # MACOSX_DEPLOYMENT_TARGET=13.0 matches Go 1.27's minimum supported macOS.

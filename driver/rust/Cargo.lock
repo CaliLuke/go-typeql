@@ -1644,9 +1644,9 @@ checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "typeql"
-version = "3.12.2"
+version = "3.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3382776515b514e00dd54a68e3c66581d285bc8433385f11a8272db49a322deb"
+checksum = "6176fd2837ec524bcd666230b466bda17cbe5288604e96174b35815825b93e07"
 dependencies = [
  "chrono",
  "itertools",
