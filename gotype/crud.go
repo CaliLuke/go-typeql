@@ -484,42 +484,34 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
 	if err := m.validateKeyAttributes("put", instance); err != nil {
 		return err
 	}
-	putQuery, err := m.strategy.BuildPutQuery(m.info, instance, "e")
+	putQuery, err := m.buildPutWithIID(instance, "e")
 	if err != nil {
 		return fmt.Errorf("put %s: build query: %w", m.info.TypeName, err)
 	}
 
-	return m.withWriteTx(ctx, "put", m.writeTx, func(tx Tx) error {
-		_, err = tx.QueryWithContext(ctx, putQuery)
+	var pendingIID string
+	err = m.withWriteTx(ctx, "put", m.writeTx, func(tx Tx) error {
+		results, err := tx.QueryWithContext(ctx, putQuery)
 		if err != nil {
 			return fmt.Errorf("put %s: %w", m.info.TypeName, err)
 		}
-
-		// Fetch IID in the same transaction via key match
-		if len(m.info.KeyFields) > 0 {
-			matchQuery, err := m.strategy.BuildMatchByKey(m.info, instance, "e")
-			if err != nil {
-				return fmt.Errorf("put %s: build iid query: %w", m.info.TypeName, err)
-			}
-			iidQuery := matchQuery + "\n" + `fetch { "_iid": iid($e) };`
-
-			results, err := tx.QueryWithContext(ctx, iidQuery)
-			if err != nil {
-				return fmt.Errorf("put %s: fetch iid: %w", m.info.TypeName, err)
-			}
-			if len(results) == 1 {
-				if iid := extractIID(results[0]); iid != "" {
-					setIIDOnInfo(instance, m.info, iid)
-				}
-			}
+		if len(m.info.KeyFields) > 0 && len(results) == 1 {
+			pendingIID = extractIID(results[0])
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if pendingIID != "" {
+		setIIDOnInfo(instance, m.info, pendingIID)
+	}
+	return nil
 }
 
 // PutMany upserts multiple instances in a single transaction.
-// IIDs are fetched inside the same write transaction (one key-match query per
-// instance) instead of opening a read transaction per instance afterwards.
+// For keyed models, each put returns its IID in the same query. IIDs are
+// assigned after the transaction completes successfully.
 func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 	if len(instances) == 0 {
 		return nil
@@ -539,33 +531,17 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 	err := m.withWriteTx(ctx, "put_many", m.newWriteTx, func(tx Tx) error {
 		for i, inst := range instances {
 			varName := fmt.Sprintf("e%d", i)
-			putQuery, err := m.strategy.BuildPutQuery(m.info, inst, varName)
+			putQuery, err := m.buildPutWithIID(inst, varName)
 			if err != nil {
 				return fmt.Errorf("put_many %s[%d]: build query: %w", m.info.TypeName, i, err)
 			}
 
-			if _, err := tx.QueryWithContext(ctx, putQuery); err != nil {
+			results, err := tx.QueryWithContext(ctx, putQuery)
+			if err != nil {
 				return fmt.Errorf("put_many %s[%d]: %w", m.info.TypeName, i, err)
 			}
-
-			if !hasKeys {
-				continue
-			}
-			// Fetch the IID in the same transaction via key match.
-			matchQuery, err := m.strategy.BuildMatchByKey(m.info, inst, "e")
-			if err != nil {
-				return fmt.Errorf("put_many %s[%d]: build iid query: %w", m.info.TypeName, i, err)
-			}
-			iidQuery := matchQuery + "\n" + `fetch { "_iid": iid($e) };`
-
-			results, err := tx.QueryWithContext(ctx, iidQuery)
-			if err != nil {
-				return fmt.Errorf("put_many %s[%d]: fetch iid: %w", m.info.TypeName, i, err)
-			}
-			if len(results) == 1 {
-				if iid := extractIID(results[0]); iid != "" {
-					pendingIIDs[i] = iid
-				}
+			if hasKeys && len(results) == 1 {
+				pendingIIDs[i] = extractIID(results[0])
 			}
 		}
 		return nil
@@ -581,6 +557,14 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
 	}
 
 	return nil
+}
+
+func (m *Manager[T]) buildPutWithIID(instance *T, varName string) (string, error) {
+	query, err := m.strategy.BuildPutQuery(m.info, instance, varName)
+	if err != nil || len(m.info.KeyFields) == 0 {
+		return query, err
+	}
+	return appendIIDFetch(query, varName)
 }
 
 // countByIID checks if an instance with the given IID exists.

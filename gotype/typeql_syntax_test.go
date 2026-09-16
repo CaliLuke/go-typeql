@@ -10,6 +10,12 @@ import (
 	"github.com/CaliLuke/go-typeql/tqlgen"
 )
 
+type syntaxKeyedRelation struct {
+	BaseRelation
+	Employee *testPerson `typedb:"role:employee"`
+	Key      string      `typedb:"syntax-key,key"`
+}
+
 // assertTypeQL validates generated TypeQL with the official typeql-check CLI
 // (soft dependency — see internal/typeqlcheck). knownIssue marks output that
 // is currently invalid because of an open bug: the case is skipped while the
@@ -34,6 +40,36 @@ func assertTypeQL(t *testing.T, label, query, knownIssue string) {
 // and pipes every query it generated through typeql-check.
 func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 	registerTestTypes(t)
+	t.Run("keyed entity put and fetch", func(t *testing.T) {
+		writeTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xABC123"}}}}
+		mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{writeTx}}, "test_db"))
+		if err := mgr.Put(context.Background(), &testPerson{Name: "Alice", Email: "a@example.com"}); err != nil {
+			t.Fatal(err)
+		}
+		assertTypeQL(t, "keyed entity put/fetch", writeTx.queries[0], "")
+	})
+	t.Run("keyless relation put", func(t *testing.T) {
+		writeTx := &mockTx{}
+		mgr := MustNewManager[testEmployment](NewDatabase(&mockConn{txs: []*mockTx{writeTx}}, "test_db"))
+		p := &testPerson{Name: "Alice"}
+		p.SetIID("0xABC123")
+		if err := mgr.Put(context.Background(), &testEmployment{Employee: p}); err != nil {
+			t.Fatal(err)
+		}
+		assertTypeQL(t, "keyless relation put", writeTx.queries[0], "")
+	})
+	t.Run("keyed relation put and fetch", func(t *testing.T) {
+		MustRegister[syntaxKeyedRelation]()
+		defer registerTestTypes(t)
+		writeTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xABC123"}}}}
+		mgr := MustNewManager[syntaxKeyedRelation](NewDatabase(&mockConn{txs: []*mockTx{writeTx}}, "test_db"))
+		p := &testPerson{Name: "Alice"}
+		p.SetIID("0xABC123")
+		if err := mgr.Put(context.Background(), &syntaxKeyedRelation{Employee: p, Key: "ref-1"}); err != nil {
+			t.Fatal(err)
+		}
+		assertTypeQL(t, "keyed relation put/fetch", writeTx.queries[0], "")
+	})
 
 	t.Run("insert", func(t *testing.T) {
 		writeTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xABC123"}}}}
@@ -359,7 +395,7 @@ func TestTypeQLSyntax_DecimalQueries(t *testing.T) {
 	t.Run("put with decimal key match", func(t *testing.T) {
 		ClearRegistry()
 		MustRegister[decimalKeyed]()
-		writeTx := &mockTx{responses: [][]map[string]any{nil, {{"_iid": "0xABC123"}}}}
+		writeTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xABC123"}}}}
 		conn := &mockConn{txs: []*mockTx{writeTx}}
 		mgr := MustNewManager[decimalKeyed](NewDatabase(conn, "test_db"))
 

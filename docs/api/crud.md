@@ -86,7 +86,10 @@ Inserts if the entity doesn't exist, updates if it does (matched by key attribut
 persons.Put(ctx, &Person{Name: "Alice", Email: "alice@newdomain.com"})
 ```
 
-`PutMany` upserts multiple instances in a single transaction.
+For keyed models, `Put` fetches the IID in the same query as the upsert, avoiding
+a second key-match query. Keyless relations retain their existing behavior and
+do not receive an IID from `Put`. `PutMany` upserts multiple instances in one
+transaction, using one query per instance; IIDs are assigned only after commit.
 
 ## Query Builder
 

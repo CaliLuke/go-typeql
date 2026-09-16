@@ -751,8 +751,7 @@ func TestManager_Put(t *testing.T) {
 	registerTestTypes(t)
 	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			nil,                         // put query
-			{{"_iid": "0xPUT_IID_001"}}, // IID fetch
+			{{"_iid": "0xPUT_IID_001"}}, // put and fetch in one query
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
@@ -766,10 +765,11 @@ func TestManager_Put(t *testing.T) {
 	}
 
 	// Verify put keyword used
-	if len(writeTx.queries) < 1 {
-		t.Fatal("no queries executed")
+	if len(writeTx.queries) != 1 {
+		t.Fatalf("expected one put/fetch query, got %d", len(writeTx.queries))
 	}
 	assertContains(t, writeTx.queries[0], "put")
+	assertContains(t, writeTx.queries[0], "iid($e)")
 	assertNotContains(t, writeTx.queries[0], "insert")
 }
 
@@ -777,7 +777,6 @@ func TestManager_Put_SetsIID(t *testing.T) {
 	registerTestTypes(t)
 	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			nil,
 			{{"_iid": "0xPUT123"}},
 		},
 	}
@@ -793,16 +792,29 @@ func TestManager_Put_SetsIID(t *testing.T) {
 	}
 }
 
+func TestManager_Put_CommitFailureDoesNotSetIID(t *testing.T) {
+	registerTestTypes(t)
+	writeTx := &mockTx{
+		responses: [][]map[string]any{{{"_iid": "0xPUT123"}}},
+		commitErr: fmt.Errorf("commit failed"),
+	}
+	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{writeTx}}, "test_db"))
+	p := &testPerson{Name: "Alice", Email: "alice@example.com"}
+	if err := mgr.Put(context.Background(), p); err == nil {
+		t.Fatal("expected commit failure")
+	}
+	if p.GetIID() != "" {
+		t.Errorf("expected IID to remain unset after failed commit, got %q", p.GetIID())
+	}
+}
+
 func TestManager_PutMany(t *testing.T) {
 	registerTestTypes(t)
-	// All queries — puts AND IID fetches — run in the single write tx (#90):
-	// no per-instance read transactions are opened afterwards.
+	// Put and IID fetch share one query per instance in a single write tx.
 	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			nil,                // put p1
-			{{"_iid": "0xP1"}}, // iid fetch p1
-			nil,                // put p2
-			{{"_iid": "0xP2"}}, // iid fetch p2
+			{{"_iid": "0xP1"}},
+			{{"_iid": "0xP2"}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
@@ -817,13 +829,13 @@ func TestManager_PutMany(t *testing.T) {
 		t.Fatalf("PutMany failed: %v", err)
 	}
 
-	if len(writeTx.queries) != 4 {
-		t.Fatalf("expected 4 queries (2 puts + 2 iid fetches) in the write tx, got %d", len(writeTx.queries))
+	if len(writeTx.queries) != 2 {
+		t.Fatalf("expected 2 put/fetch queries in the write tx, got %d", len(writeTx.queries))
 	}
 	assertContains(t, writeTx.queries[0], "put")
-	assertContains(t, writeTx.queries[1], "iid($e)")
-	assertContains(t, writeTx.queries[2], "put")
-	assertContains(t, writeTx.queries[3], "iid($e)")
+	assertContains(t, writeTx.queries[0], "iid($e0)")
+	assertContains(t, writeTx.queries[1], "put")
+	assertContains(t, writeTx.queries[1], "iid($e1)")
 	if !writeTx.committed {
 		t.Error("transaction was not committed")
 	}
@@ -840,7 +852,6 @@ func TestManager_PutMany_CommitFailureDoesNotSetIIDs(t *testing.T) {
 	registerTestTypes(t)
 	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			nil,
 			{{"_iid": "0xP1"}},
 		},
 		commitErr: fmt.Errorf("commit failed"),
