@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
@@ -196,20 +197,28 @@ type StructFieldP struct {
 
 // --- Parser construction and entry point ---
 
+var (
+	schemaParserOnce sync.Once
+	schemaParser     *participle.Parser[TQLFileSimple]
+	schemaParserErr  error
+)
+
 // ParseSchema parses a TypeQL schema string into a ParsedSchema structure.
 // It handles attribute, entity, relation, function, and struct definitions.
 // Function blocks are parsed by the grammar natively — no pre-processing needed.
 func ParseSchema(input string) (*ParsedSchema, error) {
-	parser, err := participle.Build[TQLFileSimple](
-		participle.Lexer(simpleLexer),
-		participle.Elide("Comment", "Whitespace"),
-		participle.UseLookahead(3),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("build parser: %w", err)
+	schemaParserOnce.Do(func() {
+		schemaParser, schemaParserErr = participle.Build[TQLFileSimple](
+			participle.Lexer(simpleLexer),
+			participle.Elide("Comment", "Whitespace"),
+			participle.UseLookahead(3),
+		)
+	})
+	if schemaParserErr != nil {
+		return nil, fmt.Errorf("build parser: %w", schemaParserErr)
 	}
 
-	ast, err := parser.ParseString("schema.tql", input)
+	ast, err := schemaParser.ParseString("schema.tql", input)
 	if err != nil {
 		return nil, fmt.Errorf("parse schema: %w", err)
 	}

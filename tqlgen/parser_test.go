@@ -1,9 +1,47 @@
 package tqlgen
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestParseSchema_ConcurrentCallsKeepResultsIsolated(t *testing.T) {
+	var wg sync.WaitGroup
+	errors := make(chan error, 32)
+	for i := range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			name := fmt.Sprintf("person-%d", i)
+			schema := fmt.Sprintf(`define
+attribute label-%d, value string @doc("label %d");
+entity %s, owns label-%d @key;
+struct profile-%d: nickname value string?;
+fun people-%d() -> { %s }:
+    match $p isa %s;
+    return { $p };
+`, i, i, name, i, i, i, name, name)
+			parsed, err := ParseSchema(schema)
+			if err != nil {
+				errors <- fmt.Errorf("%s parse: %w", name, err)
+				return
+			}
+			if len(parsed.Entities) != 1 || parsed.Entities[0].Name != name || len(parsed.Structs) != 1 || len(parsed.Functions) != 1 {
+				errors <- fmt.Errorf("%s got entities=%v structs=%v functions=%v", name, parsed.Entities, parsed.Structs, parsed.Functions)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Error(err)
+	}
+	if _, err := ParseSchema("define entity ;"); err == nil || !strings.Contains(err.Error(), "schema.tql") {
+		t.Fatalf("expected source-located parse error after concurrent calls, got %v", err)
+	}
+}
 
 const testSchema = `define
 
