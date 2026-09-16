@@ -4,6 +4,8 @@ package gotype_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/CaliLuke/go-typeql/gotype"
@@ -106,4 +108,61 @@ func TestIntegration_DeleteMany_Strict(t *testing.T) {
 
 	// The remaining 4 should still be there (strict check happens before delete)
 	assertCount(t, ctx, mgr, 4)
+}
+
+func TestIntegration_DeleteMany_StrictUppercaseIID(t *testing.T) {
+	db := setupTestDBDefault(t)
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Person](db)
+	p := insertAndGet(t, ctx, mgr, &Person{Name: "Case Check", Email: "case@test.com"}, "name", "Case Check")
+	upperIID := "0x" + strings.ToUpper(strings.TrimPrefix(p.GetIID(), "0x"))
+	if upperIID == p.GetIID() {
+		t.Skip("generated IID has no hex letters to case-fold")
+	}
+	variant := *p
+	variant.SetIID(upperIID)
+	if err := mgr.DeleteMany(ctx, []*Person{&variant, p}, gotype.WithStrict()); err != nil {
+		t.Fatalf("strict delete with equivalent IID spellings: %v", err)
+	}
+	assertCount(t, ctx, mgr, 0)
+}
+
+func TestIntegration_DeleteMany_GroupedStrictDuplicates(t *testing.T) {
+	db := setupTestDBWith(t, func() { gotype.MustRegister[Company]() })
+	ctx := context.Background()
+	mgr := gotype.MustNewManager[Company](db)
+	rows := make([]*Company, 33)
+	for i := range rows {
+		rows[i] = &Company{Name: fmt.Sprintf("delete-co-%d", i), Industry: "Tools"}
+	}
+	if err := mgr.InsertMany(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.DeleteMany(ctx, append(rows, rows[0]), gotype.WithStrict()); err != nil {
+		t.Fatalf("grouped strict delete: %v", err)
+	}
+	assertCount(t, ctx, mgr, 0)
+}
+
+func TestIntegration_DeleteMany_GroupedRelations(t *testing.T) {
+	db := setupRelationDB(t)
+	ctx := context.Background()
+	personMgr := gotype.MustNewManager[Person](db)
+	companyMgr := gotype.MustNewManager[Company](db)
+	relationMgr := gotype.MustNewManager[Employment](db)
+	p := insertAndGet(t, ctx, personMgr, &Person{Name: "Employee", Email: "employee@test.com"}, "name", "Employee")
+	c := insertAndGet(t, ctx, companyMgr, &Company{Name: "Employer", Industry: "Tools"}, "name", "Employer")
+	for _, date := range []string{"2024-01-01", "2025-01-01"} {
+		if err := relationMgr.Insert(ctx, &Employment{Employee: p, Employer: c, StartDate: date}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	relations, err := relationMgr.Get(ctx, nil)
+	if err != nil || len(relations) != 2 {
+		t.Fatalf("Get relations: %v count=%d", err, len(relations))
+	}
+	if err := relationMgr.DeleteMany(ctx, relations, gotype.WithStrict()); err != nil {
+		t.Fatalf("grouped relation delete: %v", err)
+	}
+	assertCount(t, ctx, relationMgr, 0)
 }

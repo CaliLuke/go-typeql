@@ -86,6 +86,22 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 		}
 	})
 
+	t.Run("grouped delete and strict existence", func(t *testing.T) {
+		registerTestTypes(t)
+		readTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0x01"}, {"_iid": "0x02"}}}}
+		writeTx := &mockTx{}
+		mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{readTx, writeTx}}, "test_db"))
+		first := &testPerson{Name: "Alice"}
+		first.SetIID("0x01")
+		second := &testPerson{Name: "Bob"}
+		second.SetIID("0x02")
+		if err := mgr.DeleteMany(context.Background(), []*testPerson{first, second}, WithStrict()); err != nil {
+			t.Fatal(err)
+		}
+		assertTypeQL(t, "grouped strict existence", readTx.queries[0], "")
+		assertTypeQL(t, "grouped delete", writeTx.queries[0], "")
+	})
+
 	t.Run("update scalar attributes", func(t *testing.T) {
 		writeTx := &mockTx{responses: [][]map[string]any{nil}}
 		conn := &mockConn{txs: []*mockTx{writeTx}}

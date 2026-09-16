@@ -396,7 +396,11 @@ func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOpti
 	return nil
 }
 
-// DeleteMany deletes multiple instances in a single transaction.
+const deleteBatchSize = 32
+
+// DeleteMany deletes distinct IIDs in bounded groups in a single transaction.
+// WithStrict checks existence in groups before deleting and reports the first
+// missing input. Duplicate IIDs are checked and deleted only once.
 func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...DeleteOption) error {
 	if len(instances) == 0 {
 		return nil
@@ -407,41 +411,65 @@ func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...Del
 		o(&cfg)
 	}
 
-	// Validate all instances are non-nil and have IIDs
+	// Validate and deduplicate IIDs; deleting an IID twice is equivalent to
+	// deleting it once, including in strict mode.
+	iids := make([]string, 0, len(instances))
+	firstIndex := make(map[string]int, len(instances))
 	for i, inst := range instances {
 		if inst == nil {
 			return fmt.Errorf("delete_many %s[%d]: instance must not be nil", m.info.TypeName, i)
 		}
-		if getIIDOfInfo(inst, m.info) == "" {
+		iid := getIIDOfInfo(inst, m.info)
+		if iid == "" {
 			return fmt.Errorf("delete_many %s[%d]: instance has no IID", m.info.TypeName, i)
+		}
+		if err := validateIID(iid); err != nil {
+			return fmt.Errorf("delete_many %s[%d]: %w", m.info.TypeName, i, err)
+		}
+		key := strings.ToLower(iid)
+		if _, exists := firstIndex[key]; !exists {
+			firstIndex[key] = i
+			iids = append(iids, iid)
 		}
 	}
 
-	// Strict mode: pre-check existence of all instances
+	// Strict mode pre-checks each bounded group before opening a write tx.
 	if cfg.strict {
-		for i, inst := range instances {
-			iid := getIIDOfInfo(inst, m.info)
-			count, err := m.countByIID(ctx, iid)
+		for start := 0; start < len(iids); start += deleteBatchSize {
+			end := min(start+deleteBatchSize, len(iids))
+			query := m.deleteManyMatch(iids[start:end]) + `fetch { "_iid": iid($e) };`
+			results, err := m.readQuery(ctx, query)
 			if err != nil {
-				return fmt.Errorf("delete_many %s[%d]: strict check: %w", m.info.TypeName, i, err)
+				return fmt.Errorf("delete_many %s[%d]: strict check: %w", m.info.TypeName, firstIndex[strings.ToLower(iids[start])], err)
 			}
-			if count == 0 {
-				return fmt.Errorf("delete_many %s[%d]: instance not found (strict mode)", m.info.TypeName, i)
+			found := make(map[string]bool, len(results))
+			for _, result := range results {
+				found[strings.ToLower(extractIID(result))] = true
+			}
+			for _, iid := range iids[start:end] {
+				key := strings.ToLower(iid)
+				if !found[key] {
+					return fmt.Errorf("delete_many %s[%d]: instance not found (strict mode)", m.info.TypeName, firstIndex[key])
+				}
 			}
 		}
 	}
 
 	return m.withWriteTx(ctx, "delete_many", m.writeTx, func(tx Tx) error {
-		for i, inst := range instances {
-			iid := getIIDOfInfo(inst, m.info)
-			query := fmt.Sprintf("match\n$e isa %s, iid %s;\ndelete $e;", m.info.TypeName, iid)
+		for start := 0; start < len(iids); start += deleteBatchSize {
+			end := min(start+deleteBatchSize, len(iids))
+			query := m.deleteManyMatch(iids[start:end]) + "delete $e;"
 			_, err := tx.QueryWithContext(ctx, query)
 			if err != nil {
-				return fmt.Errorf("delete_many %s[%d]: %w", m.info.TypeName, i, err)
+				return fmt.Errorf("delete_many %s[%d:%d]: %w", m.info.TypeName, firstIndex[strings.ToLower(iids[start])], firstIndex[strings.ToLower(iids[end-1])]+1, err)
 			}
 		}
 		return nil
 	})
+}
+
+func (m *Manager[T]) deleteManyMatch(iids []string) string {
+	return fmt.Sprintf("match\n$e isa %s;\n%s\n", m.info.TypeName, IIDIn(iids...).ToPatterns("e")[0])
 }
 
 // UpdateMany updates multiple instances in a single transaction.

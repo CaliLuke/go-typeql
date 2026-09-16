@@ -76,7 +76,10 @@ With `WithStrict()`, delete pre-checks existence and returns an error if the ins
 err := persons.Delete(ctx, alice, gotype.WithStrict())
 ```
 
-`DeleteMany` deletes multiple instances in a single write transaction, also supporting strict mode.
+`DeleteMany` deletes distinct IIDs in groups of up to 32 within one write
+transaction. Strict mode checks existence in bounded groups before writing;
+the first missing input is reported without deleting any rows. Repeated IIDs
+are checked and deleted once.
 
 ## Put (Upsert)
 

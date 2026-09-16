@@ -12,12 +12,13 @@ import (
 // --- Mock transaction and connection ---
 
 type mockTx struct {
-	queries   []string
-	responses [][]map[string]any
-	idx       int
-	committed bool
-	closed    bool
-	commitErr error
+	queries    []string
+	responses  [][]map[string]any
+	idx        int
+	committed  bool
+	closed     bool
+	commitErr  error
+	queryErrAt int
 }
 
 type rowMockTx struct {
@@ -45,6 +46,9 @@ func (m *rowMockTx) QueryEachWithContext(
 
 func (m *mockTx) Query(query string) ([]map[string]any, error) {
 	m.queries = append(m.queries, query)
+	if m.queryErrAt == len(m.queries) {
+		return nil, fmt.Errorf("query failed")
+	}
 	if m.idx < len(m.responses) {
 		resp := m.responses[m.idx]
 		m.idx++
@@ -573,12 +577,12 @@ func TestManager_DeleteMany(t *testing.T) {
 		t.Fatalf("DeleteMany failed: %v", err)
 	}
 
-	if len(writeTx.queries) != 2 {
-		t.Fatalf("expected 2 delete queries, got %d", len(writeTx.queries))
+	if len(writeTx.queries) != 1 {
+		t.Fatalf("expected 1 grouped delete query, got %d", len(writeTx.queries))
 	}
 	assertContains(t, writeTx.queries[0], "0x001")
 	assertContains(t, writeTx.queries[0], "delete $e;")
-	assertContains(t, writeTx.queries[1], "0x002")
+	assertContains(t, writeTx.queries[0], "0x002")
 	if !writeTx.committed {
 		t.Error("transaction was not committed")
 	}
@@ -728,10 +732,9 @@ func TestManager_Delete_BackwardCompat(t *testing.T) {
 
 func TestManager_DeleteMany_Strict(t *testing.T) {
 	registerTestTypes(t)
-	// First instance found, second not found
-	readTx1 := &mockTx{responses: [][]map[string]any{{{"count": float64(1)}}}}
-	readTx2 := &mockTx{responses: [][]map[string]any{{{"count": float64(0)}}}}
-	conn := &mockConn{txs: []*mockTx{readTx1, readTx2}}
+	// First instance found, second not found in a grouped pre-check.
+	readTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0x001"}}}}
+	conn := &mockConn{txs: []*mockTx{readTx}}
 	db := NewDatabase(conn, "test_db")
 	mgr := MustNewManager[testPerson](db)
 
@@ -745,6 +748,89 @@ func TestManager_DeleteMany_Strict(t *testing.T) {
 		t.Fatal("expected error for strict DeleteMany with missing instance")
 	}
 	assertContains(t, err.Error(), "not found")
+	assertContains(t, err.Error(), "[1]")
+}
+
+func TestManager_DeleteMany_ChunksAndDeduplicates(t *testing.T) {
+	registerTestTypes(t)
+	writeTx := &mockTx{}
+	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{writeTx}}, "test_db"))
+	instances := make([]*testPerson, 34)
+	for i := 0; i < 33; i++ {
+		instances[i] = &testPerson{Name: fmt.Sprintf("P%d", i)}
+		instances[i].SetIID(fmt.Sprintf("0x%04x", i+1))
+	}
+	instances[33] = instances[0]
+	if err := mgr.DeleteMany(context.Background(), instances); err != nil {
+		t.Fatal(err)
+	}
+	if len(writeTx.queries) != 2 || !writeTx.committed {
+		t.Fatalf("queries=%d committed=%v", len(writeTx.queries), writeTx.committed)
+	}
+	assertContains(t, writeTx.queries[0], "0x0020")
+	assertContains(t, writeTx.queries[1], "0x0021")
+	assertNotContains(t, writeTx.queries[1], "0x0001")
+}
+
+func TestManager_DeleteMany_StrictDeduplicatesAndReportsMissingIndex(t *testing.T) {
+	registerTestTypes(t)
+	readTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0x01"}}}}
+	conn := &mockConn{txs: []*mockTx{readTx}}
+	mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
+	first := &testPerson{}
+	first.SetIID("0x01")
+	missing := &testPerson{}
+	missing.SetIID("0x02")
+	err := mgr.DeleteMany(context.Background(), []*testPerson{first, first, missing}, WithStrict())
+	if err == nil || !strings.Contains(err.Error(), "[2]") || conn.idx != 1 {
+		t.Fatalf("strict missing result=%v transactions=%d", err, conn.idx)
+	}
+}
+
+func TestManager_DeleteMany_StrictEquivalentIIDCase(t *testing.T) {
+	registerTestTypes(t)
+	readTx := &mockTx{responses: [][]map[string]any{{{"_iid": "0xab"}}}}
+	writeTx := &mockTx{}
+	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{readTx, writeTx}}, "test_db"))
+	first := &testPerson{}
+	first.SetIID("0xAB")
+	second := &testPerson{}
+	second.SetIID("0xab")
+	if err := mgr.DeleteMany(context.Background(), []*testPerson{first, second}, WithStrict()); err != nil {
+		t.Fatal(err)
+	}
+	if len(writeTx.queries) != 1 || !writeTx.committed {
+		t.Fatalf("expected one grouped delete, got %d queries; committed=%v", len(writeTx.queries), writeTx.committed)
+	}
+}
+
+func TestManager_DeleteMany_Cancellation(t *testing.T) {
+	registerTestTypes(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p := &testPerson{}
+	p.SetIID("0x01")
+	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{{}}}, "test_db"))
+	if err := mgr.DeleteMany(ctx, []*testPerson{p}); err == nil {
+		t.Fatal("expected cancellation")
+	}
+}
+
+func TestManager_DeleteMany_LaterChunkErrorDoesNotCommit(t *testing.T) {
+	registerTestTypes(t)
+	writeTx := &mockTx{queryErrAt: 2}
+	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{writeTx}}, "test_db"))
+	instances := make([]*testPerson, 33)
+	for i := range instances {
+		instances[i] = &testPerson{}
+		instances[i].SetIID(fmt.Sprintf("0x%04x", i+1))
+	}
+	if err := mgr.DeleteMany(context.Background(), instances); err == nil {
+		t.Fatal("expected second chunk failure")
+	}
+	if writeTx.committed || len(writeTx.queries) != 2 {
+		t.Fatalf("committed=%v queries=%d", writeTx.committed, len(writeTx.queries))
+	}
 }
 
 func TestManager_Put(t *testing.T) {
