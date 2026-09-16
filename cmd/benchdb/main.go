@@ -79,6 +79,17 @@ func benchmarkGroup(name string) (groupSpec, error) {
 			"BenchmarkLivePoolRead/shared/callers=4", "BenchmarkLivePoolRead/pool-1/callers=4", "BenchmarkLivePoolRead/pool-4/callers=4",
 			"BenchmarkLivePoolRead/shared/callers=10", "BenchmarkLivePoolRead/pool-1/callers=10", "BenchmarkLivePoolRead/pool-4/callers=10",
 		}}, nil
+	case "get-one":
+		return groupSpec{pattern: "^BenchmarkLiveGetOneAlternatives$", tags: "cgo,typedb,integration", benchTime: "20x", packages: []string{"./gotype/..."}, live: true, required: []string{
+			"BenchmarkLiveGetOneAlternatives/zero/current", "BenchmarkLiveGetOneAlternatives/zero/count-first", "BenchmarkLiveGetOneAlternatives/zero/bounded-two",
+			"BenchmarkLiveGetOneAlternatives/one/current", "BenchmarkLiveGetOneAlternatives/one/count-first", "BenchmarkLiveGetOneAlternatives/one/bounded-two",
+			"BenchmarkLiveGetOneAlternatives/two/current", "BenchmarkLiveGetOneAlternatives/two/count-first", "BenchmarkLiveGetOneAlternatives/two/bounded-two",
+			"BenchmarkLiveGetOneAlternatives/many/current", "BenchmarkLiveGetOneAlternatives/many/count-first", "BenchmarkLiveGetOneAlternatives/many/bounded-two",
+		}}, nil
+	case "get-one-duplicates":
+		return groupSpec{pattern: "^BenchmarkGetOneRepeatedRows$", benchTime: "100x", packages: []string{"./gotype/..."}, required: []string{
+			"BenchmarkGetOneRepeatedRows/current", "BenchmarkGetOneRepeatedRows/count-first", "BenchmarkGetOneRepeatedRows/bounded-two",
+		}}, nil
 	default:
 		return groupSpec{}, fmt.Errorf("unknown benchmark group %q", name)
 	}
@@ -95,7 +106,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("benchdb", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "record reviewed results in this sqlite database (omit for exploratory stdout only)")
 	count := fs.Int("count", 5, "benchmark sample count")
-	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool")
+	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates")
 	bench := fs.String("bench", "", "override the group's benchmark regex")
 	benchTime := fs.String("benchtime", "", "override the group's benchmark duration or fixed iterations")
 	reset := fs.Bool("reset", false, "clear existing benchmark history before saving the new run")

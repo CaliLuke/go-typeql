@@ -551,6 +551,21 @@ func TestManager_GetOne(t *testing.T) {
 	})
 }
 
+func TestManager_GetOneCountsAnswerRowsAndStaysInBoundTransaction(t *testing.T) {
+	registerTestTypes(t)
+	ctx := context.Background()
+	row := map[string]any{"_iid": "0x1", "name": "Alice", "email": "a@example.com"}
+	mgr, tx, conn := boundTxFixture(t, [][]map[string]any{{row, row}})
+	_, err := mgr.GetOne(ctx, map[string]any{"name": "Alice"})
+	var duplicate *NotUniqueError
+	if !errors.As(err, &duplicate) || duplicate.Count != 2 {
+		t.Fatalf("repeated answer rows: error = %v; want exact row count 2", err)
+	}
+	if len(tx.queries) != 1 || conn.idx != 1 {
+		t.Fatalf("query escaped bound transaction: queries=%d transactions=%d", len(tx.queries), conn.idx)
+	}
+}
+
 // --- Issue #89: deterministic query text from maps ---
 
 func TestManager_Get_DeterministicFilterOrder(t *testing.T) {

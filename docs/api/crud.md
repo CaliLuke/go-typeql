@@ -53,6 +53,11 @@ Other retrieval methods:
 - `All(ctx)` -- shorthand for `Get(ctx, nil)`
 - `GetOne(ctx, filters)` -- exactly one match: returns `*NotFoundError` on zero matches,
   `*NotUniqueError` on more than one
+
+`NotUniqueError.Count` is the exact number of fetched answer rows (including
+repeated rows for the same instance), not a distinct-instance count. For a
+bounded first result or a distinct count instead, use `Query.First` or
+`Query.Count` explicitly; see [the performance investigation](../../benchmarks/GET_ONE.md).
 - `GetByIID(ctx, iid)` -- fetch by TypeDB internal ID, returns nil if not found
 - `GetByIIDPolymorphic(ctx, iid)` -- also returns the actual TypeDB type label
 - `GetByIIDPolymorphicAny(ctx, iid)` -- hydrates as the concrete subtype (returns `any`)

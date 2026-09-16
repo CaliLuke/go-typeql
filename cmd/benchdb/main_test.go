@@ -48,12 +48,12 @@ func TestInsertRunPreservesMetricSeries(t *testing.T) {
 }
 
 func TestBenchmarkGroupsAreExplicit(t *testing.T) {
-	for _, name := range []string{"unit", "decode", "bulk", "projections", "typed-reads", "result-reads", "lifecycle", "pool"} {
+	for _, name := range []string{"unit", "decode", "bulk", "projections", "typed-reads", "result-reads", "lifecycle", "pool", "get-one", "get-one-duplicates"} {
 		spec, err := benchmarkGroup(name)
 		if err != nil || spec.pattern == "" || len(spec.packages) == 0 {
 			t.Fatalf("group %s: %+v, %v", name, spec, err)
 		}
-		if name != "unit" && spec.tags == "" {
+		if name != "unit" && name != "get-one-duplicates" && spec.tags == "" {
 			t.Fatalf("live/driver group %s lacks explicit tags", name)
 		}
 	}
