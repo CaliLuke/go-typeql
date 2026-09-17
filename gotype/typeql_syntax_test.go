@@ -40,6 +40,26 @@ func assertTypeQL(t *testing.T, label, query, knownIssue string) {
 // and pipes every query it generated through typeql-check.
 func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 	registerTestTypes(t)
+	t.Run("selected entity and role projections", func(t *testing.T) {
+		person := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{{}}}, "test_db"))
+		if _, err := person.GetProjected(context.Background(), nil, Projection{Fields: []string{"name", "age"}}); err != nil {
+			t.Fatal(err)
+		}
+		// The mock transaction is checked through the bound form below.
+		personPlan, err := planProjection(person.info, Projection{Fields: []string{"name", "age"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		additions, fetch := personPlan.clauses()
+		assertTypeQL(t, "selected entity projection", "match $e isa test-person;\n"+additions+"\n"+fetch, "")
+		relationInfo, _ := LookupType(typeOf[testEmployment]())
+		relationPlan, err := planProjection(relationInfo, Projection{Fields: []string{"start-date"}, Roles: map[string][]string{"employee": {"name"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		additions, fetch = relationPlan.clauses()
+		assertTypeQL(t, "selected relation and role projection", "match $e isa test-employment;\n"+additions+"\n"+fetch, "")
+	})
 	t.Run("cold and cached fetch projection", func(t *testing.T) {
 		first := &mockTx{}
 		second := &mockTx{}

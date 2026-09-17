@@ -32,7 +32,7 @@ TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 \
   go run ./cmd/benchdb -group=bulk
 ```
 
-Replace `bulk` with `projections`, `typed-reads`, `result-reads`, `lifecycle`, `pool`, `get-one`, `prefetch`, `stream-latency`, `cancellation`, `membership-build`, or `membership-live`. Live groups
+Replace `bulk` with `projections`, `typed-reads`, `result-reads`, `lifecycle`, `pool`, `get-one`, `prefetch`, `stream-latency`, `cancellation`, `membership-build`, `membership-live`, `projection-reads`, or `projection-transfer`. Live groups
 are opt-in; the runner executes five separate test processes by default, so
 each sample starts with a fresh database fixture. `-benchtime=20x` and
 `-count=5` can override a group's defaults. Do not compare samples from
@@ -55,6 +55,8 @@ different server versions, fixture sizes, machine loads, or concurrency.
 | `cancellation` | Two callers, four 100³ cross-product queries, 50 ms caller deadline, 200/1500 ms transaction timeout | 2 |
 | `membership-build` | In, typed-row JSON, and IIDIn construction at 1/8/25/64/256 values | 1 |
 | `membership-live` | Expanded In vs typed string input on 25 people, 1/8/25/64/256 supplied values | 1 |
+| `projection-reads` | Full vs name-only reads on 64 narrow and 64 eight-attribute wide entities | 1 |
+| `projection-transfer` | Encoded FFI response bytes for the same 64-row projection query shapes | 1 |
 
 For `membership-live`, set `TYPEDB_BENCH_CONTAINER=typedb_test` only when
 that container is dedicated to this benchmark. The runner then records

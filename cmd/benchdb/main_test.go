@@ -48,7 +48,7 @@ func TestInsertRunPreservesMetricSeries(t *testing.T) {
 }
 
 func TestBenchmarkGroupsAreExplicit(t *testing.T) {
-	for _, name := range []string{"unit", "decode", "bulk", "projections", "typed-reads", "result-reads", "lifecycle", "pool", "get-one", "get-one-duplicates", "prefetch", "stream-latency", "cancellation", "membership-build", "membership-live"} {
+	for _, name := range []string{"unit", "decode", "bulk", "projections", "typed-reads", "result-reads", "lifecycle", "pool", "get-one", "get-one-duplicates", "prefetch", "stream-latency", "cancellation", "membership-build", "membership-live", "projection-reads", "projection-transfer"} {
 		spec, err := benchmarkGroup(name)
 		if err != nil || spec.pattern == "" || len(spec.packages) == 0 {
 			t.Fatalf("group %s: %+v, %v", name, spec, err)

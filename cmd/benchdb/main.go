@@ -104,6 +104,16 @@ func benchmarkGroup(name string) (groupSpec, error) {
 		return groupSpec{pattern: "^Benchmark(MembershipConstruction|IIDMembershipConstruction)$", benchTime: "100x", packages: []string{"./gotype/..."}, required: membershipBuildSeries()}, nil
 	case "membership-live":
 		return groupSpec{pattern: "^BenchmarkLiveMembershipStrategies$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./gotype/..."}, live: true, required: membershipLiveSeries()}, nil
+	case "projection-reads":
+		return groupSpec{pattern: "^BenchmarkLiveProjectionReads$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./gotype/..."}, live: true, required: []string{
+			"BenchmarkLiveProjectionReads/narrow/full", "BenchmarkLiveProjectionReads/narrow/projected",
+			"BenchmarkLiveProjectionReads/wide/full", "BenchmarkLiveProjectionReads/wide/projected",
+		}}, nil
+	case "projection-transfer":
+		return groupSpec{pattern: "^BenchmarkLiveProjectionTransfer$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./driver/..."}, live: true, required: []string{
+			"BenchmarkLiveProjectionTransfer/narrow/full", "BenchmarkLiveProjectionTransfer/narrow/projected",
+			"BenchmarkLiveProjectionTransfer/wide/full", "BenchmarkLiveProjectionTransfer/wide/projected",
+		}}, nil
 	default:
 		return groupSpec{}, fmt.Errorf("unknown benchmark group %q", name)
 	}
@@ -170,7 +180,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("benchdb", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "record reviewed results in this sqlite database (omit for exploratory stdout only)")
 	count := fs.Int("count", 5, "benchmark sample count")
-	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency, cancellation, membership-build, membership-live")
+	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency, cancellation, membership-build, membership-live, projection-reads, projection-transfer")
 	bench := fs.String("bench", "", "override the group's benchmark regex")
 	benchTime := fs.String("benchtime", "", "override the group's benchmark duration or fixed iterations")
 	reset := fs.Bool("reset", false, "clear existing benchmark history before saving the new run")

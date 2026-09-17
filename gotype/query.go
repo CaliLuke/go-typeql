@@ -206,17 +206,25 @@ func (q *Query[T]) buildMatchClause() (string, error) {
 }
 
 func (q *Query[T]) buildQuery() (string, error) {
-	match, err := q.buildMatchClause()
+	fetch, err := q.mgr.strategy.BuildFetchAll(q.mgr.info, "e")
 	if err != nil {
 		return "", err
 	}
-	fetch, err := q.mgr.strategy.BuildFetchAll(q.mgr.info, "e")
+	return q.buildQueryWithFetch("", fetch)
+}
+
+func (q *Query[T]) buildQueryWithFetch(matchAdditions, fetch string) (string, error) {
+	match, err := q.buildMatchClause()
 	if err != nil {
 		return "", err
 	}
 
 	var b strings.Builder
 	b.WriteString(match)
+	if matchAdditions != "" {
+		b.WriteByte('\n')
+		b.WriteString(matchAdditions)
+	}
 
 	// Sort
 	if len(q.orderBy) > 0 {

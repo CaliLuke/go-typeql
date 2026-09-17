@@ -8,6 +8,7 @@ Usage guides for the go-typeql packages. For an introduction to the library, see
 | ------------------------- | --------------------------------------------------------------- |
 | [Models](models.md)       | Defining entities and relations, struct tags, type registration |
 | [CRUD](crud.md)           | Insert, Get, Update, Delete, Put, batch ops, transactions       |
+| [Selected fields](projections.md) | Read selected attributes without unsafe partial-model updates |
 | [Queries](queries.md)     | Filters, sorting, pagination, aggregations, group-by            |
 | [Schema](schema.md)       | Schema generation, migration workflows, sequential migrations   |
 | [Generator](generator.md) | tqlgen: generate Go structs from TypeQL schemas                 |

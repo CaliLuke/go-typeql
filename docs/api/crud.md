@@ -63,6 +63,8 @@ bounded first result or a distinct count instead, use `Query.First` or
 - `GetByIIDPolymorphicAny(ctx, iid)` -- hydrates as the concrete subtype (returns `any`)
 - `GetWithRoles(ctx, filters)` -- for relations, populates role player entities
 
+For selected attributes or role-player fields, use [selected-field reads](projections.md).
+
 ```go
 // Get relations with role players populated
 jobs := db.MustManager[Employment]()
