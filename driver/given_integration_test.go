@@ -684,7 +684,7 @@ func integerResult(value any) (int64, bool) {
 	case uint32:
 		return int64(v), true
 	case uint64:
-		if v > uint64(^uint64(0)>>1) {
+		if v > ^uint64(0)>>1 {
 			return 0, false
 		}
 		return int64(v), true

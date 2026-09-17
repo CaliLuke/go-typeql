@@ -389,7 +389,7 @@ func openInputs(username, password string, opts DriverOptions) (unsafe.Pointer, 
 			C.free(unsafe.Pointer(cCA))
 		}
 	}
-	return unsafe.Pointer(creds), unsafe.Pointer(driverOpts), cleanup, nil
+	return creds, driverOpts, cleanup, nil
 }
 
 func cStringArray(values []string) ([]*C.char, func()) {

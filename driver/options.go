@@ -14,7 +14,7 @@ type TransactionOptions struct {
 
 // NewTransactionOptions creates a new set of transaction options with default values.
 func NewTransactionOptions() *TransactionOptions {
-	return &TransactionOptions{ptr: unsafe.Pointer(C.typedb_transaction_options_new())}
+	return &TransactionOptions{ptr: C.typedb_transaction_options_new()}
 }
 
 // SetTimeout sets the overall transaction timeout in milliseconds.
@@ -47,7 +47,7 @@ type QueryOptions struct {
 
 // NewQueryOptions creates a new set of query options with default values.
 func NewQueryOptions() *QueryOptions {
-	return &QueryOptions{ptr: unsafe.Pointer(C.typedb_query_options_new())}
+	return &QueryOptions{ptr: C.typedb_query_options_new()}
 }
 
 // SetIncludeInstanceTypes specifies whether the server should include type information
