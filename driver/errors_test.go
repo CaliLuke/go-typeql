@@ -38,3 +38,11 @@ func TestWithQuery_PreservesExistingQuery(t *testing.T) {
 		t.Fatalf("expected original query to be preserved, got %q", driverErr.Query)
 	}
 }
+
+func TestWithQuery_PreservesCallbackErrorIdentity(t *testing.T) {
+	want := errors.New("consumer stopped")
+	err := withQuery(want, "match $x isa thing;")
+	if !errors.Is(err, want) {
+		t.Fatalf("callback error identity was lost: %v", err)
+	}
+}

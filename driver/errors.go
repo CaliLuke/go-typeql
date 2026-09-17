@@ -14,6 +14,7 @@ type DriverError struct {
 	Message string
 	// Query is the TypeQL statement associated with the error, when available.
 	Query string
+	cause error
 }
 
 func (e *DriverError) Error() string {
@@ -22,6 +23,9 @@ func (e *DriverError) Error() string {
 	}
 	return e.Message
 }
+
+// Unwrap preserves callback errors when query context is attached.
+func (e *DriverError) Unwrap() error { return e.cause }
 
 // getError extracts error message from an FFI error out-parameter.
 // If the error pointer is nil (no error occurred), returns nil.
@@ -52,6 +56,7 @@ func withQuery(err error, query string) error {
 	return &DriverError{
 		Message: err.Error(),
 		Query:   query,
+		cause:   err,
 	}
 }
 

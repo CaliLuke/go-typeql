@@ -64,6 +64,7 @@ bounded first result or a distinct count instead, use `Query.First` or
 - `GetWithRoles(ctx, filters)` -- for relations, populates role player entities
 
 For selected attributes or role-player fields, use [selected-field reads](projections.md).
+For large result sets, use [typed iteration](iteration.md) to handle one model at a time.
 
 ```go
 // Get relations with role players populated
