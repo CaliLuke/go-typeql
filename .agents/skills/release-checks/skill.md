@@ -16,7 +16,7 @@ Follow semver:
 
 - **Patch** (`v1.0.2`): bug fixes, doc updates, no API changes
 - **Minor** (`v1.1.0`): new features, backward-compatible API additions
-- **Major** (`v2.0.0`): breaking changes (requires module path change to `github.com/CaliLuke/go-typeql/v2/v2`)
+- **Major** (`v2.0.0`): breaking changes (requires module path change to `github.com/CaliLuke/go-typeql/v2`)
 
 If `$ARGUMENTS` is empty, ask the user what version to release.
 
