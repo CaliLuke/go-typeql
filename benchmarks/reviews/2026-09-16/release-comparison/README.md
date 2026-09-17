@@ -90,13 +90,13 @@ Those features require different workloads or API choices. Their published measu
 - `raw/` contains all 50 process outputs and the commands, timing, and host load for each run.
 - `summary.json` contains all 320 measurements, medians, and aggregate calculations.
 - `metadata.json` identifies both revisions, the environment, and the current patch hash.
-- `current.patch` captures tracked workspace changes. `_workspace-tests/` contains the four new regression test files.
+- `current.patch.gz` captures tracked workspace changes. `_workspace-tests/` contains the four new regression test files.
 - `_harnesses/` contains the common benchmark sources and fixture used for both revisions.
 - `run_compare.py` runs the binaries serially. `analyze.py` calculates the results.
 
 To repeat the comparison, create detached worktrees named `release` and `current` under a temporary directory. Use the commits from `metadata.json`.
 
-Apply `current.patch` to `current`, then copy `_workspace-tests/` into that worktree. Copy the common harnesses into both worktrees:
+Decompress `current.patch.gz` and apply `current.patch` to `current`. Then copy `_workspace-tests/` into that worktree. Copy the common harnesses into both worktrees:
 
 | Saved file | Destination |
 |---|---|
