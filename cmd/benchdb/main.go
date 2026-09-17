@@ -94,6 +94,12 @@ func benchmarkGroup(name string) (groupSpec, error) {
 		return groupSpec{pattern: "^BenchmarkLiveStreamTuning$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./driver/..."}, live: true, required: streamTuningSeries()}, nil
 	case "stream-latency":
 		return groupSpec{pattern: "^BenchmarkLiveStreamLatency$", tags: "cgo,typedb,integration", benchTime: "2x", packages: []string{"./driver/..."}, live: true, required: streamLatencySeries()}, nil
+	case "cancellation":
+		return groupSpec{pattern: "^BenchmarkLiveCancellationRetention$", tags: "cgo,typedb,integration", benchTime: "4x", packages: []string{"./driver/..."}, live: true, required: []string{
+			"BenchmarkLiveCancellationRetention/native-limit=1/tx-timeout=1500ms",
+			"BenchmarkLiveCancellationRetention/native-limit=2/tx-timeout=1500ms",
+			"BenchmarkLiveCancellationRetention/native-limit=2/tx-timeout=200ms",
+		}}, nil
 	default:
 		return groupSpec{}, fmt.Errorf("unknown benchmark group %q", name)
 	}
@@ -139,7 +145,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("benchdb", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "record reviewed results in this sqlite database (omit for exploratory stdout only)")
 	count := fs.Int("count", 5, "benchmark sample count")
-	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency")
+	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency, cancellation")
 	bench := fs.String("bench", "", "override the group's benchmark regex")
 	benchTime := fs.String("benchtime", "", "override the group's benchmark duration or fixed iterations")
 	reset := fs.Bool("reset", false, "clear existing benchmark history before saving the new run")

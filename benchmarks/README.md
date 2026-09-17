@@ -32,7 +32,7 @@ TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 \
   go run ./cmd/benchdb -group=bulk
 ```
 
-Replace `bulk` with `projections`, `typed-reads`, `result-reads`, `lifecycle`, `pool`, `get-one`, `prefetch`, or `stream-latency`. Live groups
+Replace `bulk` with `projections`, `typed-reads`, `result-reads`, `lifecycle`, `pool`, `get-one`, `prefetch`, `stream-latency`, or `cancellation`. Live groups
 are opt-in; the runner executes five separate test processes by default, so
 each sample starts with a fresh database fixture. `-benchtime=20x` and
 `-count=5` can override a group's defaults. Do not compare samples from
@@ -52,6 +52,7 @@ different server versions, fixture sizes, machine loads, or concurrency.
 | `get-one-duplicates` | Synthetic 25 identical answer rows for one IID; ORM hydration only | 1 |
 | `prefetch` | Chunked stream: FFI row limits 32/128/256 × server prefetch default/1/256; 64/256/512 narrow, wide, nested and early-stop results | 1 |
 | `stream-latency` | Narrow 64 and wide 512 streamed through a local socket proxy with 0/2 ms per read; chunk 32/256 × prefetch default/1/256 | 1 |
+| `cancellation` | Two callers, four 100³ cross-product queries, 50 ms caller deadline, 200/1500 ms transaction timeout | 2 |
 
 The ORM live fixture starts with 256 people, five companies, and 256 employments;
 bulk inserts grow it within each independent process. The driver result-read
