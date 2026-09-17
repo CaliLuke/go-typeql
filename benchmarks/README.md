@@ -32,7 +32,7 @@ TEST_DB_ADDRESS=localhost:1730 TYPEDB_GO_COMPOSE_PORT_MAP=1 \
   go run ./cmd/benchdb -group=bulk
 ```
 
-Replace `bulk` with `projections`, `typed-reads`, `result-reads`, `lifecycle`, `pool`, `get-one`, `prefetch`, `stream-latency`, or `cancellation`. Live groups
+Replace `bulk` with `projections`, `typed-reads`, `result-reads`, `lifecycle`, `pool`, `get-one`, `prefetch`, `stream-latency`, `cancellation`, `membership-build`, or `membership-live`. Live groups
 are opt-in; the runner executes five separate test processes by default, so
 each sample starts with a fresh database fixture. `-benchtime=20x` and
 `-count=5` can override a group's defaults. Do not compare samples from
@@ -53,6 +53,14 @@ different server versions, fixture sizes, machine loads, or concurrency.
 | `prefetch` | Chunked stream: FFI row limits 32/128/256 × server prefetch default/1/256; 64/256/512 narrow, wide, nested and early-stop results | 1 |
 | `stream-latency` | Narrow 64 and wide 512 streamed through a local socket proxy with 0/2 ms per read; chunk 32/256 × prefetch default/1/256 | 1 |
 | `cancellation` | Two callers, four 100³ cross-product queries, 50 ms caller deadline, 200/1500 ms transaction timeout | 2 |
+| `membership-build` | In, typed-row JSON, and IIDIn construction at 1/8/25/64/256 values | 1 |
+| `membership-live` | Expanded In vs typed string input on 25 people, 1/8/25/64/256 supplied values | 1 |
+
+For `membership-live`, set `TYPEDB_BENCH_CONTAINER=typedb_test` only when
+that container is dedicated to this benchmark. The runner then records
+container CPU time per operation from cgroup counters; without it, the
+server-CPU metric is omitted. This is total server-container CPU, not an
+isolated query-planner profile.
 
 The ORM live fixture starts with 256 people, five companies, and 256 employments;
 bulk inserts grow it within each independent process. The driver result-read

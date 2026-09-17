@@ -229,6 +229,13 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 		}
 	})
 
+	t.Run("typed membership input", func(t *testing.T) {
+		assertTypeQL(t, "typed membership", membershipGivenQuery, "")
+		values, _ := membershipInputs(8)
+		assertTypeQL(t, "expanded membership", membershipExpandedQuery(values), "")
+		assertTypeQL(t, "iid membership", "match $e isa live-bench-person;\n"+strings.Join(IIDIn("0x1", "0x2").ToPatterns("e"), "\n")+"\nfetch { \"iid\": iid($e) };", "")
+	})
+
 	t.Run("exists with bounded distinct matches", func(t *testing.T) {
 		readTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}}}
 		mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{readTx}}, "test_db"))

@@ -100,9 +100,34 @@ func benchmarkGroup(name string) (groupSpec, error) {
 			"BenchmarkLiveCancellationRetention/native-limit=2/tx-timeout=1500ms",
 			"BenchmarkLiveCancellationRetention/native-limit=2/tx-timeout=200ms",
 		}}, nil
+	case "membership-build":
+		return groupSpec{pattern: "^Benchmark(MembershipConstruction|IIDMembershipConstruction)$", benchTime: "100x", packages: []string{"./gotype/..."}, required: membershipBuildSeries()}, nil
+	case "membership-live":
+		return groupSpec{pattern: "^BenchmarkLiveMembershipStrategies$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./gotype/..."}, live: true, required: membershipLiveSeries()}, nil
 	default:
 		return groupSpec{}, fmt.Errorf("unknown benchmark group %q", name)
 	}
+}
+
+func membershipBuildSeries() []string {
+	series := make([]string, 0, 15)
+	for _, size := range []int{1, 8, 25, 64, 256} {
+		for _, strategy := range []string{"expanded", "typed-rows"} {
+			series = append(series, fmt.Sprintf("BenchmarkMembershipConstruction/values=%d/%s", size, strategy))
+		}
+		series = append(series, fmt.Sprintf("BenchmarkIIDMembershipConstruction/values=%d", size))
+	}
+	return series
+}
+
+func membershipLiveSeries() []string {
+	series := make([]string, 0, 10)
+	for _, size := range []int{1, 8, 25, 64, 256} {
+		for _, strategy := range []string{"expanded", "typed-rows"} {
+			series = append(series, fmt.Sprintf("BenchmarkLiveMembershipStrategies/values=%d/%s", size, strategy))
+		}
+	}
+	return series
 }
 
 func streamTuningSeries() []string {
@@ -145,7 +170,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("benchdb", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "record reviewed results in this sqlite database (omit for exploratory stdout only)")
 	count := fs.Int("count", 5, "benchmark sample count")
-	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency, cancellation")
+	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency, cancellation, membership-build, membership-live")
 	bench := fs.String("bench", "", "override the group's benchmark regex")
 	benchTime := fs.String("benchtime", "", "override the group's benchmark duration or fixed iterations")
 	reset := fs.Bool("reset", false, "clear existing benchmark history before saving the new run")
