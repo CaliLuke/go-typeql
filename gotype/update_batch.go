@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/CaliLuke/go-typeql/given"
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
 
 // The IID disjunction is indexed, but large disjunctions are costly to plan.

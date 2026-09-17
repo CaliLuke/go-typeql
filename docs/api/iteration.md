@@ -22,7 +22,8 @@ Each callback receives a newly allocated model. You may retain it after the call
 
 Return `gotype.ErrStopIteration` to end the read successfully. A wrapped stop error also works. Any other callback error stops the read and is returned with its identity preserved, so `errors.Is` works. A cancelled context stops delivery and returns a cancellation error. A failure after earlier stream chunks can leave some callbacks already completed; iteration does not roll back their external effects.
 
-An unbound manager opens and closes its read transaction. A manager bound to a transaction leaves that transaction open for its caller. The callback must not start a second query on the same bound transaction before it returns.
+An unbound manager opens and closes its read transaction. A manager bound to a transaction leaves that transaction open for its caller. The callback can inspect `IsOpen`. A query, commit, rollback, or `CloseChecked` on the same active driver transaction returns `driver.ErrTransactionBusy`.
+`Close` and `CloseAsync` defer native cleanup until the callback and stream finish. Use a separate transaction for queries inside the callback.
 
 With the bundled driver, the ORM hydrates and delivers each row as it arrives. It does not retain a slice of all models or raw rows. A custom transaction without `QueryEachWithContext` remains supported: it first materializes all raw result rows through `QueryWithContext`, then hydrates and delivers models one at a time. In that fallback, early stop saves hydration work but cannot prevent raw-row materialization.
 

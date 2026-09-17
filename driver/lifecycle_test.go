@@ -100,11 +100,14 @@ func TestAbandonRequiresInFlightCall(t *testing.T) {
 	}
 
 	// The normal close path still owns the handle.
-	job := tx.detachCloseJob(time.Now(), nil)
+	job, err := tx.detachCloseJob(time.Now(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if job.ptr == nil {
 		t.Fatal("detachCloseJob should hand out the handle of a non-abandoned transaction")
 	}
-	if again := tx.detachCloseJob(time.Now(), nil); again.ptr != nil {
+	if again, err := tx.detachCloseJob(time.Now(), nil); err != nil || again.ptr != nil {
 		t.Fatal("detachCloseJob must be idempotent")
 	}
 }

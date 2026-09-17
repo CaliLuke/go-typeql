@@ -1,0 +1,222 @@
+[
+  {
+    "suite": "live",
+    "revision": "release",
+    "sample": 1,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/release-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609724.4693801,
+    "seconds": 8.429247856140137,
+    "load": [
+      12.04931640625,
+      15.41650390625,
+      13.89404296875
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "current",
+    "sample": 1,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/current-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609732.8997009,
+    "seconds": 6.600844144821167,
+    "load": [
+      12.416015625,
+      15.38525390625,
+      13.90087890625
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "current",
+    "sample": 2,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/current-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609739.501239,
+    "seconds": 6.343456029891968,
+    "load": [
+      12.14208984375,
+      15.27880859375,
+      13.8720703125
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "release",
+    "sample": 2,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/release-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609745.845509,
+    "seconds": 7.160211086273193,
+    "load": [
+      12.62255859375,
+      15.2841796875,
+      13.890625
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "release",
+    "sample": 3,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/release-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609753.0066419,
+    "seconds": 7.904896974563599,
+    "load": [
+      12.65234375,
+      15.24609375,
+      13.88525390625
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "current",
+    "sample": 3,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/current-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609760.91219,
+    "seconds": 8.5017831325531,
+    "load": [
+      12.8046875,
+      15.18896484375,
+      13.88037109375
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "current",
+    "sample": 4,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/current-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609769.41564,
+    "seconds": 7.052900791168213,
+    "load": [
+      13.861328125,
+      15.3681640625,
+      13.951171875
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "release",
+    "sample": 4,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/release-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609776.4696,
+    "seconds": 7.76451301574707,
+    "load": [
+      13.10693359375,
+      15.15771484375,
+      13.892578125
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "release",
+    "sample": 5,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/release-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609784.235122,
+    "seconds": 7.809428930282593,
+    "load": [
+      12.93798828125,
+      15.08837890625,
+      13.87548828125
+    ],
+    "returncode": 0
+  },
+  {
+    "suite": "live",
+    "revision": "current",
+    "sample": 5,
+    "command": [
+      "/private/tmp/go-typeql-release-comparison/current-gotype.test",
+      "-test.run=^$",
+      "-test.bench=^BenchmarkReleaseComparison$",
+      "-test.benchtime=10x",
+      "-test.count=1",
+      "-test.benchmem",
+      "-test.timeout=5m"
+    ],
+    "start": 1789609792.0453708,
+    "seconds": 6.254366159439087,
+    "load": [
+      12.6943359375,
+      14.96875,
+      13.84716796875
+    ],
+    "returncode": 0
+  }
+]

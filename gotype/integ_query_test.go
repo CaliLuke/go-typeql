@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 // setupQueryDB creates a DB with Person model and seeds 5 persons.

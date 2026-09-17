@@ -1,0 +1,7 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/tqlgen
+cpu: Apple M5
+BenchmarkReleaseParseSchema/blocks_1-4         	   21656	     17034 ns/op	   26636 B/op	     296 allocs/op
+BenchmarkReleaseParseSchema/blocks_20-4        	     956	    374275 ns/op	  499681 B/op	    5136 allocs/op
+PASS

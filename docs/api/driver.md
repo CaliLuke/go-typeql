@@ -1,6 +1,6 @@
 # Rust FFI Driver
 
-`import "github.com/CaliLuke/go-typeql/driver"` (requires build tags: `cgo,typedb`) -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/driver)
+`import "github.com/CaliLuke/go-typeql/v2/driver"` (requires build tags: `cgo,typedb`) -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2/driver)
 
 The `driver` package provides Go bindings to the official TypeDB `typedb-driver` 3.x Rust crate via CGo. All files are gated with `//go:build cgo && typedb` so they don't affect builds that don't need the driver.
 
@@ -29,7 +29,7 @@ The Rust crate lives in `driver/rust/` and compiles to `driver/rust/target/relea
 ## Connecting
 
 ```go
-import "github.com/CaliLuke/go-typeql/driver"
+import "github.com/CaliLuke/go-typeql/v2/driver"
 
 // Basic connection
 drv, err := driver.Open("localhost:1729", "admin", "password")
@@ -164,6 +164,16 @@ still-open transactions before releasing the driver handle.
 Concurrency: transaction opens, database-manager operations, and version
 checks run in parallel (the driver uses a read-write lock; only `Close` is
 exclusive). Individual transactions still serialize their own FFI calls.
+
+`QueryEachWithContext` calls a function for each result row. The callback can
+call `IsOpen` on the same transaction. During an active stream, other queries,
+`Commit`, `Rollback`, and `CloseChecked` return `ErrTransactionBusy`.
+
+If a callback calls `Close` or `CloseAsync`, the driver defers native cleanup
+until that callback returns. The stream then stops with `ErrNotConnected`,
+unless the callback returns its own error. For these deferred closes, each
+completion callback runs once after native cleanup. Cancellation waits for the active row callback,
+so no row callback runs after `QueryEachWithContext` returns.
 
 ### Given Rows
 

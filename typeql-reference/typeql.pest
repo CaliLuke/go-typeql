@@ -570,7 +570,7 @@ FALSE = @{ "false" ~ WB }
 
 integer_literal = @{ ASCII_DIGIT+ }
 decimal_literal = @{ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT+ )? ~ "dec" }
-double_literal = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ ( ^"e" ~ sign? ~ integer_literal )? }
+double_literal = @{ ASCII_DIGIT+ ~ ( ( "." ~ ASCII_DIGIT+ )? ~ ^"e" ~ sign? ~ integer_literal | "." ~ ASCII_DIGIT+ ) }
 numeric_literal = @{ double_literal | integer_literal }
 
 date_literal = ${ date_fragment ~ WB }

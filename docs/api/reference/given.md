@@ -3,24 +3,80 @@
 # given
 
 ```go
-import "github.com/CaliLuke/go-typeql/given"
+import "github.com/CaliLuke/go-typeql/v2/given"
 ```
 
-Package given defines the input\-row contract for TypeQL given stages.
+Package given defines typed TypeQL input rows without a driver or CGo dependency.
 
 ## Index
 
 - [type Rows](<#Rows>)
+- [type TypedRows](<#TypedRows>)
+  - [func NewRows\(variables ...string\) \*TypedRows](<#NewRows>)
+  - [func \(r \*TypedRows\) Add\(values ...Value\) error](<#TypedRows.Add>)
+  - [func \(r \*TypedRows\) MarshalGivenRows\(\) \(\[\]byte, error\)](<#TypedRows.MarshalGivenRows>)
+- [type Value](<#Value>)
 
 
 <a name="Rows"></a>
-## type [Rows](<https://github.com/CaliLuke/go-typeql/blob/main/given/rows.go#L5-L7>)
+## type [Rows](<https://github.com/CaliLuke/go-typeql/blob/main/given/rows.go#L10-L12>)
 
 Rows supplies typed input rows for a TypeQL given stage.
 
 ```go
 type Rows interface {
     MarshalGivenRows() ([]byte, error)
+}
+```
+
+<a name="TypedRows"></a>
+## type [TypedRows](<https://github.com/CaliLuke/go-typeql/blob/main/given/rows.go#L21-L24>)
+
+TypedRows contains values ordered by the declared TypeQL variable names.
+
+```go
+type TypedRows struct {
+    Variables []string  `json:"variables"`
+    Rows      [][]Value `json:"rows"`
+}
+```
+
+<a name="NewRows"></a>
+### func [NewRows](<https://github.com/CaliLuke/go-typeql/blob/main/given/rows.go#L27>)
+
+```go
+func NewRows(variables ...string) *TypedRows
+```
+
+NewRows declares the variables shared by every row.
+
+<a name="TypedRows.Add"></a>
+### func \(\*TypedRows\) [Add](<https://github.com/CaliLuke/go-typeql/blob/main/given/rows.go#L32>)
+
+```go
+func (r *TypedRows) Add(values ...Value) error
+```
+
+Add appends one row of values in variable order.
+
+<a name="TypedRows.MarshalGivenRows"></a>
+### func \(\*TypedRows\) [MarshalGivenRows](<https://github.com/CaliLuke/go-typeql/blob/main/given/rows.go#L44>)
+
+```go
+func (r *TypedRows) MarshalGivenRows() ([]byte, error)
+```
+
+MarshalGivenRows validates and encodes the rows for the driver.
+
+<a name="Value"></a>
+## type [Value](<https://github.com/CaliLuke/go-typeql/blob/main/given/rows.go#L15-L18>)
+
+Value is a typed value in a TypeQL given row.
+
+```go
+type Value struct {
+    Type  string `json:"type"`
+    Value any    `json:"value,omitzero"`
 }
 ```
 

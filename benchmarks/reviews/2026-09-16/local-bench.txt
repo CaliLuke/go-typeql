@@ -1,0 +1,43 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/ast
+cpu: Apple M5
+BenchmarkCompiler_CompileBatch-10    	 1334668	       897.6 ns/op	    2768 B/op	      33 allocs/op
+BenchmarkCompiler_CompileBatch-10    	 1331859	       934.3 ns/op	    2768 B/op	      33 allocs/op
+BenchmarkCompiler_CompileBatch-10    	 1000000	      1254 ns/op	    2768 B/op	      33 allocs/op
+BenchmarkCompiler_CompileBatch-10    	 1126686	      1027 ns/op	    2768 B/op	      33 allocs/op
+BenchmarkCompiler_CompileBatch-10    	 1370253	       900.2 ns/op	    2768 B/op	      33 allocs/op
+PASS
+ok  	github.com/CaliLuke/go-typeql/ast	6.599s
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/gotype
+cpu: Apple M5
+BenchmarkHydrate_10000Rows-10    	     916	   1186814 ns/op	  881951 B/op	   10001 allocs/op
+BenchmarkHydrate_10000Rows-10    	     870	   1747239 ns/op	  881923 B/op	   10001 allocs/op
+BenchmarkHydrate_10000Rows-10    	     421	   2763038 ns/op	  881924 B/op	   10001 allocs/op
+BenchmarkHydrate_10000Rows-10    	     882	   1514123 ns/op	  881922 B/op	   10001 allocs/op
+BenchmarkHydrate_10000Rows-10    	     975	   1350699 ns/op	  881921 B/op	   10001 allocs/op
+BenchmarkReviewFetch-10          	 2001900	       625.4 ns/op	     963 B/op	      26 allocs/op
+BenchmarkReviewFetch-10          	 1331532	       828.5 ns/op	     963 B/op	      26 allocs/op
+BenchmarkReviewFetch-10          	 1419632	       803.5 ns/op	     963 B/op	      26 allocs/op
+BenchmarkReviewFetch-10          	 1211626	      1004 ns/op	     963 B/op	      26 allocs/op
+BenchmarkReviewFetch-10          	 1592149	       727.5 ns/op	     963 B/op	      26 allocs/op
+PASS
+ok  	github.com/CaliLuke/go-typeql/gotype	12.566s
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/tqlgen
+cpu: Apple M5
+BenchmarkReviewParser/Rebuild-10         	    4167	    554172 ns/op	  711159 B/op	    5008 allocs/op
+BenchmarkReviewParser/Rebuild-10         	    4281	    274520 ns/op	  712759 B/op	    5009 allocs/op
+BenchmarkReviewParser/Rebuild-10         	    4935	    372477 ns/op	  711902 B/op	    5009 allocs/op
+BenchmarkReviewParser/Rebuild-10         	    3718	    591724 ns/op	  711340 B/op	    5009 allocs/op
+BenchmarkReviewParser/Rebuild-10         	    4108	    313275 ns/op	  712199 B/op	    5009 allocs/op
+BenchmarkReviewParser/Reuse-10           	   59022	     21786 ns/op	   26770 B/op	     295 allocs/op
+BenchmarkReviewParser/Reuse-10           	   65982	     18926 ns/op	   26829 B/op	     295 allocs/op
+BenchmarkReviewParser/Reuse-10           	   67543	     39727 ns/op	   26811 B/op	     295 allocs/op
+BenchmarkReviewParser/Reuse-10           	   12897	     89845 ns/op	   26743 B/op	     295 allocs/op
+BenchmarkReviewParser/Reuse-10           	   39720	     28012 ns/op	   26791 B/op	     295 allocs/op
+PASS
+ok  	github.com/CaliLuke/go-typeql/tqlgen	16.647s

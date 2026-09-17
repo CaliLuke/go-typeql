@@ -1,0 +1,2259 @@
+{
+  "aggregates": {
+    "all": {
+      "operations": [
+        "ReadByIID",
+        "ReadByKey",
+        "GetOne",
+        "All256",
+        "WithRoles256",
+        "ExistsBroad256",
+        "PutOne",
+        "Insert16",
+        "Put16",
+        "Update16",
+        "Delete16",
+        "Delete16Strict"
+      ],
+      "speedup": 2.122459356976812,
+      "time_reduction": 0.5288484574685192,
+      "paired_speedups": [
+        1.5813820819485926,
+        1.7763226044897589,
+        1.9309736522297056,
+        2.1649686333761666,
+        2.4396144345328947
+      ],
+      "alloc_reduction": 0.5960210810438398,
+      "byte_reduction": 0.6033737936900292
+    },
+    "reads": {
+      "operations": [
+        "ReadByIID",
+        "ReadByKey",
+        "GetOne",
+        "All256",
+        "WithRoles256"
+      ],
+      "speedup": 1.2539267580429518,
+      "time_reduction": 0.20250525512292628,
+      "paired_speedups": [
+        0.8365011585755693,
+        1.0933599270627437,
+        1.4752826986196574,
+        1.1876929610252325,
+        1.3929974824066198
+      ],
+      "alloc_reduction": 0.4157182514716553,
+      "byte_reduction": 0.48653064437923854
+    },
+    "bulk": {
+      "operations": [
+        "Insert16",
+        "Put16",
+        "Update16",
+        "Delete16",
+        "Delete16Strict"
+      ],
+      "speedup": 4.123170504222891,
+      "time_reduction": 0.7574681912921586,
+      "paired_speedups": [
+        3.835156942064642,
+        3.543026326769689,
+        2.707511397399152,
+        4.1149935666402015,
+        5.0246000397324995
+      ],
+      "alloc_reduction": 0.7449678924183081,
+      "byte_reduction": 0.7020509670046875
+    }
+  },
+  "benchmarks": {
+    "ast": {
+      "BenchmarkCompiler_CompileBatch": {
+        "current": {
+          "ns_per_op": 1345.0,
+          "bytes_per_op": 2768.0,
+          "allocs_per_op": 33.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1808.0,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            },
+            "2": {
+              "ns_per_op": 1376.0,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            },
+            "3": {
+              "ns_per_op": 967.1,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            },
+            "4": {
+              "ns_per_op": 977.6,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            },
+            "5": {
+              "ns_per_op": 1345.0,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 1118.0,
+          "bytes_per_op": 2768.0,
+          "allocs_per_op": 33.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 913.0,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            },
+            "2": {
+              "ns_per_op": 1077.0,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            },
+            "3": {
+              "ns_per_op": 1149.0,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            },
+            "4": {
+              "ns_per_op": 1118.0,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            },
+            "5": {
+              "ns_per_op": 1167.0,
+              "bytes_per_op": 2768.0,
+              "allocs_per_op": 33.0
+            }
+          }
+        },
+        "speedup": 0.8312267657992565,
+        "time_reduction": -0.20304114490161007
+      },
+      "BenchmarkCompiler_FormatGoValue": {
+        "current": {
+          "ns_per_op": 262.2,
+          "bytes_per_op": 80.0,
+          "allocs_per_op": 4.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 430.0,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            },
+            "2": {
+              "ns_per_op": 262.2,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            },
+            "3": {
+              "ns_per_op": 274.1,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            },
+            "4": {
+              "ns_per_op": 251.3,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            },
+            "5": {
+              "ns_per_op": 251.4,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 253.8,
+          "bytes_per_op": 80.0,
+          "allocs_per_op": 4.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 251.3,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            },
+            "2": {
+              "ns_per_op": 253.8,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            },
+            "3": {
+              "ns_per_op": 261.8,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            },
+            "4": {
+              "ns_per_op": 306.9,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            },
+            "5": {
+              "ns_per_op": 237.1,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 4.0
+            }
+          }
+        },
+        "speedup": 0.9679633867276889,
+        "time_reduction": -0.033096926713947816
+      }
+    },
+    "decode": {
+      "BenchmarkDecodeMsgpack/flat/reused-keys": {
+        "current": {
+          "ns_per_op": 189914.0,
+          "bytes_per_op": 381918.0,
+          "allocs_per_op": 4754.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 204431.0,
+              "bytes_per_op": 381916.0,
+              "allocs_per_op": 4754.0
+            },
+            "2": {
+              "ns_per_op": 168410.0,
+              "bytes_per_op": 381917.0,
+              "allocs_per_op": 4754.0
+            },
+            "3": {
+              "ns_per_op": 228563.0,
+              "bytes_per_op": 381921.0,
+              "allocs_per_op": 4754.0
+            },
+            "4": {
+              "ns_per_op": 189914.0,
+              "bytes_per_op": 381918.0,
+              "allocs_per_op": 4754.0
+            },
+            "5": {
+              "ns_per_op": 178369.0,
+              "bytes_per_op": 381918.0,
+              "allocs_per_op": 4754.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 222633.0,
+          "bytes_per_op": 405958.0,
+          "allocs_per_op": 7751.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 231224.0,
+              "bytes_per_op": 405958.0,
+              "allocs_per_op": 7751.0
+            },
+            "2": {
+              "ns_per_op": 218401.0,
+              "bytes_per_op": 405989.0,
+              "allocs_per_op": 7751.0
+            },
+            "3": {
+              "ns_per_op": 218370.0,
+              "bytes_per_op": 405771.0,
+              "allocs_per_op": 7751.0
+            },
+            "4": {
+              "ns_per_op": 223434.0,
+              "bytes_per_op": 405958.0,
+              "allocs_per_op": 7751.0
+            },
+            "5": {
+              "ns_per_op": 222633.0,
+              "bytes_per_op": 405975.0,
+              "allocs_per_op": 7751.0
+            }
+          }
+        },
+        "speedup": 1.1722832439946502,
+        "time_reduction": 0.14696383734666474
+      },
+      "BenchmarkDecodeMsgpack/nested/reused-keys": {
+        "current": {
+          "ns_per_op": 472647.0,
+          "bytes_per_op": 824856.0,
+          "allocs_per_op": 13501.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 516023.0,
+              "bytes_per_op": 824970.0,
+              "allocs_per_op": 13501.0
+            },
+            "2": {
+              "ns_per_op": 404126.0,
+              "bytes_per_op": 825033.0,
+              "allocs_per_op": 13501.0
+            },
+            "3": {
+              "ns_per_op": 472272.0,
+              "bytes_per_op": 824856.0,
+              "allocs_per_op": 13501.0
+            },
+            "4": {
+              "ns_per_op": 603860.0,
+              "bytes_per_op": 824841.0,
+              "allocs_per_op": 13501.0
+            },
+            "5": {
+              "ns_per_op": 472647.0,
+              "bytes_per_op": 824809.0,
+              "allocs_per_op": 13501.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 528487.0,
+          "bytes_per_op": 871283.0,
+          "allocs_per_op": 19495.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 528487.0,
+              "bytes_per_op": 871123.0,
+              "allocs_per_op": 19495.0
+            },
+            "2": {
+              "ns_per_op": 560434.0,
+              "bytes_per_op": 871219.0,
+              "allocs_per_op": 19495.0
+            },
+            "3": {
+              "ns_per_op": 520986.0,
+              "bytes_per_op": 871315.0,
+              "allocs_per_op": 19495.0
+            },
+            "4": {
+              "ns_per_op": 527635.0,
+              "bytes_per_op": 871283.0,
+              "allocs_per_op": 19495.0
+            },
+            "5": {
+              "ns_per_op": 538137.0,
+              "bytes_per_op": 871346.0,
+              "allocs_per_op": 19495.0
+            }
+          }
+        },
+        "speedup": 1.118143138536794,
+        "time_reduction": 0.10566012030570293
+      },
+      "BenchmarkDecodeMsgpack/wide/reused-keys": {
+        "current": {
+          "ns_per_op": 992012.0,
+          "bytes_per_op": 1288108.0,
+          "allocs_per_op": 6784.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1044891.0,
+              "bytes_per_op": 1288110.0,
+              "allocs_per_op": 6784.0
+            },
+            "2": {
+              "ns_per_op": 1013022.0,
+              "bytes_per_op": 1288106.0,
+              "allocs_per_op": 6784.0
+            },
+            "3": {
+              "ns_per_op": 939500.0,
+              "bytes_per_op": 1288111.0,
+              "allocs_per_op": 6784.0
+            },
+            "4": {
+              "ns_per_op": 893261.0,
+              "bytes_per_op": 1288108.0,
+              "allocs_per_op": 6784.0
+            },
+            "5": {
+              "ns_per_op": 992012.0,
+              "bytes_per_op": 1288107.0,
+              "allocs_per_op": 6784.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 1223894.0,
+          "bytes_per_op": 1502956.0,
+          "allocs_per_op": 33752.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1245565.0,
+              "bytes_per_op": 1502956.0,
+              "allocs_per_op": 33752.0
+            },
+            "2": {
+              "ns_per_op": 1371574.0,
+              "bytes_per_op": 1502912.0,
+              "allocs_per_op": 33752.0
+            },
+            "3": {
+              "ns_per_op": 1168185.0,
+              "bytes_per_op": 1503001.0,
+              "allocs_per_op": 33752.0
+            },
+            "4": {
+              "ns_per_op": 1085338.0,
+              "bytes_per_op": 1502929.0,
+              "allocs_per_op": 33752.0
+            },
+            "5": {
+              "ns_per_op": 1223894.0,
+              "bytes_per_op": 1502966.0,
+              "allocs_per_op": 33752.0
+            }
+          }
+        },
+        "speedup": 1.2337491885178808,
+        "time_reduction": 0.18946248613033478
+      },
+      "BenchmarkDecodeMsgpack/keys-only/reused-keys": {
+        "current": {
+          "ns_per_op": 117909.0,
+          "bytes_per_op": 350700.0,
+          "allocs_per_op": 2752.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 165648.0,
+              "bytes_per_op": 350700.0,
+              "allocs_per_op": 2752.0
+            },
+            "2": {
+              "ns_per_op": 117909.0,
+              "bytes_per_op": 350701.0,
+              "allocs_per_op": 2752.0
+            },
+            "3": {
+              "ns_per_op": 111956.0,
+              "bytes_per_op": 350700.0,
+              "allocs_per_op": 2752.0
+            },
+            "4": {
+              "ns_per_op": 110763.0,
+              "bytes_per_op": 350699.0,
+              "allocs_per_op": 2752.0
+            },
+            "5": {
+              "ns_per_op": 127338.0,
+              "bytes_per_op": 350700.0,
+              "allocs_per_op": 2752.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 152562.0,
+          "bytes_per_op": 365316.0,
+          "allocs_per_op": 3751.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 145388.0,
+              "bytes_per_op": 365315.0,
+              "allocs_per_op": 3751.0
+            },
+            "2": {
+              "ns_per_op": 157158.0,
+              "bytes_per_op": 365316.0,
+              "allocs_per_op": 3751.0
+            },
+            "3": {
+              "ns_per_op": 144063.0,
+              "bytes_per_op": 365316.0,
+              "allocs_per_op": 3751.0
+            },
+            "4": {
+              "ns_per_op": 173159.0,
+              "bytes_per_op": 365316.0,
+              "allocs_per_op": 3751.0
+            },
+            "5": {
+              "ns_per_op": 152562.0,
+              "bytes_per_op": 365318.0,
+              "allocs_per_op": 3751.0
+            }
+          }
+        },
+        "speedup": 1.2938961402437472,
+        "time_reduction": 0.22714044126322408
+      },
+      "BenchmarkDecodeMsgpack/string-value/reused-keys": {
+        "current": {
+          "ns_per_op": 137441.0,
+          "bytes_per_op": 408760.0,
+          "allocs_per_op": 4008.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 137323.0,
+              "bytes_per_op": 408761.0,
+              "allocs_per_op": 4008.0
+            },
+            "2": {
+              "ns_per_op": 138706.0,
+              "bytes_per_op": 408760.0,
+              "allocs_per_op": 4008.0
+            },
+            "3": {
+              "ns_per_op": 134807.0,
+              "bytes_per_op": 408759.0,
+              "allocs_per_op": 4008.0
+            },
+            "4": {
+              "ns_per_op": 137441.0,
+              "bytes_per_op": 408760.0,
+              "allocs_per_op": 4008.0
+            },
+            "5": {
+              "ns_per_op": 158483.0,
+              "bytes_per_op": 408760.0,
+              "allocs_per_op": 4008.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 188980.0,
+          "bytes_per_op": 419808.0,
+          "allocs_per_op": 5007.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 188980.0,
+              "bytes_per_op": 419808.0,
+              "allocs_per_op": 5007.0
+            },
+            "2": {
+              "ns_per_op": 158520.0,
+              "bytes_per_op": 419808.0,
+              "allocs_per_op": 5007.0
+            },
+            "3": {
+              "ns_per_op": 158229.0,
+              "bytes_per_op": 419808.0,
+              "allocs_per_op": 5007.0
+            },
+            "4": {
+              "ns_per_op": 431782.0,
+              "bytes_per_op": 419812.0,
+              "allocs_per_op": 5007.0
+            },
+            "5": {
+              "ns_per_op": 191445.0,
+              "bytes_per_op": 419812.0,
+              "allocs_per_op": 5007.0
+            }
+          }
+        },
+        "speedup": 1.374989995707249,
+        "time_reduction": 0.2727219811620277
+      },
+      "BenchmarkDecodeMsgpackEachKeys/flat/reused-keys": {
+        "current": {
+          "ns_per_op": 115615.0,
+          "bytes_per_op": 37558.0,
+          "allocs_per_op": 2750.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 118849.0,
+              "bytes_per_op": 37557.0,
+              "allocs_per_op": 2750.0
+            },
+            "2": {
+              "ns_per_op": 112882.0,
+              "bytes_per_op": 37558.0,
+              "allocs_per_op": 2750.0
+            },
+            "3": {
+              "ns_per_op": 120362.0,
+              "bytes_per_op": 37557.0,
+              "allocs_per_op": 2750.0
+            },
+            "4": {
+              "ns_per_op": 112302.0,
+              "bytes_per_op": 37558.0,
+              "allocs_per_op": 2750.0
+            },
+            "5": {
+              "ns_per_op": 115615.0,
+              "bytes_per_op": 37558.0,
+              "allocs_per_op": 2750.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 140563.0,
+          "bytes_per_op": 53736.0,
+          "allocs_per_op": 5747.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 135292.0,
+              "bytes_per_op": 53720.0,
+              "allocs_per_op": 5747.0
+            },
+            "2": {
+              "ns_per_op": 135095.0,
+              "bytes_per_op": 53768.0,
+              "allocs_per_op": 5747.0
+            },
+            "3": {
+              "ns_per_op": 140563.0,
+              "bytes_per_op": 53736.0,
+              "allocs_per_op": 5747.0
+            },
+            "4": {
+              "ns_per_op": 146159.0,
+              "bytes_per_op": 53800.0,
+              "allocs_per_op": 5747.0
+            },
+            "5": {
+              "ns_per_op": 159690.0,
+              "bytes_per_op": 53736.0,
+              "allocs_per_op": 5747.0
+            }
+          }
+        },
+        "speedup": 1.2157851489858582,
+        "time_reduction": 0.17748625171631227
+      },
+      "BenchmarkDecodeMsgpackEachKeys/nested/reused-keys": {
+        "current": {
+          "ns_per_op": 370752.0,
+          "bytes_per_op": 495187.0,
+          "allocs_per_op": 13495.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 370752.0,
+              "bytes_per_op": 495236.0,
+              "allocs_per_op": 13495.0
+            },
+            "2": {
+              "ns_per_op": 327456.0,
+              "bytes_per_op": 495187.0,
+              "allocs_per_op": 13495.0
+            },
+            "3": {
+              "ns_per_op": 383530.0,
+              "bytes_per_op": 495044.0,
+              "allocs_per_op": 13495.0
+            },
+            "4": {
+              "ns_per_op": 388631.0,
+              "bytes_per_op": 495220.0,
+              "allocs_per_op": 13495.0
+            },
+            "5": {
+              "ns_per_op": 330729.0,
+              "bytes_per_op": 495076.0,
+              "allocs_per_op": 13495.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 395806.0,
+          "bytes_per_op": 519033.0,
+          "allocs_per_op": 17491.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 395806.0,
+              "bytes_per_op": 519033.0,
+              "allocs_per_op": 17491.0
+            },
+            "2": {
+              "ns_per_op": 469312.0,
+              "bytes_per_op": 519104.0,
+              "allocs_per_op": 17491.0
+            },
+            "3": {
+              "ns_per_op": 391728.0,
+              "bytes_per_op": 519016.0,
+              "allocs_per_op": 17491.0
+            },
+            "4": {
+              "ns_per_op": 471408.0,
+              "bytes_per_op": 518986.0,
+              "allocs_per_op": 17491.0
+            },
+            "5": {
+              "ns_per_op": 386723.0,
+              "bytes_per_op": 519096.0,
+              "allocs_per_op": 17491.0
+            }
+          }
+        },
+        "speedup": 1.0675761695149317,
+        "time_reduction": 0.06329868673036787
+      },
+      "BenchmarkDecodeMsgpackEachKeys/wide/reused-keys": {
+        "current": {
+          "ns_per_op": 825403.0,
+          "bytes_per_op": 41353.0,
+          "allocs_per_op": 2784.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 869596.0,
+              "bytes_per_op": 41353.0,
+              "allocs_per_op": 2784.0
+            },
+            "2": {
+              "ns_per_op": 794045.0,
+              "bytes_per_op": 41361.0,
+              "allocs_per_op": 2784.0
+            },
+            "3": {
+              "ns_per_op": 812861.0,
+              "bytes_per_op": 41361.0,
+              "allocs_per_op": 2784.0
+            },
+            "4": {
+              "ns_per_op": 909639.0,
+              "bytes_per_op": 41353.0,
+              "allocs_per_op": 2784.0
+            },
+            "5": {
+              "ns_per_op": 825403.0,
+              "bytes_per_op": 41352.0,
+              "allocs_per_op": 2784.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 984806.0,
+          "bytes_per_op": 248310.0,
+          "allocs_per_op": 29752.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 984806.0,
+              "bytes_per_op": 248371.0,
+              "allocs_per_op": 29752.0
+            },
+            "2": {
+              "ns_per_op": 1108688.0,
+              "bytes_per_op": 248310.0,
+              "allocs_per_op": 29752.0
+            },
+            "3": {
+              "ns_per_op": 937956.0,
+              "bytes_per_op": 248277.0,
+              "allocs_per_op": 29752.0
+            },
+            "4": {
+              "ns_per_op": 1051180.0,
+              "bytes_per_op": 248357.0,
+              "allocs_per_op": 29752.0
+            },
+            "5": {
+              "ns_per_op": 902898.0,
+              "bytes_per_op": 248277.0,
+              "allocs_per_op": 29752.0
+            }
+          }
+        },
+        "speedup": 1.1931214206878338,
+        "time_reduction": 0.16186233633832459
+      }
+    },
+    "gotype": {
+      "BenchmarkHydrate_100Rows": {
+        "current": {
+          "ns_per_op": 11087.0,
+          "bytes_per_op": 8896.0,
+          "allocs_per_op": 101.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 11087.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            },
+            "2": {
+              "ns_per_op": 10672.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            },
+            "3": {
+              "ns_per_op": 14651.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            },
+            "4": {
+              "ns_per_op": 12294.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            },
+            "5": {
+              "ns_per_op": 10779.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 10950.0,
+          "bytes_per_op": 8896.0,
+          "allocs_per_op": 101.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 10421.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            },
+            "2": {
+              "ns_per_op": 10345.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            },
+            "3": {
+              "ns_per_op": 12292.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            },
+            "4": {
+              "ns_per_op": 10950.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            },
+            "5": {
+              "ns_per_op": 12113.0,
+              "bytes_per_op": 8896.0,
+              "allocs_per_op": 101.0
+            }
+          }
+        },
+        "speedup": 0.9876431857129973,
+        "time_reduction": -0.012511415525114034
+      },
+      "BenchmarkHydrate_1000Rows": {
+        "current": {
+          "ns_per_op": 122832.0,
+          "bytes_per_op": 88192.0,
+          "allocs_per_op": 1001.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 122832.0,
+              "bytes_per_op": 88194.0,
+              "allocs_per_op": 1001.0
+            },
+            "2": {
+              "ns_per_op": 113181.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            },
+            "3": {
+              "ns_per_op": 134735.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            },
+            "4": {
+              "ns_per_op": 141882.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            },
+            "5": {
+              "ns_per_op": 108337.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 112860.0,
+          "bytes_per_op": 88192.0,
+          "allocs_per_op": 1001.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 112860.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            },
+            "2": {
+              "ns_per_op": 101613.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            },
+            "3": {
+              "ns_per_op": 132080.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            },
+            "4": {
+              "ns_per_op": 109697.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            },
+            "5": {
+              "ns_per_op": 115269.0,
+              "bytes_per_op": 88192.0,
+              "allocs_per_op": 1001.0
+            }
+          }
+        },
+        "speedup": 0.9188159437280188,
+        "time_reduction": -0.0883572567783093
+      },
+      "BenchmarkHydrate_10000Rows": {
+        "current": {
+          "ns_per_op": 1218460.0,
+          "bytes_per_op": 881920.0,
+          "allocs_per_op": 10001.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1237535.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            },
+            "2": {
+              "ns_per_op": 1125990.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            },
+            "3": {
+              "ns_per_op": 1310880.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            },
+            "4": {
+              "ns_per_op": 1218460.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            },
+            "5": {
+              "ns_per_op": 1137822.0,
+              "bytes_per_op": 881921.0,
+              "allocs_per_op": 10001.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 1145729.0,
+          "bytes_per_op": 881920.0,
+          "allocs_per_op": 10001.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1155485.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            },
+            "2": {
+              "ns_per_op": 1133962.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            },
+            "3": {
+              "ns_per_op": 1145729.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            },
+            "4": {
+              "ns_per_op": 1109308.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            },
+            "5": {
+              "ns_per_op": 1236502.0,
+              "bytes_per_op": 881920.0,
+              "allocs_per_op": 10001.0
+            }
+          }
+        },
+        "speedup": 0.9403090786730791,
+        "time_reduction": -0.06348010742505439
+      },
+      "BenchmarkHydrate_SingleRow": {
+        "current": {
+          "ns_per_op": 116.8,
+          "bytes_per_op": 80.0,
+          "allocs_per_op": 1.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 127.7,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            },
+            "2": {
+              "ns_per_op": 116.8,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            },
+            "3": {
+              "ns_per_op": 147.2,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            },
+            "4": {
+              "ns_per_op": 116.0,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            },
+            "5": {
+              "ns_per_op": 112.2,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 122.2,
+          "bytes_per_op": 80.0,
+          "allocs_per_op": 1.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 122.2,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            },
+            "2": {
+              "ns_per_op": 132.2,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            },
+            "3": {
+              "ns_per_op": 113.7,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            },
+            "4": {
+              "ns_per_op": 109.3,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            },
+            "5": {
+              "ns_per_op": 160.7,
+              "bytes_per_op": 80.0,
+              "allocs_per_op": 1.0
+            }
+          }
+        },
+        "speedup": 1.0462328767123288,
+        "time_reduction": 0.04418985270049103
+      },
+      "BenchmarkExtractModelInfo_Entity": {
+        "current": {
+          "ns_per_op": 1481.0,
+          "bytes_per_op": 4216.0,
+          "allocs_per_op": 29.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1839.0,
+              "bytes_per_op": 4216.0,
+              "allocs_per_op": 29.0
+            },
+            "2": {
+              "ns_per_op": 1481.0,
+              "bytes_per_op": 4216.0,
+              "allocs_per_op": 29.0
+            },
+            "3": {
+              "ns_per_op": 1624.0,
+              "bytes_per_op": 4216.0,
+              "allocs_per_op": 29.0
+            },
+            "4": {
+              "ns_per_op": 1283.0,
+              "bytes_per_op": 4216.0,
+              "allocs_per_op": 29.0
+            },
+            "5": {
+              "ns_per_op": 1220.0,
+              "bytes_per_op": 4216.0,
+              "allocs_per_op": 29.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 1632.0,
+          "bytes_per_op": 4200.0,
+          "allocs_per_op": 29.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1339.0,
+              "bytes_per_op": 4200.0,
+              "allocs_per_op": 29.0
+            },
+            "2": {
+              "ns_per_op": 1718.0,
+              "bytes_per_op": 4200.0,
+              "allocs_per_op": 29.0
+            },
+            "3": {
+              "ns_per_op": 1647.0,
+              "bytes_per_op": 4200.0,
+              "allocs_per_op": 29.0
+            },
+            "4": {
+              "ns_per_op": 1368.0,
+              "bytes_per_op": 4200.0,
+              "allocs_per_op": 29.0
+            },
+            "5": {
+              "ns_per_op": 1632.0,
+              "bytes_per_op": 4200.0,
+              "allocs_per_op": 29.0
+            }
+          }
+        },
+        "speedup": 1.101958136394328,
+        "time_reduction": 0.09252450980392146
+      },
+      "BenchmarkExtractModelInfo_Relation": {
+        "current": {
+          "ns_per_op": 1272.0,
+          "bytes_per_op": 1784.0,
+          "allocs_per_op": 28.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1375.0,
+              "bytes_per_op": 1784.0,
+              "allocs_per_op": 28.0
+            },
+            "2": {
+              "ns_per_op": 1016.0,
+              "bytes_per_op": 1784.0,
+              "allocs_per_op": 28.0
+            },
+            "3": {
+              "ns_per_op": 1272.0,
+              "bytes_per_op": 1784.0,
+              "allocs_per_op": 28.0
+            },
+            "4": {
+              "ns_per_op": 1025.0,
+              "bytes_per_op": 1784.0,
+              "allocs_per_op": 28.0
+            },
+            "5": {
+              "ns_per_op": 1376.0,
+              "bytes_per_op": 1784.0,
+              "allocs_per_op": 28.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 1098.0,
+          "bytes_per_op": 1768.0,
+          "allocs_per_op": 28.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1098.0,
+              "bytes_per_op": 1768.0,
+              "allocs_per_op": 28.0
+            },
+            "2": {
+              "ns_per_op": 1307.0,
+              "bytes_per_op": 1768.0,
+              "allocs_per_op": 28.0
+            },
+            "3": {
+              "ns_per_op": 1017.0,
+              "bytes_per_op": 1768.0,
+              "allocs_per_op": 28.0
+            },
+            "4": {
+              "ns_per_op": 944.4,
+              "bytes_per_op": 1768.0,
+              "allocs_per_op": 28.0
+            },
+            "5": {
+              "ns_per_op": 1192.0,
+              "bytes_per_op": 1768.0,
+              "allocs_per_op": 28.0
+            }
+          }
+        },
+        "speedup": 0.8632075471698113,
+        "time_reduction": -0.1584699453551912
+      },
+      "BenchmarkUnwrapResult": {
+        "current": {
+          "ns_per_op": 126.3,
+          "bytes_per_op": 0.0,
+          "allocs_per_op": 0.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 126.3,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            },
+            "2": {
+              "ns_per_op": 120.5,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            },
+            "3": {
+              "ns_per_op": 126.9,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            },
+            "4": {
+              "ns_per_op": 164.0,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            },
+            "5": {
+              "ns_per_op": 121.2,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 126.3,
+          "bytes_per_op": 0.0,
+          "allocs_per_op": 0.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 126.3,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            },
+            "2": {
+              "ns_per_op": 132.5,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            },
+            "3": {
+              "ns_per_op": 128.1,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            },
+            "4": {
+              "ns_per_op": 116.8,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            },
+            "5": {
+              "ns_per_op": 125.2,
+              "bytes_per_op": 0.0,
+              "allocs_per_op": 0.0
+            }
+          }
+        },
+        "speedup": 1.0,
+        "time_reduction": 0.0
+      },
+      "BenchmarkReleaseFetchProjection": {
+        "current": {
+          "ns_per_op": 92.72,
+          "bytes_per_op": 56.0,
+          "allocs_per_op": 3.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 89.81,
+              "bytes_per_op": 56.0,
+              "allocs_per_op": 3.0
+            },
+            "2": {
+              "ns_per_op": 81.76,
+              "bytes_per_op": 56.0,
+              "allocs_per_op": 3.0
+            },
+            "3": {
+              "ns_per_op": 176.3,
+              "bytes_per_op": 56.0,
+              "allocs_per_op": 3.0
+            },
+            "4": {
+              "ns_per_op": 92.72,
+              "bytes_per_op": 56.0,
+              "allocs_per_op": 3.0
+            },
+            "5": {
+              "ns_per_op": 98.33,
+              "bytes_per_op": 56.0,
+              "allocs_per_op": 3.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 412.8,
+          "bytes_per_op": 664.0,
+          "allocs_per_op": 19.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 412.8,
+              "bytes_per_op": 664.0,
+              "allocs_per_op": 19.0
+            },
+            "2": {
+              "ns_per_op": 407.5,
+              "bytes_per_op": 664.0,
+              "allocs_per_op": 19.0
+            },
+            "3": {
+              "ns_per_op": 426.1,
+              "bytes_per_op": 664.0,
+              "allocs_per_op": 19.0
+            },
+            "4": {
+              "ns_per_op": 393.1,
+              "bytes_per_op": 664.0,
+              "allocs_per_op": 19.0
+            },
+            "5": {
+              "ns_per_op": 418.0,
+              "bytes_per_op": 664.0,
+              "allocs_per_op": 19.0
+            }
+          }
+        },
+        "speedup": 4.452113891285591,
+        "time_reduction": 0.7753875968992248
+      }
+    },
+    "live": {
+      "BenchmarkReleaseComparison/ReadByIID": {
+        "current": {
+          "ns_per_op": 1673792.0,
+          "bytes_per_op": 1764.0,
+          "allocs_per_op": 42.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1673792.0,
+              "bytes_per_op": 1764.0,
+              "allocs_per_op": 42.0
+            },
+            "2": {
+              "ns_per_op": 1851083.0,
+              "bytes_per_op": 1828.0,
+              "allocs_per_op": 43.0
+            },
+            "3": {
+              "ns_per_op": 1370521.0,
+              "bytes_per_op": 1760.0,
+              "allocs_per_op": 42.0
+            },
+            "4": {
+              "ns_per_op": 3106275.0,
+              "bytes_per_op": 1763.0,
+              "allocs_per_op": 42.0
+            },
+            "5": {
+              "ns_per_op": 1400621.0,
+              "bytes_per_op": 1764.0,
+              "allocs_per_op": 42.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 2303292.0,
+          "bytes_per_op": 5003.0,
+          "allocs_per_op": 88.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1367242.0,
+              "bytes_per_op": 5003.0,
+              "allocs_per_op": 88.0
+            },
+            "2": {
+              "ns_per_op": 1820179.0,
+              "bytes_per_op": 5003.0,
+              "allocs_per_op": 88.0
+            },
+            "3": {
+              "ns_per_op": 2484371.0,
+              "bytes_per_op": 4940.0,
+              "allocs_per_op": 87.0
+            },
+            "4": {
+              "ns_per_op": 2303292.0,
+              "bytes_per_op": 5004.0,
+              "allocs_per_op": 88.0
+            },
+            "5": {
+              "ns_per_op": 2765433.0,
+              "bytes_per_op": 5003.0,
+              "allocs_per_op": 88.0
+            }
+          }
+        },
+        "speedup": 1.3760921309218828,
+        "time_reduction": 0.2733044702972962
+      },
+      "BenchmarkReleaseComparison/ReadByKey": {
+        "current": {
+          "ns_per_op": 1508254.0,
+          "bytes_per_op": 1782.0,
+          "allocs_per_op": 47.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1508254.0,
+              "bytes_per_op": 1747.0,
+              "allocs_per_op": 47.0
+            },
+            "2": {
+              "ns_per_op": 1461496.0,
+              "bytes_per_op": 1747.0,
+              "allocs_per_op": 47.0
+            },
+            "3": {
+              "ns_per_op": 1529792.0,
+              "bytes_per_op": 1817.0,
+              "allocs_per_op": 48.0
+            },
+            "4": {
+              "ns_per_op": 2281442.0,
+              "bytes_per_op": 1816.0,
+              "allocs_per_op": 48.0
+            },
+            "5": {
+              "ns_per_op": 1372800.0,
+              "bytes_per_op": 1782.0,
+              "allocs_per_op": 47.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 1972571.0,
+          "bytes_per_op": 5100.0,
+          "allocs_per_op": 94.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1349538.0,
+              "bytes_per_op": 5100.0,
+              "allocs_per_op": 94.0
+            },
+            "2": {
+              "ns_per_op": 1640638.0,
+              "bytes_per_op": 5097.0,
+              "allocs_per_op": 94.0
+            },
+            "3": {
+              "ns_per_op": 2045100.0,
+              "bytes_per_op": 5107.0,
+              "allocs_per_op": 94.0
+            },
+            "4": {
+              "ns_per_op": 2571121.0,
+              "bytes_per_op": 5100.0,
+              "allocs_per_op": 94.0
+            },
+            "5": {
+              "ns_per_op": 1972571.0,
+              "bytes_per_op": 5099.0,
+              "allocs_per_op": 94.0
+            }
+          }
+        },
+        "speedup": 1.3078506670627097,
+        "time_reduction": 0.23538671104867714
+      },
+      "BenchmarkReleaseComparison/GetOne": {
+        "current": {
+          "ns_per_op": 1616667.0,
+          "bytes_per_op": 1784.0,
+          "allocs_per_op": 47.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1526967.0,
+              "bytes_per_op": 1745.0,
+              "allocs_per_op": 47.0
+            },
+            "2": {
+              "ns_per_op": 1237675.0,
+              "bytes_per_op": 1783.0,
+              "allocs_per_op": 47.0
+            },
+            "3": {
+              "ns_per_op": 1809496.0,
+              "bytes_per_op": 1785.0,
+              "allocs_per_op": 47.0
+            },
+            "4": {
+              "ns_per_op": 2311708.0,
+              "bytes_per_op": 1795.0,
+              "allocs_per_op": 47.0
+            },
+            "5": {
+              "ns_per_op": 1616667.0,
+              "bytes_per_op": 1784.0,
+              "allocs_per_op": 47.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 2127825.0,
+          "bytes_per_op": 5104.0,
+          "allocs_per_op": 94.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1204083.0,
+              "bytes_per_op": 5104.0,
+              "allocs_per_op": 94.0
+            },
+            "2": {
+              "ns_per_op": 1920925.0,
+              "bytes_per_op": 5148.0,
+              "allocs_per_op": 94.0
+            },
+            "3": {
+              "ns_per_op": 2127825.0,
+              "bytes_per_op": 5099.0,
+              "allocs_per_op": 94.0
+            },
+            "4": {
+              "ns_per_op": 3072967.0,
+              "bytes_per_op": 5153.0,
+              "allocs_per_op": 94.0
+            },
+            "5": {
+              "ns_per_op": 2250262.0,
+              "bytes_per_op": 5099.0,
+              "allocs_per_op": 94.0
+            }
+          }
+        },
+        "speedup": 1.3161801409937854,
+        "time_reduction": 0.2402255824609637
+      },
+      "BenchmarkReleaseComparison/All256": {
+        "current": {
+          "ns_per_op": 9449396.0,
+          "bytes_per_op": 50881.0,
+          "allocs_per_op": 2085.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 9351596.0,
+              "bytes_per_op": 50904.0,
+              "allocs_per_op": 2085.0
+            },
+            "2": {
+              "ns_per_op": 9071554.0,
+              "bytes_per_op": 50881.0,
+              "allocs_per_op": 2085.0
+            },
+            "3": {
+              "ns_per_op": 9449396.0,
+              "bytes_per_op": 50880.0,
+              "allocs_per_op": 2085.0
+            },
+            "4": {
+              "ns_per_op": 12120388.0,
+              "bytes_per_op": 50892.0,
+              "allocs_per_op": 2085.0
+            },
+            "5": {
+              "ns_per_op": 9832988.0,
+              "bytes_per_op": 50880.0,
+              "allocs_per_op": 2085.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 11836088.0,
+          "bytes_per_op": 58688.0,
+          "allocs_per_op": 3154.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 7857088.0,
+              "bytes_per_op": 58654.0,
+              "allocs_per_op": 3153.0
+            },
+            "2": {
+              "ns_per_op": 8439533.0,
+              "bytes_per_op": 58702.0,
+              "allocs_per_op": 3154.0
+            },
+            "3": {
+              "ns_per_op": 12596708.0,
+              "bytes_per_op": 58678.0,
+              "allocs_per_op": 3153.0
+            },
+            "4": {
+              "ns_per_op": 17159617.0,
+              "bytes_per_op": 58761.0,
+              "allocs_per_op": 3154.0
+            },
+            "5": {
+              "ns_per_op": 11836088.0,
+              "bytes_per_op": 58688.0,
+              "allocs_per_op": 3154.0
+            }
+          }
+        },
+        "speedup": 1.252576143491076,
+        "time_reduction": 0.20164534092683328
+      },
+      "BenchmarkReleaseComparison/WithRoles256": {
+        "current": {
+          "ns_per_op": 17151404.0,
+          "bytes_per_op": 284144.0,
+          "allocs_per_op": 6953.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 18573012.0,
+              "bytes_per_op": 284144.0,
+              "allocs_per_op": 6953.0
+            },
+            "2": {
+              "ns_per_op": 16385288.0,
+              "bytes_per_op": 284123.0,
+              "allocs_per_op": 6953.0
+            },
+            "3": {
+              "ns_per_op": 17151404.0,
+              "bytes_per_op": 284105.0,
+              "allocs_per_op": 6953.0
+            },
+            "4": {
+              "ns_per_op": 18306512.0,
+              "bytes_per_op": 284176.0,
+              "allocs_per_op": 6953.0
+            },
+            "5": {
+              "ns_per_op": 16240029.0,
+              "bytes_per_op": 284190.0,
+              "allocs_per_op": 6953.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 17919892.0,
+          "bytes_per_op": 297209.0,
+          "allocs_per_op": 8054.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 15709338.0,
+              "bytes_per_op": 297044.0,
+              "allocs_per_op": 8053.0
+            },
+            "2": {
+              "ns_per_op": 16062975.0,
+              "bytes_per_op": 297246.0,
+              "allocs_per_op": 8054.0
+            },
+            "3": {
+              "ns_per_op": 31552350.0,
+              "bytes_per_op": 297180.0,
+              "allocs_per_op": 8054.0
+            },
+            "4": {
+              "ns_per_op": 27509858.0,
+              "bytes_per_op": 297209.0,
+              "allocs_per_op": 8054.0
+            },
+            "5": {
+              "ns_per_op": 17919892.0,
+              "bytes_per_op": 297220.0,
+              "allocs_per_op": 8055.0
+            }
+          }
+        },
+        "speedup": 1.0448061278248708,
+        "time_reduction": 0.04288463345649629
+      },
+      "BenchmarkReleaseComparison/ExistsBroad256": {
+        "current": {
+          "ns_per_op": 1611250.0,
+          "bytes_per_op": 2305.0,
+          "allocs_per_op": 44.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 2436225.0,
+              "bytes_per_op": 2305.0,
+              "allocs_per_op": 44.0
+            },
+            "2": {
+              "ns_per_op": 1738967.0,
+              "bytes_per_op": 2305.0,
+              "allocs_per_op": 44.0
+            },
+            "3": {
+              "ns_per_op": 1491171.0,
+              "bytes_per_op": 2305.0,
+              "allocs_per_op": 44.0
+            },
+            "4": {
+              "ns_per_op": 1611250.0,
+              "bytes_per_op": 2305.0,
+              "allocs_per_op": 44.0
+            },
+            "5": {
+              "ns_per_op": 1489317.0,
+              "bytes_per_op": 2305.0,
+              "allocs_per_op": 44.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 2570779.0,
+          "bytes_per_op": 4601.0,
+          "allocs_per_op": 75.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 1537962.0,
+              "bytes_per_op": 4544.0,
+              "allocs_per_op": 74.0
+            },
+            "2": {
+              "ns_per_op": 1743988.0,
+              "bytes_per_op": 4601.0,
+              "allocs_per_op": 75.0
+            },
+            "3": {
+              "ns_per_op": 4335238.0,
+              "bytes_per_op": 4659.0,
+              "allocs_per_op": 76.0
+            },
+            "4": {
+              "ns_per_op": 2737821.0,
+              "bytes_per_op": 4646.0,
+              "allocs_per_op": 75.0
+            },
+            "5": {
+              "ns_per_op": 2570779.0,
+              "bytes_per_op": 4542.0,
+              "allocs_per_op": 74.0
+            }
+          }
+        },
+        "speedup": 1.5955183863460047,
+        "time_reduction": 0.37324445236249404
+      },
+      "BenchmarkReleaseComparison/PutOne": {
+        "current": {
+          "ns_per_op": 4111875.0,
+          "bytes_per_op": 2847.0,
+          "allocs_per_op": 64.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 4513942.0,
+              "bytes_per_op": 2799.0,
+              "allocs_per_op": 63.0
+            },
+            "2": {
+              "ns_per_op": 3979567.0,
+              "bytes_per_op": 2874.0,
+              "allocs_per_op": 64.0
+            },
+            "3": {
+              "ns_per_op": 7090396.0,
+              "bytes_per_op": 2847.0,
+              "allocs_per_op": 64.0
+            },
+            "4": {
+              "ns_per_op": 4111875.0,
+              "bytes_per_op": 2847.0,
+              "allocs_per_op": 64.0
+            },
+            "5": {
+              "ns_per_op": 3803433.0,
+              "bytes_per_op": 2799.0,
+              "allocs_per_op": 63.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 5830333.0,
+          "bytes_per_op": 7887.0,
+          "allocs_per_op": 146.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 5146608.0,
+              "bytes_per_op": 7887.0,
+              "allocs_per_op": 146.0
+            },
+            "2": {
+              "ns_per_op": 4489088.0,
+              "bytes_per_op": 7887.0,
+              "allocs_per_op": 146.0
+            },
+            "3": {
+              "ns_per_op": 6445750.0,
+              "bytes_per_op": 7888.0,
+              "allocs_per_op": 146.0
+            },
+            "4": {
+              "ns_per_op": 9201325.0,
+              "bytes_per_op": 7887.0,
+              "allocs_per_op": 146.0
+            },
+            "5": {
+              "ns_per_op": 5830333.0,
+              "bytes_per_op": 7887.0,
+              "allocs_per_op": 146.0
+            }
+          }
+        },
+        "speedup": 1.4179256421948625,
+        "time_reduction": 0.29474439967665655
+      },
+      "BenchmarkReleaseComparison/Insert16": {
+        "current": {
+          "ns_per_op": 4758492.0,
+          "bytes_per_op": 24805.0,
+          "allocs_per_op": 397.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 5967883.0,
+              "bytes_per_op": 25730.0,
+              "allocs_per_op": 399.0
+            },
+            "2": {
+              "ns_per_op": 4758492.0,
+              "bytes_per_op": 24805.0,
+              "allocs_per_op": 397.0
+            },
+            "3": {
+              "ns_per_op": 4991362.0,
+              "bytes_per_op": 23855.0,
+              "allocs_per_op": 395.0
+            },
+            "4": {
+              "ns_per_op": 3980279.0,
+              "bytes_per_op": 24805.0,
+              "allocs_per_op": 397.0
+            },
+            "5": {
+              "ns_per_op": 4120042.0,
+              "bytes_per_op": 24805.0,
+              "allocs_per_op": 397.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 19326279.0,
+          "bytes_per_op": 65962.0,
+          "allocs_per_op": 1252.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 18165329.0,
+              "bytes_per_op": 65962.0,
+              "allocs_per_op": 1252.0
+            },
+            "2": {
+              "ns_per_op": 17970867.0,
+              "bytes_per_op": 65864.0,
+              "allocs_per_op": 1251.0
+            },
+            "3": {
+              "ns_per_op": 19326279.0,
+              "bytes_per_op": 65938.0,
+              "allocs_per_op": 1252.0
+            },
+            "4": {
+              "ns_per_op": 27506071.0,
+              "bytes_per_op": 65972.0,
+              "allocs_per_op": 1252.0
+            },
+            "5": {
+              "ns_per_op": 26595712.0,
+              "bytes_per_op": 65962.0,
+              "allocs_per_op": 1252.0
+            }
+          }
+        },
+        "speedup": 4.061429335175934,
+        "time_reduction": 0.753781263325444
+      },
+      "BenchmarkReleaseComparison/Put16": {
+        "current": {
+          "ns_per_op": 6932704.0,
+          "bytes_per_op": 24805.0,
+          "allocs_per_op": 421.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 6932704.0,
+              "bytes_per_op": 24805.0,
+              "allocs_per_op": 421.0
+            },
+            "2": {
+              "ns_per_op": 10330554.0,
+              "bytes_per_op": 24804.0,
+              "allocs_per_op": 421.0
+            },
+            "3": {
+              "ns_per_op": 8491017.0,
+              "bytes_per_op": 25728.0,
+              "allocs_per_op": 423.0
+            },
+            "4": {
+              "ns_per_op": 5785083.0,
+              "bytes_per_op": 25754.0,
+              "allocs_per_op": 424.0
+            },
+            "5": {
+              "ns_per_op": 5646988.0,
+              "bytes_per_op": 23852.0,
+              "allocs_per_op": 419.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 52182654.0,
+          "bytes_per_op": 106664.0,
+          "allocs_per_op": 2103.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 60189367.0,
+              "bytes_per_op": 106751.0,
+              "allocs_per_op": 2104.0
+            },
+            "2": {
+              "ns_per_op": 33135396.0,
+              "bytes_per_op": 106773.0,
+              "allocs_per_op": 2104.0
+            },
+            "3": {
+              "ns_per_op": 52182654.0,
+              "bytes_per_op": 106660.0,
+              "allocs_per_op": 2103.0
+            },
+            "4": {
+              "ns_per_op": 82590992.0,
+              "bytes_per_op": 106664.0,
+              "allocs_per_op": 2103.0
+            },
+            "5": {
+              "ns_per_op": 36969875.0,
+              "bytes_per_op": 106645.0,
+              "allocs_per_op": 2103.0
+            }
+          }
+        },
+        "speedup": 7.527027549423717,
+        "time_reduction": 0.86714543112353
+      },
+      "BenchmarkReleaseComparison/Update16": {
+        "current": {
+          "ns_per_op": 13799654.0,
+          "bytes_per_op": 38144.0,
+          "allocs_per_op": 615.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 13799654.0,
+              "bytes_per_op": 38144.0,
+              "allocs_per_op": 615.0
+            },
+            "2": {
+              "ns_per_op": 17875254.0,
+              "bytes_per_op": 38169.0,
+              "allocs_per_op": 615.0
+            },
+            "3": {
+              "ns_per_op": 29538333.0,
+              "bytes_per_op": 37646.0,
+              "allocs_per_op": 613.0
+            },
+            "4": {
+              "ns_per_op": 11894417.0,
+              "bytes_per_op": 37672.0,
+              "allocs_per_op": 613.0
+            },
+            "5": {
+              "ns_per_op": 9060842.0,
+              "bytes_per_op": 38171.0,
+              "allocs_per_op": 615.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 24515154.0,
+          "bytes_per_op": 85089.0,
+          "allocs_per_op": 1169.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 24515154.0,
+              "bytes_per_op": 85040.0,
+              "allocs_per_op": 1169.0
+            },
+            "2": {
+              "ns_per_op": 34340704.0,
+              "bytes_per_op": 85155.0,
+              "allocs_per_op": 1170.0
+            },
+            "3": {
+              "ns_per_op": 23862325.0,
+              "bytes_per_op": 85104.0,
+              "allocs_per_op": 1169.0
+            },
+            "4": {
+              "ns_per_op": 18519708.0,
+              "bytes_per_op": 85054.0,
+              "allocs_per_op": 1169.0
+            },
+            "5": {
+              "ns_per_op": 25222883.0,
+              "bytes_per_op": 85089.0,
+              "allocs_per_op": 1169.0
+            }
+          }
+        },
+        "speedup": 1.7765049761392568,
+        "time_reduction": 0.4370969890705153
+      },
+      "BenchmarkReleaseComparison/Delete16": {
+        "current": {
+          "ns_per_op": 6047979.0,
+          "bytes_per_op": 7683.0,
+          "allocs_per_op": 111.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 4986912.0,
+              "bytes_per_op": 7528.0,
+              "allocs_per_op": 110.0
+            },
+            "2": {
+              "ns_per_op": 6047979.0,
+              "bytes_per_op": 7691.0,
+              "allocs_per_op": 111.0
+            },
+            "3": {
+              "ns_per_op": 15503663.0,
+              "bytes_per_op": 7683.0,
+              "allocs_per_op": 111.0
+            },
+            "4": {
+              "ns_per_op": 10410879.0,
+              "bytes_per_op": 7726.0,
+              "allocs_per_op": 111.0
+            },
+            "5": {
+              "ns_per_op": 5862471.0,
+              "bytes_per_op": 7406.0,
+              "allocs_per_op": 110.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 21638250.0,
+          "bytes_per_op": 30083.0,
+          "allocs_per_op": 594.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 18579383.0,
+              "bytes_per_op": 30038.0,
+              "allocs_per_op": 594.0
+            },
+            "2": {
+              "ns_per_op": 21638250.0,
+              "bytes_per_op": 30105.0,
+              "allocs_per_op": 595.0
+            },
+            "3": {
+              "ns_per_op": 23937004.0,
+              "bytes_per_op": 30080.0,
+              "allocs_per_op": 594.0
+            },
+            "4": {
+              "ns_per_op": 16838229.0,
+              "bytes_per_op": 30123.0,
+              "allocs_per_op": 595.0
+            },
+            "5": {
+              "ns_per_op": 23615792.0,
+              "bytes_per_op": 30083.0,
+              "allocs_per_op": 594.0
+            }
+          }
+        },
+        "speedup": 3.5777653989870006,
+        "time_reduction": 0.7204959273508718
+      },
+      "BenchmarkReleaseComparison/Delete16Strict": {
+        "current": {
+          "ns_per_op": 8929371.0,
+          "bytes_per_op": 20112.0,
+          "allocs_per_op": 255.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 7190583.0,
+              "bytes_per_op": 20105.0,
+              "allocs_per_op": 255.0
+            },
+            "2": {
+              "ns_per_op": 7280354.0,
+              "bytes_per_op": 20123.0,
+              "allocs_per_op": 255.0
+            },
+            "3": {
+              "ns_per_op": 11171283.0,
+              "bytes_per_op": 20217.0,
+              "allocs_per_op": 256.0
+            },
+            "4": {
+              "ns_per_op": 11688150.0,
+              "bytes_per_op": 20112.0,
+              "allocs_per_op": 255.0
+            },
+            "5": {
+              "ns_per_op": 8929371.0,
+              "bytes_per_op": 20086.0,
+              "allocs_per_op": 255.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 54764187.0,
+          "bytes_per_op": 85758.0,
+          "allocs_per_op": 1475.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 34109371.0,
+              "bytes_per_op": 85654.0,
+              "allocs_per_op": 1474.0
+            },
+            "2": {
+              "ns_per_op": 48818825.0,
+              "bytes_per_op": 85809.0,
+              "allocs_per_op": 1476.0
+            },
+            "3": {
+              "ns_per_op": 54764187.0,
+              "bytes_per_op": 85758.0,
+              "allocs_per_op": 1475.0
+            },
+            "4": {
+              "ns_per_op": 55507729.0,
+              "bytes_per_op": 85809.0,
+              "allocs_per_op": 1476.0
+            },
+            "5": {
+              "ns_per_op": 60344721.0,
+              "bytes_per_op": 85660.0,
+              "allocs_per_op": 1474.0
+            }
+          }
+        },
+        "speedup": 6.133039718027171,
+        "time_reduction": 0.8369487161381579
+      }
+    },
+    "parser": {
+      "BenchmarkReleaseParseSchema/blocks_1": {
+        "current": {
+          "ns_per_op": 18920.0,
+          "bytes_per_op": 26639.0,
+          "allocs_per_op": 296.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 17034.0,
+              "bytes_per_op": 26636.0,
+              "allocs_per_op": 296.0
+            },
+            "2": {
+              "ns_per_op": 22905.0,
+              "bytes_per_op": 26672.0,
+              "allocs_per_op": 296.0
+            },
+            "3": {
+              "ns_per_op": 18920.0,
+              "bytes_per_op": 26697.0,
+              "allocs_per_op": 296.0
+            },
+            "4": {
+              "ns_per_op": 18458.0,
+              "bytes_per_op": 26639.0,
+              "allocs_per_op": 296.0
+            },
+            "5": {
+              "ns_per_op": 21305.0,
+              "bytes_per_op": 26638.0,
+              "allocs_per_op": 296.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 263263.0,
+          "bytes_per_op": 708662.0,
+          "allocs_per_op": 5009.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 263263.0,
+              "bytes_per_op": 707829.0,
+              "allocs_per_op": 5008.0
+            },
+            "2": {
+              "ns_per_op": 305172.0,
+              "bytes_per_op": 708970.0,
+              "allocs_per_op": 5009.0
+            },
+            "3": {
+              "ns_per_op": 245707.0,
+              "bytes_per_op": 708662.0,
+              "allocs_per_op": 5009.0
+            },
+            "4": {
+              "ns_per_op": 222426.0,
+              "bytes_per_op": 708115.0,
+              "allocs_per_op": 5008.0
+            },
+            "5": {
+              "ns_per_op": 292520.0,
+              "bytes_per_op": 708704.0,
+              "allocs_per_op": 5009.0
+            }
+          }
+        },
+        "speedup": 13.91453488372093,
+        "time_reduction": 0.9281327037981031
+      },
+      "BenchmarkReleaseParseSchema/blocks_20": {
+        "current": {
+          "ns_per_op": 363694.0,
+          "bytes_per_op": 499681.0,
+          "allocs_per_op": 5136.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 374275.0,
+              "bytes_per_op": 499681.0,
+              "allocs_per_op": 5136.0
+            },
+            "2": {
+              "ns_per_op": 413855.0,
+              "bytes_per_op": 499140.0,
+              "allocs_per_op": 5136.0
+            },
+            "3": {
+              "ns_per_op": 363694.0,
+              "bytes_per_op": 499724.0,
+              "allocs_per_op": 5136.0
+            },
+            "4": {
+              "ns_per_op": 334149.0,
+              "bytes_per_op": 499551.0,
+              "allocs_per_op": 5136.0
+            },
+            "5": {
+              "ns_per_op": 359430.0,
+              "bytes_per_op": 499801.0,
+              "allocs_per_op": 5136.0
+            }
+          }
+        },
+        "release": {
+          "ns_per_op": 652474.0,
+          "bytes_per_op": 1182427.0,
+          "allocs_per_op": 9850.0,
+          "samples": {
+            "1": {
+              "ns_per_op": 652474.0,
+              "bytes_per_op": 1182328.0,
+              "allocs_per_op": 9851.0
+            },
+            "2": {
+              "ns_per_op": 602936.0,
+              "bytes_per_op": 1182674.0,
+              "allocs_per_op": 9850.0
+            },
+            "3": {
+              "ns_per_op": 712193.0,
+              "bytes_per_op": 1182952.0,
+              "allocs_per_op": 9851.0
+            },
+            "4": {
+              "ns_per_op": 563424.0,
+              "bytes_per_op": 1182427.0,
+              "allocs_per_op": 9850.0
+            },
+            "5": {
+              "ns_per_op": 655120.0,
+              "bytes_per_op": 1181919.0,
+              "allocs_per_op": 9850.0
+            }
+          }
+        },
+        "speedup": 1.7940191479650476,
+        "time_reduction": 0.4425923485073735
+      }
+    }
+  }
+}

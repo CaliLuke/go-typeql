@@ -6,7 +6,35 @@ import (
 	json "encoding/json/v2"
 	"strings"
 	"testing"
+
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
+
+func TestGivenRowsPreservesScalarZeroValues(t *testing.T) {
+	rows := NewGivenRows("text", "flag", "integer", "double", "empty").
+		MustAdd(StringGiven(""), BoolGiven(false), IntGiven(0), DoubleGiven(0), EmptyGiven())
+	data, err := rows.MarshalGivenRows()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"variables":["text","flag","integer","double","empty"],"rows":[[{"type":"string","value":""},{"type":"boolean","value":false},{"type":"integer","value":0},{"type":"double","value":0},{"type":"empty"}]]}`
+	if string(data) != want {
+		t.Fatalf("encoded rows = %s, want %s", data, want)
+	}
+}
+
+func TestNilGivenRows(t *testing.T) {
+	for _, rows := range []given.Rows{nil, (*GivenRows)(nil), (*given.TypedRows)(nil)} {
+		if !nilGivenRows(rows) {
+			t.Fatalf("typed nil %T was not absent", rows)
+		}
+	}
+	for _, rows := range []given.Rows{NewGivenRows("v"), given.NewRows("v"), &GivenRows{}, &given.TypedRows{}} {
+		if nilGivenRows(rows) {
+			t.Fatalf("non-nil %T was absent", rows)
+		}
+	}
+}
 
 func TestGivenRowsAddValidatesWidth(t *testing.T) {
 	rows := NewGivenRows("name", "age")

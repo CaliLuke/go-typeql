@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/driver"
+	"github.com/CaliLuke/go-typeql/v2/driver"
 )
 
 type projectionBenchNarrow struct {

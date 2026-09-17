@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/given"
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
 
 // --- inferTxType ---

@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/CaliLuke/go-typeql/given"
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
 
 // batchInsertTx is optional: pure-Go transaction implementations continue to

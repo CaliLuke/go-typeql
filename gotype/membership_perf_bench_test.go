@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/given"
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
 
 func membershipInputs(size int) ([]any, *given.TypedRows) {

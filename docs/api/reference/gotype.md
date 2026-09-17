@@ -3,7 +3,7 @@
 # gotype
 
 ```go
-import "github.com/CaliLuke/go-typeql/gotype"
+import "github.com/CaliLuke/go-typeql/v2/gotype"
 ```
 
 Package gotype provides high\-level TypeDB data mapping and CRUD operations.
@@ -217,11 +217,14 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
   - [func \(m \*Manager\[T\]\) All\(ctx context.Context\) \(\[\]\*T, error\)](<#Manager[T].All>)
   - [func \(m \*Manager\[T\]\) Delete\(ctx context.Context, instance \*T, opts ...DeleteOption\) error](<#Manager[T].Delete>)
   - [func \(m \*Manager\[T\]\) DeleteMany\(ctx context.Context, instances \[\]\*T, opts ...DeleteOption\) error](<#Manager[T].DeleteMany>)
+  - [func \(m \*Manager\[T\]\) ForEach\(ctx context.Context, filters map\[string\]any, fn func\(\*T\) error\) error](<#Manager[T].ForEach>)
+  - [func \(m \*Manager\[T\]\) ForEachWithRoles\(ctx context.Context, filters map\[string\]any, fn func\(\*T\) error\) error](<#Manager[T].ForEachWithRoles>)
   - [func \(m \*Manager\[T\]\) Get\(ctx context.Context, filters map\[string\]any\) \(\[\]\*T, error\)](<#Manager[T].Get>)
   - [func \(m \*Manager\[T\]\) GetByIID\(ctx context.Context, iid string\) \(\*T, error\)](<#Manager[T].GetByIID>)
   - [func \(m \*Manager\[T\]\) GetByIIDPolymorphic\(ctx context.Context, iid string\) \(\*T, string, error\)](<#Manager[T].GetByIIDPolymorphic>)
   - [func \(m \*Manager\[T\]\) GetByIIDPolymorphicAny\(ctx context.Context, iid string\) \(any, string, error\)](<#Manager[T].GetByIIDPolymorphicAny>)
   - [func \(m \*Manager\[T\]\) GetOne\(ctx context.Context, filters map\[string\]any\) \(\*T, error\)](<#Manager[T].GetOne>)
+  - [func \(m \*Manager\[T\]\) GetProjected\(ctx context.Context, filters map\[string\]any, spec Projection\) \(\[\]ProjectedResult, error\)](<#Manager[T].GetProjected>)
   - [func \(m \*Manager\[T\]\) GetWithRoles\(ctx context.Context, filters map\[string\]any\) \(\[\]\*T, error\)](<#Manager[T].GetWithRoles>)
   - [func \(m \*Manager\[T\]\) Insert\(ctx context.Context, instance \*T\) error](<#Manager[T].Insert>)
   - [func \(m \*Manager\[T\]\) InsertMany\(ctx context.Context, instances \[\]\*T\) error](<#Manager[T].InsertMany>)
@@ -285,16 +288,22 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
 - [type PoolConfig](<#PoolConfig>)
   - [func DefaultPoolConfig\(\) PoolConfig](<#DefaultPoolConfig>)
 - [type PoolStats](<#PoolStats>)
+- [type ProjectedField](<#ProjectedField>)
+- [type ProjectedResult](<#ProjectedResult>)
+- [type Projection](<#Projection>)
 - [type Query](<#Query>)
   - [func \(q \*Query\[T\]\) Aggregate\(ctx context.Context, specs ...AggregateSpec\) \(map\[string\]float64, error\)](<#Query[T].Aggregate>)
   - [func \(q \*Query\[T\]\) All\(ctx context.Context\) \(\[\]\*T, error\)](<#Query[T].All>)
   - [func \(q \*Query\[T\]\) Avg\(attr string\) \*AggregateQuery\[T\]](<#Query[T].Avg>)
   - [func \(q \*Query\[T\]\) Count\(ctx context.Context\) \(int64, error\)](<#Query[T].Count>)
   - [func \(q \*Query\[T\]\) Delete\(ctx context.Context\) \(int64, error\)](<#Query[T].Delete>)
+  - [func \(q \*Query\[T\]\) DeleteNoCount\(ctx context.Context\) error](<#Query[T].DeleteNoCount>)
   - [func \(q \*Query\[T\]\) Execute\(ctx context.Context\) \(\[\]\*T, error\)](<#Query[T].Execute>)
+  - [func \(q \*Query\[T\]\) ExecuteProjected\(ctx context.Context, spec Projection\) \(\[\]ProjectedResult, error\)](<#Query[T].ExecuteProjected>)
   - [func \(q \*Query\[T\]\) Exists\(ctx context.Context\) \(bool, error\)](<#Query[T].Exists>)
   - [func \(q \*Query\[T\]\) Filter\(filters ...Filter\) \*Query\[T\]](<#Query[T].Filter>)
   - [func \(q \*Query\[T\]\) First\(ctx context.Context\) \(\*T, error\)](<#Query[T].First>)
+  - [func \(q \*Query\[T\]\) ForEach\(ctx context.Context, fn func\(\*T\) error\) error](<#Query[T].ForEach>)
   - [func \(q \*Query\[T\]\) GroupBy\(attr string\) \*GroupByQuery\[T\]](<#Query[T].GroupBy>)
   - [func \(q \*Query\[T\]\) Limit\(n int\) \*Query\[T\]](<#Query[T].Limit>)
   - [func \(q \*Query\[T\]\) Max\(attr string\) \*AggregateQuery\[T\]](<#Query[T].Max>)
@@ -306,6 +315,7 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
   - [func \(q \*Query\[T\]\) Std\(attr string\) \*AggregateQuery\[T\]](<#Query[T].Std>)
   - [func \(q \*Query\[T\]\) Sum\(attr string\) \*AggregateQuery\[T\]](<#Query[T].Sum>)
   - [func \(q \*Query\[T\]\) Update\(ctx context.Context, updates map\[string\]any\) \(int64, error\)](<#Query[T].Update>)
+  - [func \(q \*Query\[T\]\) UpdateNoCount\(ctx context.Context, updates map\[string\]any\) error](<#Query[T].UpdateNoCount>)
   - [func \(q \*Query\[T\]\) UpdateWith\(ctx context.Context, fn func\(\*T\)\) \(\[\]\*T, error\)](<#Query[T].UpdateWith>)
   - [func \(q \*Query\[T\]\) Variance\(attr string\) \*AggregateQuery\[T\]](<#Query[T].Variance>)
 - [type RangeFilter](<#RangeFilter>)
@@ -444,6 +454,12 @@ var (
 )
 ```
 
+<a name="ErrStopIteration"></a>ErrStopIteration stops ForEach without returning an error. A callback may return this value directly or wrap it with fmt.Errorf and %w.
+
+```go
+var ErrStopIteration = errors.New("gotype: stop iteration")
+```
+
 <a name="TypeQLReservedWords"></a>TypeQLReservedWords is the set of TypeQL reserved keywords that cannot be used as type names, attribute names, or role names.
 
 ```go
@@ -544,7 +560,7 @@ FormatValue converts a Go value into its TypeQL literal string representation. I
 This function delegates to ast.FormatGoValue for the actual formatting logic.
 
 <a name="FromDict"></a>
-## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L446>)
+## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L449>)
 
 ```go
 func FromDict[T any](data map[string]any) (*T, error)
@@ -711,7 +727,7 @@ This is useful when a database's schema was applied in bulk \(e.g., via ExecuteS
 Supports WithSeqDryRun \(report without stamping\), WithSeqTarget \(stamp up to a named migration\), and WithSeqLogger \(progress callback\).
 
 <a name="ToDict"></a>
-## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L402>)
+## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L405>)
 
 ```go
 func ToDict[T any](instance *T) (map[string]any, error)
@@ -720,7 +736,7 @@ func ToDict[T any](instance *T) (map[string]any, error)
 ToDict converts a registered model instance to a map\[string\]any using TypeDB attribute names as keys. Includes "\_iid" if set.
 
 <a name="ToInsertQuery"></a>
-## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L451>)
+## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L454>)
 
 ```go
 func ToInsertQuery[T any](instance *T) (string, error)
@@ -729,7 +745,7 @@ func ToInsertQuery[T any](instance *T) (string, error)
 ToInsertQuery generates a TypeQL insert query string for the given instance.
 
 <a name="ToMatchQuery"></a>
-## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L460>)
+## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L463>)
 
 ```go
 func ToMatchQuery[T any](instance *T) (string, error)
@@ -1042,7 +1058,7 @@ func (op AddRolePlayer) ToTypeQL() string
 
 
 <a name="AggregateQuery"></a>
-## type [AggregateQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L387-L392>)
+## type [AggregateQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L448-L453>)
 
 AggregateQuery runs a reduce query and returns a single numeric result.
 
@@ -1053,7 +1069,7 @@ type AggregateQuery[T any] struct {
 ```
 
 <a name="AggregateQuery[T].Execute"></a>
-### func \(\*AggregateQuery\[T\]\) [Execute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L430>)
+### func \(\*AggregateQuery\[T\]\) [Execute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L491>)
 
 ```go
 func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error)
@@ -1062,7 +1078,7 @@ func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error)
 Execute runs the aggregate query and returns the result as float64.
 
 <a name="AggregateSpec"></a>
-## type [AggregateSpec](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L468-L471>)
+## type [AggregateSpec](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L529-L532>)
 
 AggregateSpec describes a single aggregation to compute.
 
@@ -1443,6 +1459,50 @@ func (db *Database) BeginContext(ctx context.Context, txType TransactionType) (*
 
 BeginContext starts a new TransactionContext with a ctx\-aware transaction open. The caller must call Close\(\) when done. A finalizer will log a warning if the transaction is garbage\-collected without being closed.
 
+<details><summary>Example</summary>
+<p>
+
+
+
+```go
+ClearRegistry()
+MustRegister[testPerson]()
+MustRegister[testCompany]()
+readTx := &mockTx{responses: [][]map[string]any{
+	{{"_iid": "0x01", "name": "Alice", "email": "alice@example.com"}},
+	{{"_iid": "0x02", "name": "Acme", "industry": "Tools"}},
+}}
+db := NewDatabase(&mockConn{txs: []*mockTx{readTx}}, "example")
+ctx := context.Background()
+scope, err := db.BeginContext(ctx, ReadTransaction)
+if err != nil {
+	panic(err)
+}
+defer scope.Close()
+
+persons := MustNewManagerWithTx[testPerson](scope)
+companies := MustNewManagerWithTx[testCompany](scope)
+alice, err := persons.GetByIID(ctx, "0x01")
+if err != nil {
+	panic(err)
+}
+acme, err := companies.GetByIID(ctx, "0x02")
+if err != nil {
+	panic(err)
+}
+fmt.Printf("%s at %s\n", alice.Name, acme.Name)
+// Output: Alice at Acme
+```
+
+#### Output
+
+```
+Alice at Acme
+```
+
+</p>
+</details>
+
 <a name="Database.Close"></a>
 ### func \(\*Database\) [Close](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L152>)
 
@@ -1631,7 +1691,7 @@ type FetchBuilder interface {
 ```
 
 <a name="FieldInfo"></a>
-## type [FieldInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L25-L51>)
+## type [FieldInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L26-L52>)
 
 FieldInfo contains metadata about a single field in a model struct, mapping it to a TypeDB attribute.
 
@@ -1980,7 +2040,7 @@ func (fq *FunctionQuery) Execute(ctx context.Context) ([]map[string]any, error)
 Execute runs the function query and returns the raw results.
 
 <a name="GroupByQuery"></a>
-## type [GroupByQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L548-L552>)
+## type [GroupByQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L609-L613>)
 
 GroupByQuery groups results by an attribute and supports aggregate operations.
 
@@ -1991,7 +2051,7 @@ type GroupByQuery[T any] struct {
 ```
 
 <a name="GroupByQuery[T].Aggregate"></a>
-### func \(\*GroupByQuery\[T\]\) [Aggregate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L561>)
+### func \(\*GroupByQuery\[T\]\) [Aggregate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L622>)
 
 ```go
 func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[string]map[string]float64, error)
@@ -2243,13 +2303,31 @@ func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOpti
 Delete deletes an instance by IID.
 
 <a name="Manager[T].DeleteMany"></a>
-### func \(\*Manager\[T\]\) [DeleteMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L400>)
+### func \(\*Manager\[T\]\) [DeleteMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L404>)
 
 ```go
 func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...DeleteOption) error
 ```
 
-DeleteMany deletes multiple instances in a single transaction.
+DeleteMany deletes distinct IIDs in bounded groups in a single transaction. WithStrict checks existence in groups before deleting and reports the first missing input. Duplicate IIDs are checked and deleted only once.
+
+<a name="Manager[T].ForEach"></a>
+### func \(\*Manager\[T\]\) [ForEach](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/each.go#L19>)
+
+```go
+func (m *Manager[T]) ForEach(ctx context.Context, filters map[string]any, fn func(*T) error) error
+```
+
+ForEach reads matching models and calls fn once per answer row. The callback may retain its \*T: each row is hydrated into a separate model. Returning ErrStopIteration ends the read successfully; other errors stop and return. When the transaction supports row streaming, no result slice is retained. Otherwise the transaction first materializes all raw rows, but the ORM still hydrates and delivers one model at a time.
+
+<a name="Manager[T].ForEachWithRoles"></a>
+### func \(\*Manager\[T\]\) [ForEachWithRoles](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/each.go#L36>)
+
+```go
+func (m *Manager[T]) ForEachWithRoles(ctx context.Context, filters map[string]any, fn func(*T) error) error
+```
+
+ForEachWithRoles streams models with their role players, like GetWithRoles. Nested role\-player models are separately hydrated and safe to retain.
 
 <a name="Manager[T].Get"></a>
 ### func \(\*Manager\[T\]\) [Get](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L163>)
@@ -2270,7 +2348,7 @@ func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error)
 GetByIID retrieves a single instance of T by its internal instance ID \(IID\). It returns nil if no instance is found with the given IID. The IID must match 0x\[0\-9a\-fA\-F\]\+; anything else is rejected with an error before any query is sent.
 
 <a name="Manager[T].GetByIIDPolymorphic"></a>
-### func \(\*Manager\[T\]\) [GetByIIDPolymorphic](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L657>)
+### func \(\*Manager\[T\]\) [GetByIIDPolymorphic](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L672>)
 
 ```go
 func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, string, error)
@@ -2279,7 +2357,7 @@ func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, s
 GetByIIDPolymorphic fetches a single instance by IID with polymorphic type resolution. It resolves the actual stored type and fetches all of that type's attributes, so subtype\-specific fields are preserved when the concrete type is registered. Returns the instance hydrated as \*T \(base type fields only\), the type label, and an error if any. Use GetByIIDPolymorphicAny for full subtype hydration. Returns nil, "", nil if not found.
 
 <a name="Manager[T].GetByIIDPolymorphicAny"></a>
-### func \(\*Manager\[T\]\) [GetByIIDPolymorphicAny](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L700>)
+### func \(\*Manager\[T\]\) [GetByIIDPolymorphicAny](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L715>)
 
 ```go
 func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (any, string, error)
@@ -2295,6 +2373,15 @@ func (m *Manager[T]) GetOne(ctx context.Context, filters map[string]any) (*T, er
 ```
 
 GetOne retrieves exactly one instance of T matching the specified attribute filters. It returns a \*NotFoundError when no instance matches and a \*NotUniqueError when more than one instance matches, so callers can distinguish those cases with errors.As.
+
+<a name="Manager[T].GetProjected"></a>
+### func \(\*Manager\[T\]\) [GetProjected](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/projection.go#L178>)
+
+```go
+func (m *Manager[T]) GetProjected(ctx context.Context, filters map[string]any, spec Projection) ([]ProjectedResult, error)
+```
+
+GetProjected reads selected attributes without creating mutable model values. The filter keys and projection fields use TypeDB attribute names.
 
 <a name="Manager[T].GetWithRoles"></a>
 ### func \(\*Manager\[T\]\) [GetWithRoles](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L207>)
@@ -2315,7 +2402,7 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error
 Insert adds a new instance of T to the database. If T has key fields, the instance's internal IID will be populated upon success. Key attributes must be set to non\-zero values; a missing key returns a \*KeyAttributeError instead of silently inserting a zero\-value key.
 
 <a name="Manager[T].InsertMany"></a>
-### func \(\*Manager\[T\]\) [InsertMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L603>)
+### func \(\*Manager\[T\]\) [InsertMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L615>)
 
 ```go
 func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error
@@ -2324,7 +2411,7 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error
 InsertMany inserts multiple instances in a single transaction.
 
 <a name="Manager[T].Put"></a>
-### func \(\*Manager\[T\]\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L477>)
+### func \(\*Manager\[T\]\) [Put](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L502>)
 
 ```go
 func (m *Manager[T]) Put(ctx context.Context, instance *T) error
@@ -2333,16 +2420,16 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error
 Put upserts an instance \(insert or update\). After a successful put, the instance's IID is populated \(if it has key fields\). Key attributes must be set to non\-zero values; a missing key returns a \*KeyAttributeError since the upsert match is meaningless without it.
 
 <a name="Manager[T].PutMany"></a>
-### func \(\*Manager\[T\]\) [PutMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L523>)
+### func \(\*Manager\[T\]\) [PutMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L540>)
 
 ```go
 func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error
 ```
 
-PutMany upserts multiple instances in a single transaction. IIDs are fetched inside the same write transaction \(one key\-match query per instance\) instead of opening a read transaction per instance afterwards.
+PutMany upserts multiple instances in a single transaction. For keyed models, each put returns its IID in the same query. IIDs are assigned after the transaction completes successfully.
 
 <a name="Manager[T].Query"></a>
-### func \(\*Manager\[T\]\) [Query](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L641>)
+### func \(\*Manager\[T\]\) [Query](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L702>)
 
 ```go
 func (m *Manager[T]) Query() *Query[T]
@@ -2360,13 +2447,13 @@ func (m *Manager[T]) Update(ctx context.Context, instance *T) error
 Update modifies an existing instance of T in the database. The instance must have its IID populated \(typically from a prior Get or Insert\).
 
 <a name="Manager[T].UpdateMany"></a>
-### func \(\*Manager\[T\]\) [UpdateMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L448>)
+### func \(\*Manager\[T\]\) [UpdateMany](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/crud.go#L478>)
 
 ```go
 func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error
 ```
 
-UpdateMany updates multiple instances in a single transaction.
+UpdateMany updates multiple instances in a single transaction. Compatible scalar entity updates with distinct IIDs use bounded typed\-row batches; other shapes retain the per\-instance update path.
 
 <a name="MatchBuilder"></a>
 ## type [MatchBuilder](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/strategy.go#L21-L30>)
@@ -2387,7 +2474,7 @@ type MatchBuilder interface {
 ```
 
 <a name="Meta"></a>
-## type [Meta](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L284-L289>)
+## type [Meta](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L287-L292>)
 
 Meta describes a TypeDB @meta\("key", "value"\) annotation.
 
@@ -2568,7 +2655,7 @@ func (ms *MigrationState) Record(ctx context.Context, hash, summary string) erro
 Record saves a new migration record to the database after it has been applied.
 
 <a name="ModelInfo"></a>
-## type [ModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L55-L80>)
+## type [ModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L56-L83>)
 
 ModelInfo contains comprehensive metadata about a registered TypeDB model, including its mapping to a Go struct and its TypeDB schema properties.
 
@@ -2599,7 +2686,7 @@ type ModelInfo struct {
 ```
 
 <a name="ExtractModelInfo"></a>
-### func [ExtractModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L108>)
+### func [ExtractModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L111>)
 
 ```go
 func ExtractModelInfo(t reflect.Type) (*ModelInfo, error)
@@ -2662,7 +2749,7 @@ func SubtypesOf(typeName string) []*ModelInfo
 SubtypesOf returns a slice of registered types that are direct subtypes of the specified parent type, sorted by TypeName.
 
 <a name="ModelInfo.FieldByAttrName"></a>
-### func \(\*ModelInfo\) [FieldByAttrName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L93>)
+### func \(\*ModelInfo\) [FieldByAttrName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L96>)
 
 ```go
 func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool)
@@ -2671,7 +2758,7 @@ func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool)
 FieldByAttrName retrieves FieldInfo by the TypeDB attribute name.
 
 <a name="ModelInfo.FieldByName"></a>
-### func \(\*ModelInfo\) [FieldByName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L83>)
+### func \(\*ModelInfo\) [FieldByName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L86>)
 
 ```go
 func (m *ModelInfo) FieldByName(name string) (FieldInfo, bool)
@@ -2680,7 +2767,7 @@ func (m *ModelInfo) FieldByName(name string) (FieldInfo, bool)
 FieldByName retrieves FieldInfo by the Go struct field name.
 
 <a name="ModelKind"></a>
-## type [ModelKind](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L14>)
+## type [ModelKind](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L15>)
 
 ModelKind specifies whether a registered TypeDB model is an entity or a relation.
 
@@ -2992,6 +3079,44 @@ type PoolStats struct {
 }
 ```
 
+<a name="ProjectedField"></a>
+## type [ProjectedField](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/projection.go#L20-L23>)
+
+ProjectedField distinguishes a requested missing scalar from an omitted field. Value contains a driver\-decoded TypeDB value when Present is true. A requested multi\-valued attribute is present as a slice, even when empty.
+
+```go
+type ProjectedField struct {
+    Present bool
+    Value   any
+}
+```
+
+<a name="ProjectedResult"></a>
+## type [ProjectedResult](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/projection.go#L30-L35>)
+
+ProjectedResult is read\-only projection data, not a model instance. Fields contains only requested attributes. Roles contains only requested role names. Selecting a role requires that link, so missing links exclude the relation from the query result. IID and TypeName identify the concrete TypeDB instance.
+
+```go
+type ProjectedResult struct {
+    IID      string
+    TypeName string
+    Fields   map[string]ProjectedField
+    Roles    map[string]*ProjectedResult
+}
+```
+
+<a name="Projection"></a>
+## type [Projection](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/projection.go#L12-L15>)
+
+Projection selects TypeDB attribute names from the root model and its role players. An empty Fields slice selects no attributes. An absent role map selects no role players. The IID and concrete type are always selected.
+
+```go
+type Projection struct {
+    Fields []string
+    Roles  map[string][]string
+}
+```
+
 <a name="Query"></a>
 ## type [Query](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L15-L21>)
 
@@ -3004,7 +3129,7 @@ type Query[T any] struct {
 ```
 
 <a name="Query[T].Aggregate"></a>
-### func \(\*Query\[T\]\) [Aggregate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L476>)
+### func \(\*Query\[T\]\) [Aggregate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L537>)
 
 ```go
 func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[string]float64, error)
@@ -3013,7 +3138,7 @@ func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[s
 Aggregate runs multiple aggregations in one call and returns named results. Each spec produces a result keyed by "fn\_attr" \(e.g., "sum\_age", "mean\_score"\). All aggregations are computed in a single query using multiple reduce assignments.
 
 <a name="Query[T].All"></a>
-### func \(\*Query\[T\]\) [All](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L70>)
+### func \(\*Query\[T\]\) [All](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L75>)
 
 ```go
 func (q *Query[T]) All(ctx context.Context) ([]*T, error)
@@ -3022,7 +3147,7 @@ func (q *Query[T]) All(ctx context.Context) ([]*T, error)
 All executes the query and returns all matching instances as a slice of pointers to T.
 
 <a name="Query[T].Avg"></a>
-### func \(\*Query\[T\]\) [Avg](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L400>)
+### func \(\*Query\[T\]\) [Avg](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L461>)
 
 ```go
 func (q *Query[T]) Avg(attr string) *AggregateQuery[T]
@@ -3031,16 +3156,16 @@ func (q *Query[T]) Avg(attr string) *AggregateQuery[T]
 Avg creates an aggregate query for the mean of an attribute.
 
 <a name="Query[T].Count"></a>
-### func \(\*Query\[T\]\) [Count](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L107>)
+### func \(\*Query\[T\]\) [Count](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L113>)
 
 ```go
 func (q *Query[T]) Count(ctx context.Context) (int64, error)
 ```
 
-Count returns the number of distinct instances matching the query filters. Instances matched multiple times \(e.g. via several values of a filtered multi\-valued attribute\) are counted once.
+Count returns the number of distinct instances matching the query filters. Instances matched multiple times \(e.g. via several values of a filtered multi\-valued attribute\) are counted once. Limit and Offset do not affect the count; only the query filters do.
 
 <a name="Query[T].Delete"></a>
-### func \(\*Query\[T\]\) [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L129>)
+### func \(\*Query\[T\]\) [Delete](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L139>)
 
 ```go
 func (q *Query[T]) Delete(ctx context.Context) (int64, error)
@@ -3048,8 +3173,17 @@ func (q *Query[T]) Delete(ctx context.Context) (int64, error)
 
 Delete removes all distinct instances that match the query filters and returns how many there were. When the Manager is bound to a transaction, the delete runs inside it and is committed by the transaction owner.
 
+<a name="Query[T].DeleteNoCount"></a>
+### func \(\*Query\[T\]\) [DeleteNoCount](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L154>)
+
+```go
+func (q *Query[T]) DeleteNoCount(ctx context.Context) error
+```
+
+DeleteNoCount removes matching instances without querying the affected\-row count. It uses the same distinct\-entity selection as Delete.
+
 <a name="Query[T].Execute"></a>
-### func \(\*Query\[T\]\) [Execute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L76>)
+### func \(\*Query\[T\]\) [Execute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L81>)
 
 ```go
 func (q *Query[T]) Execute(ctx context.Context) ([]*T, error)
@@ -3057,14 +3191,23 @@ func (q *Query[T]) Execute(ctx context.Context) ([]*T, error)
 
 Execute performs the query against the database and hydrates the results into Go structs. When the Manager is bound to a transaction, the query runs inside it.
 
+<a name="Query[T].ExecuteProjected"></a>
+### func \(\*Query\[T\]\) [ExecuteProjected](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/projection.go#L209>)
+
+```go
+func (q *Query[T]) ExecuteProjected(ctx context.Context, spec Projection) ([]ProjectedResult, error)
+```
+
+ExecuteProjected runs a fluent read with selected attributes. It preserves the query's filters, order, offset, and limit. The result is not a model.
+
 <a name="Query[T].Exists"></a>
-### func \(\*Query\[T\]\) [Exists](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L61>)
+### func \(\*Query\[T\]\) [Exists](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L62>)
 
 ```go
 func (q *Query[T]) Exists(ctx context.Context) (bool, error)
 ```
 
-Exists returns true if the query matches at least one instance in the database.
+Exists returns true if the query matches at least one instance in the database. Like Count, it considers all matching instances regardless of Limit and Offset.
 
 <a name="Query[T].Filter"></a>
 ### func \(\*Query\[T\]\) [Filter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L31>)
@@ -3076,7 +3219,7 @@ func (q *Query[T]) Filter(filters ...Filter) *Query[T]
 Filter adds one or more filtering conditions to the query. Multiple calls to Filter are combined using logical AND.
 
 <a name="Query[T].First"></a>
-### func \(\*Query\[T\]\) [First](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L91>)
+### func \(\*Query\[T\]\) [First](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L96>)
 
 ```go
 func (q *Query[T]) First(ctx context.Context) (*T, error)
@@ -3084,8 +3227,17 @@ func (q *Query[T]) First(ctx context.Context) (*T, error)
 
 First executes the query with a limit of 1 and returns the first result, or nil if none found. The builder itself is not modified, so a later All on the same query returns the full result set.
 
+<a name="Query[T].ForEach"></a>
+### func \(\*Query\[T\]\) [ForEach](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/each.go#L57>)
+
+```go
+func (q *Query[T]) ForEach(ctx context.Context, fn func(*T) error) error
+```
+
+ForEach runs the fluent query and delivers one owned model per answer row. Filters, sorting, offset, and limit match Execute. Returning ErrStopIteration from fn ends the read without an error.
+
 <a name="Query[T].GroupBy"></a>
-### func \(\*Query\[T\]\) [GroupBy](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L555>)
+### func \(\*Query\[T\]\) [GroupBy](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L616>)
 
 ```go
 func (q *Query[T]) GroupBy(attr string) *GroupByQuery[T]
@@ -3103,7 +3255,7 @@ func (q *Query[T]) Limit(n int) *Query[T]
 Limit restricts the number of results returned by the query.
 
 <a name="Query[T].Max"></a>
-### func \(\*Query\[T\]\) [Max](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L410>)
+### func \(\*Query\[T\]\) [Max](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L471>)
 
 ```go
 func (q *Query[T]) Max(attr string) *AggregateQuery[T]
@@ -3112,7 +3264,7 @@ func (q *Query[T]) Max(attr string) *AggregateQuery[T]
 Max creates an aggregate query for the maximum of an attribute.
 
 <a name="Query[T].Median"></a>
-### func \(\*Query\[T\]\) [Median](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L415>)
+### func \(\*Query\[T\]\) [Median](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L476>)
 
 ```go
 func (q *Query[T]) Median(attr string) *AggregateQuery[T]
@@ -3121,7 +3273,7 @@ func (q *Query[T]) Median(attr string) *AggregateQuery[T]
 Median creates an aggregate query for the median of an attribute.
 
 <a name="Query[T].Min"></a>
-### func \(\*Query\[T\]\) [Min](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L405>)
+### func \(\*Query\[T\]\) [Min](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L466>)
 
 ```go
 func (q *Query[T]) Min(attr string) *AggregateQuery[T]
@@ -3157,7 +3309,7 @@ func (q *Query[T]) OrderDesc(attr string) *Query[T]
 OrderDesc adds a descending sort order on the specified attribute.
 
 <a name="Query[T].Std"></a>
-### func \(\*Query\[T\]\) [Std](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L420>)
+### func \(\*Query\[T\]\) [Std](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L481>)
 
 ```go
 func (q *Query[T]) Std(attr string) *AggregateQuery[T]
@@ -3166,7 +3318,7 @@ func (q *Query[T]) Std(attr string) *AggregateQuery[T]
 Std creates an aggregate query for the standard deviation of an attribute.
 
 <a name="Query[T].Sum"></a>
-### func \(\*Query\[T\]\) [Sum](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L395>)
+### func \(\*Query\[T\]\) [Sum](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L456>)
 
 ```go
 func (q *Query[T]) Sum(attr string) *AggregateQuery[T]
@@ -3175,7 +3327,7 @@ func (q *Query[T]) Sum(attr string) *AggregateQuery[T]
 Sum creates an aggregate query for the sum of an attribute.
 
 <a name="Query[T].Update"></a>
-### func \(\*Query\[T\]\) [Update](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L342>)
+### func \(\*Query\[T\]\) [Update](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L387>)
 
 ```go
 func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, error)
@@ -3183,17 +3335,26 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 
 Update performs a bulk attribute update on all matching instances. Keys in the updates map are TypeDB attribute names; values are the new values. Returns the number of distinct instances updated. When the Manager is bound to a transaction, the update runs inside it and is committed by its owner.
 
+<a name="Query[T].UpdateNoCount"></a>
+### func \(\*Query\[T\]\) [UpdateNoCount](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L404>)
+
+```go
+func (q *Query[T]) UpdateNoCount(ctx context.Context, updates map[string]any) error
+```
+
+UpdateNoCount applies the same bulk attribute mutation as Update but does not query or return an affected\-row count. An empty updates map is a no\-op.
+
 <a name="Query[T].UpdateWith"></a>
-### func \(\*Query\[T\]\) [UpdateWith](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L295>)
+### func \(\*Query\[T\]\) [UpdateWith](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L345>)
 
 ```go
 func (q *Query[T]) UpdateWith(ctx context.Context, fn func(*T)) ([]*T, error)
 ```
 
-UpdateWith fetches all matching instances, applies fn to each, then updates them all. The fetch and update are performed within a single write transaction for atomicity. When the Manager is bound to a transaction, that transaction is reused and committed by its owner.
+UpdateWith fetches all matching instances, applies fn to each in fetch order, then persists the updates. Compatible scalar updates are batched. The fetch and update are performed within a single write transaction for atomicity. When the Manager is bound to a transaction, that transaction is reused and committed by its owner.
 
 <a name="Query[T].Variance"></a>
-### func \(\*Query\[T\]\) [Variance](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L425>)
+### func \(\*Query\[T\]\) [Variance](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L486>)
 
 ```go
 func (q *Query[T]) Variance(attr string) *AggregateQuery[T]
@@ -3798,7 +3959,7 @@ func (op RunTypeQL) ToTypeQL() string
 
 
 <a name="SchemaAnnotated"></a>
-## type [SchemaAnnotated](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L293-L295>)
+## type [SchemaAnnotated](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L296-L298>)
 
 SchemaAnnotated can be implemented by a model to emit type\-level TypeDB @meta annotations during schema generation.
 
@@ -4017,7 +4178,7 @@ func (d *SchemaDiff) Summary() string
 Summary returns a human\-readable description of the changes in the diff.
 
 <a name="SchemaDocumented"></a>
-## type [SchemaDocumented](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L279-L281>)
+## type [SchemaDocumented](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L282-L284>)
 
 SchemaDocumented can be implemented by a model to emit a type\-level TypeDB @doc annotation during schema generation.
 

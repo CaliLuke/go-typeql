@@ -1,0 +1,13 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/driver
+cpu: Apple M5
+BenchmarkDecodeMsgpack/flat/reused-keys-4         	    1720	    189914 ns/op	 171.18 MB/s	  381918 B/op	    4754 allocs/op
+BenchmarkDecodeMsgpack/nested/reused-keys-4       	     546	    603860 ns/op	 114.47 MB/s	  824841 B/op	   13501 allocs/op
+BenchmarkDecodeMsgpack/wide/reused-keys-4         	     374	    893261 ns/op	 296.12 MB/s	 1288108 B/op	    6784 allocs/op
+BenchmarkDecodeMsgpack/keys-only/reused-keys-4    	    3782	    110763 ns/op	  68.79 MB/s	  350699 B/op	    2752 allocs/op
+BenchmarkDecodeMsgpack/string-value/reused-keys-4 	    3034	    137441 ns/op	 385.64 MB/s	  408760 B/op	    4008 allocs/op
+BenchmarkDecodeMsgpackEachKeys/flat/reused-keys-4 	    2893	    112302 ns/op	 289.48 MB/s	   37558 B/op	    2750 allocs/op
+BenchmarkDecodeMsgpackEachKeys/nested/reused-keys-4         	     956	    388631 ns/op	 177.87 MB/s	  495220 B/op	   13495 allocs/op
+BenchmarkDecodeMsgpackEachKeys/wide/reused-keys-4           	     433	    909639 ns/op	 290.78 MB/s	   41353 B/op	    2784 allocs/op
+PASS

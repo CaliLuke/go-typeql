@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/CaliLuke/go-typeql/ast"
+	"github.com/CaliLuke/go-typeql/v2/ast"
 )
 
 // InsertBuilder generates write-oriented TypeQL clauses for a model kind.

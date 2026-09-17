@@ -9,7 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/given"
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
 
 // poolTestEntity is a simple entity for pool testing

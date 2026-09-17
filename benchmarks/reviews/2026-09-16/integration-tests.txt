@@ -1,0 +1,2 @@
+ok  	github.com/CaliLuke/go-typeql/driver	18.048s
+ok  	github.com/CaliLuke/go-typeql/gotype	122.617s

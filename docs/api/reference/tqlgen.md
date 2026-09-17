@@ -3,7 +3,7 @@
 # tqlgen
 
 ```go
-import "github.com/CaliLuke/go-typeql/tqlgen"
+import "github.com/CaliLuke/go-typeql/v2/tqlgen"
 ```
 
 Package tqlgen provides tools for parsing TypeQL schemas and generating Go code from them.
@@ -177,7 +177,7 @@ func ToSnakeCase(name string) string
 ToSnakeCase transforms a kebab\-case string into snake\_case.
 
 <a name="Annotation"></a>
-## type [Annotation](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L105-L119>)
+## type [Annotation](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L106-L120>)
 
 Annotation parses TypeQL schema annotations. Some annotations are carried into generated Go metadata, while doc/meta/capability annotations are accepted for parser compatibility and otherwise ignored.
 
@@ -200,7 +200,7 @@ type Annotation struct {
 ```
 
 <a name="AsClause"></a>
-## type [AsClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L98-L100>)
+## type [AsClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L99-L101>)
 
 AsClause parses: as parent\-role
 
@@ -211,7 +211,7 @@ type AsClause struct {
 ```
 
 <a name="AttrDef"></a>
-## type [AttrDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L21-L29>)
+## type [AttrDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L22-L30>)
 
 AttrDef parses: attribute name \[sub parent\] \[annotations\] \[,\] \[value type\] \[@constraint\(...\)\]; The value clause is optional: abstract attribute supertypes omit it, and subtyped attributes inherit it from their parent chain \(resolved in convertAST\).
 
@@ -278,7 +278,7 @@ type BaseStructConfig struct {
 ```
 
 <a name="CardAnnot"></a>
-## type [CardAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L122-L124>)
+## type [CardAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L123-L125>)
 
 CardAnnot parses: @card\(expr\)
 
@@ -402,7 +402,7 @@ func BuildDTOData(schema *ParsedSchema, cfg DTOConfig) *DTOData
 BuildDTOData populates DTOData from a parsed schema. The schema should have AccumulateInheritance\(\) called before this. PackageName is required to render the result: RenderDTO returns an error when it is empty.
 
 <a name="DocAnnot"></a>
-## type [DocAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L168-L170>)
+## type [DocAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L169-L171>)
 
 DocAnnot parses: @doc\("docstring"\)
 
@@ -413,7 +413,7 @@ type DocAnnot struct {
 ```
 
 <a name="EntityClause"></a>
-## type [EntityClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L49-L53>)
+## type [EntityClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L50-L54>)
 
 EntityClause is one of: owns, plays, or sub. The comma\-constraint sub form \(\`entity x @abstract, sub y\`\) is how generators emit annotated subtypes, since annotations after an inline \`sub\` bind to the sub clause \(ANN9\).
 
@@ -426,7 +426,7 @@ type EntityClause struct {
 ```
 
 <a name="EntityDef"></a>
-## type [EntityDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L32-L38>)
+## type [EntityDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L33-L39>)
 
 EntityDef parses: entity name \[sub parent\] \[annotations\] \[, clause...\];
 
@@ -503,7 +503,7 @@ type EnumValueCtx = enumValueCtx
 ```
 
 <a name="FunBodyTok"></a>
-## type [FunBodyTok](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L258-L260>)
+## type [FunBodyTok](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L267-L269>)
 
 FunBodyTok matches any token except the keywords that open a new top\-level definition \(or another fun\), so the parser exits the function body at the next definition instead of swallowing the rest of the file. Limitation: a function body using one of these words as a bare label \(e.g. \`$t sub entity\`\) ends the body early at that word.
 
@@ -514,7 +514,7 @@ type FunBodyTok struct {
 ```
 
 <a name="FunDef"></a>
-## type [FunDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L248-L251>)
+## type [FunDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L257-L260>)
 
 FunDef parses: fun name \<body tokens until the next top\-level definition or EOF\> The body is captured as a flat list of tokens for signature extraction.
 
@@ -622,7 +622,7 @@ type LeafConstantsConfig struct {
 ```
 
 <a name="MetaAnnot"></a>
-## type [MetaAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L173-L176>)
+## type [MetaAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L174-L177>)
 
 MetaAnnot parses: @meta\("key", "value"\)
 
@@ -648,7 +648,7 @@ type MetaSpec struct {
 ```
 
 <a name="OwnsDef"></a>
-## type [OwnsDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L57-L61>)
+## type [OwnsDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L58-L62>)
 
 OwnsDef parses: owns attr\-name\[\[\]\] \[@key\] \[@unique\] \[@card\(...\)\] The optional '\[\]' suffix marks a TypeQL 3.x ordered\-list ownership.
 
@@ -719,7 +719,7 @@ type ParsedSchema struct {
 ```
 
 <a name="ParseSchema"></a>
-### func [ParseSchema](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L202>)
+### func [ParseSchema](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L209>)
 
 ```go
 func ParseSchema(input string) (*ParsedSchema, error)
@@ -728,7 +728,7 @@ func ParseSchema(input string) (*ParsedSchema, error)
 ParseSchema parses a TypeQL schema string into a ParsedSchema structure. It handles attribute, entity, relation, function, and struct definitions. Function blocks are parsed by the grammar natively — no pre\-processing needed.
 
 <a name="ParseSchemaFile"></a>
-### func [ParseSchemaFile](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L221>)
+### func [ParseSchemaFile](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L230>)
 
 ```go
 func ParseSchemaFile(path string) (*ParsedSchema, error)
@@ -746,7 +746,7 @@ func (s *ParsedSchema) AccumulateInheritance() error
 AccumulateInheritance propagates owns/plays from parent entities/relations to their children, so each child has the complete set of fields. It returns an error when the schema declares an inheritance cycle \(e.g. \`a sub b\` and \`b sub a\`\), which would otherwise recurse forever. Types whose parent is not defined in the schema are left as\-is.
 
 <a name="PlaysDef"></a>
-## type [PlaysDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L64-L68>)
+## type [PlaysDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L65-L69>)
 
 PlaysDef parses: plays relation:role
 
@@ -777,7 +777,7 @@ type PlaysSpec struct {
 ```
 
 <a name="RangeAnnot"></a>
-## type [RangeAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L141-L143>)
+## type [RangeAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L142-L144>)
 
 RangeAnnot parses: @range\(operand\), where the operand is any TypeQL range expression — integer \(1..5\), decimal \(0.5..9.5\), date/datetime, or string \("a".."z"\) bounds, including half\-open forms. The operand is captured as a flat token list up to the closing parenthesis and reassembled verbatim by Expr.
 
@@ -788,7 +788,7 @@ type RangeAnnot struct {
 ```
 
 <a name="RangeAnnot.Expr"></a>
-### func \(\*RangeAnnot\) [Expr](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L154>)
+### func \(\*RangeAnnot\) [Expr](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L155>)
 
 ```go
 func (r *RangeAnnot) Expr() string
@@ -797,7 +797,7 @@ func (r *RangeAnnot) Expr() string
 Expr returns the range operand reassembled from its tokens. TypeQL range operands contain no significant whitespace, so plain concatenation reconstructs the source text \(e.g. "0.5..9.5", \`"a".."z"\`\).
 
 <a name="RangeTok"></a>
-## type [RangeTok](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L147-L149>)
+## type [RangeTok](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L148-L150>)
 
 RangeTok matches a single token of a @range operand: anything except the closing parenthesis that ends the annotation.
 
@@ -808,7 +808,7 @@ type RangeTok struct {
 ```
 
 <a name="RegexAnnot"></a>
-## type [RegexAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L127-L129>)
+## type [RegexAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L128-L130>)
 
 RegexAnnot parses: @regex\("pattern"\)
 
@@ -921,7 +921,7 @@ type RelSchemaCtx struct {
 ```
 
 <a name="RelatesDef"></a>
-## type [RelatesDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L90-L95>)
+## type [RelatesDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L91-L96>)
 
 RelatesDef parses: relates role\-name\[\[\]\] \[as parent\-role\] \[@card\(...\)\] The optional '\[\]' suffix marks a TypeQL 3.x ordered\-list role.
 
@@ -957,7 +957,7 @@ type RelatesSpec struct {
 ```
 
 <a name="RelationClause"></a>
-## type [RelationClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L81-L86>)
+## type [RelationClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L82-L87>)
 
 RelationClause is one of: relates, owns, plays, or sub \(comma\-constraint form; see EntityClause\).
 
@@ -971,7 +971,7 @@ type RelationClause struct {
 ```
 
 <a name="RelationDef"></a>
-## type [RelationDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L71-L77>)
+## type [RelationDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L72-L78>)
 
 RelationDef parses: relation name \[sub parent\] \[annotations\] \[, clause...\];
 
@@ -1061,7 +1061,7 @@ type RoleCtx struct {
 ```
 
 <a name="SimpleDef"></a>
-## type [SimpleDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L238-L244>)
+## type [SimpleDef](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L247-L253>)
 
 SimpleDef represents a single top\-level definition within a TypeQL define block.
 
@@ -1076,7 +1076,7 @@ type SimpleDef struct {
 ```
 
 <a name="StructDefP"></a>
-## type [StructDefP](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L181-L185>)
+## type [StructDefP](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L182-L186>)
 
 StructDefP parses: struct name \[annotations\] \(: | ,\) field \[, field\]\* \[,\] ; Supports both official TypeQL syntax \(\`:\` separator, \`name value type\`\) and legacy syntax \(\`,\` separator, \`value name type\`\).
 
@@ -1089,7 +1089,7 @@ type StructDefP struct {
 ```
 
 <a name="StructFieldP"></a>
-## type [StructFieldP](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L190-L195>)
+## type [StructFieldP](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L191-L196>)
 
 StructFieldP parses a struct field in either official or legacy order:
 
@@ -1144,7 +1144,7 @@ type StructSpec struct {
 ```
 
 <a name="SubClause"></a>
-## type [SubClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L41-L44>)
+## type [SubClause](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L42-L45>)
 
 SubClause parses: sub parent\-name
 
@@ -1156,7 +1156,7 @@ type SubClause struct {
 ```
 
 <a name="SubkeyAnnot"></a>
-## type [SubkeyAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L163-L165>)
+## type [SubkeyAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L164-L166>)
 
 SubkeyAnnot parses: @subkey\(identifier\)
 
@@ -1167,7 +1167,7 @@ type SubkeyAnnot struct {
 ```
 
 <a name="TQLFileSimple"></a>
-## type [TQLFileSimple](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L232-L235>)
+## type [TQLFileSimple](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L241-L244>)
 
 TQLFileSimple is the top\-level grammar for a TypeQL define block.
 
@@ -1191,7 +1191,7 @@ type TypeConstCtx struct {
 ```
 
 <a name="ValuesAnnot"></a>
-## type [ValuesAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L132-L134>)
+## type [ValuesAnnot](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/parser.go#L133-L135>)
 
 ValuesAnnot parses: @values\("a", "b", ...\)
 

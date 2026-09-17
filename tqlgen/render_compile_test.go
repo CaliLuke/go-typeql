@@ -41,7 +41,7 @@ func containsCode(out, want string) bool {
 }
 
 // compileGenerated writes the generated source into a temporary module that
-// replaces github.com/CaliLuke/go-typeql with the local repository, then runs
+// replaces github.com/CaliLuke/go-typeql/v2 with the local repository, then runs
 // `go build` on it. It fails the test if the generated code does not compile.
 func compileGenerated(t *testing.T, source string) {
 	t.Helper()
@@ -56,9 +56,9 @@ func compileGenerated(t *testing.T, source string) {
 	if err := os.WriteFile(filepath.Join(dir, "models_gen.go"), []byte(source), 0o644); err != nil {
 		t.Fatalf("write generated source: %v", err)
 	}
-	goMod := "module rendercompiletest\n\ngo 1.27rc2\n\n" +
-		"require github.com/CaliLuke/go-typeql v0.0.0\n\n" +
-		"replace github.com/CaliLuke/go-typeql => " + repoRoot + "\n"
+	goMod := "module rendercompiletest\n\ngo 1.27.0\n\n" +
+		"require github.com/CaliLuke/go-typeql/v2 v2.0.0\n\n" +
+		"replace github.com/CaliLuke/go-typeql/v2 => " + repoRoot + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}

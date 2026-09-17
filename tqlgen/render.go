@@ -37,7 +37,7 @@ type RenderConfig struct {
 func DefaultConfig() RenderConfig {
 	return RenderConfig{
 		PackageName:  "models",
-		ModulePath:   "github.com/CaliLuke/go-typeql/gotype",
+		ModulePath:   "github.com/CaliLuke/go-typeql/v2/gotype",
 		UseAcronyms:  true,
 		SkipAbstract: true,
 		Enums:        true,
@@ -63,7 +63,7 @@ func renderWithRolePlayerIndex(w io.Writer, schema *ParsedSchema, cfg RenderConf
 		cfg.PackageName = "models"
 	}
 	if cfg.ModulePath == "" {
-		cfg.ModulePath = "github.com/CaliLuke/go-typeql/gotype"
+		cfg.ModulePath = "github.com/CaliLuke/go-typeql/v2/gotype"
 	}
 
 	r := newRenderer(schema, cfg)
@@ -844,7 +844,7 @@ package {{.PackageName}}
 
 import (
 {{- if .NeedsGotype}}
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 {{- end}}
 {{- if .NeedsTime}}
 	"time"

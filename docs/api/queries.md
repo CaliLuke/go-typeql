@@ -1,6 +1,6 @@
 # Query Builder
 
-`import "github.com/CaliLuke/go-typeql/gotype"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/gotype)
+`import "github.com/CaliLuke/go-typeql/v2/gotype"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2/gotype)
 
 `Query[T]` provides a chainable builder for constructing TypeQL match-fetch queries with filters, sorting, pagination, aggregations, grouping, and bulk updates.
 

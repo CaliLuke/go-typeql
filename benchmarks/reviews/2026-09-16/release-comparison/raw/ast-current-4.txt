@@ -1,0 +1,7 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/ast
+cpu: Apple M5
+BenchmarkCompiler_CompileBatch-4    	  400244	       977.6 ns/op	    2768 B/op	      33 allocs/op
+BenchmarkCompiler_FormatGoValue-4   	 1589353	       251.3 ns/op	      80 B/op	       4 allocs/op
+PASS

@@ -1,6 +1,6 @@
 # AST Package
 
-`import "github.com/CaliLuke/go-typeql/ast"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/ast)
+`import "github.com/CaliLuke/go-typeql/v2/ast"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2/ast)
 
 The `ast` package provides TypeQL Abstract Syntax Tree nodes and a compiler for programmatic query building. It operates at a lower level than the ORM layer, giving full control over TypeQL query construction.
 
@@ -125,7 +125,7 @@ Two functions handle converting Go values to TypeQL literals:
 ### Match-Fetch Query
 
 ```go
-import "github.com/CaliLuke/go-typeql/ast"
+import "github.com/CaliLuke/go-typeql/v2/ast"
 
 // Build: match $p isa person, has name "Alice";
 //        fetch { "name": $p.name, "email": $p.email };

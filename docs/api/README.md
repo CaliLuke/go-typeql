@@ -1,6 +1,8 @@
 # API Guides
 
-Usage guides for the go-typeql packages. For an introduction to the library, see the [project README](../../README.md). For complete API signatures, see [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql) or the [reference docs](reference/).
+Usage guides for the go-typeql packages. For an introduction to the library, see the [project README](../../README.md). For complete API signatures, see [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2) or the [reference docs](reference/).
+
+See [Upgrading to v2](../UPGRADING_V2.md) for the breaking changes and migration steps.
 
 ## Guides
 
@@ -14,7 +16,7 @@ Usage guides for the go-typeql packages. For an introduction to the library, see
 | [Schema](schema.md)       | Schema generation, migration workflows, sequential migrations   |
 | [Generator](generator.md) | tqlgen: generate Go structs from TypeQL schemas                 |
 | [AST](ast.md)             | Low-level TypeQL AST for programmatic query building            |
-| [Driver](driver.md)       | Rust FFI driver setup, TypeDB 3.12 options, server version, address translation |
+| [Driver](driver.md)       | Rust FFI driver setup, TypeDB 3.13 setup, server version, address translation |
 
 ## API Reference
 

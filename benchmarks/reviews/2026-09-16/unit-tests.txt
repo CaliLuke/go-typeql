@@ -1,0 +1,11 @@
+go: downloading golang.org/x/sys v0.37.0
+go: downloading modernc.org/libc v1.67.6
+?   	github.com/CaliLuke/go-typeql	[no test files]
+ok  	github.com/CaliLuke/go-typeql/ast	0.580s
+?   	github.com/CaliLuke/go-typeql/cmd/benchdb	[no test files]
+?   	github.com/CaliLuke/go-typeql/driver	[no test files]
+?   	github.com/CaliLuke/go-typeql/given	[no test files]
+ok  	github.com/CaliLuke/go-typeql/gotype	1.720s
+ok  	github.com/CaliLuke/go-typeql/internal/typeqlcheck	0.515s
+ok  	github.com/CaliLuke/go-typeql/tqlgen	4.897s
+?   	github.com/CaliLuke/go-typeql/tqlgen/cmd/tqlgen	[no test files]

@@ -1,0 +1,26 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/driver
+cpu: Apple M5
+BenchmarkDecodeMsgpackRows/Materialize-10 	    1910	    588119 ns/op	  511697 B/op	   16007 allocs/op
+BenchmarkDecodeMsgpackRows/Materialize-10 	    2607	    464459 ns/op	  511683 B/op	   16007 allocs/op
+BenchmarkDecodeMsgpackRows/Materialize-10 	    2876	    437974 ns/op	  511680 B/op	   16007 allocs/op
+BenchmarkDecodeMsgpackRows/Materialize-10 	    2661	    455946 ns/op	  511684 B/op	   16007 allocs/op
+BenchmarkDecodeMsgpackRows/Materialize-10 	    2457	    601995 ns/op	  511692 B/op	   16007 allocs/op
+BenchmarkDecodeMsgpackRows/Consume-10     	    2199	    543004 ns/op	  159366 B/op	   14003 allocs/op
+BenchmarkDecodeMsgpackRows/Consume-10     	    2979	    415747 ns/op	  159367 B/op	   14003 allocs/op
+BenchmarkDecodeMsgpackRows/Consume-10     	    3190	    365635 ns/op	  159367 B/op	   14003 allocs/op
+BenchmarkDecodeMsgpackRows/Consume-10     	    3487	    364968 ns/op	  159368 B/op	   14003 allocs/op
+BenchmarkDecodeMsgpackRows/Consume-10     	    3357	    354230 ns/op	  159366 B/op	   14003 allocs/op
+BenchmarkReviewQueryMetadata-10           	 1733882	       672.1 ns/op	     528 B/op	       6 allocs/op
+BenchmarkReviewQueryMetadata-10           	 1871857	       640.4 ns/op	     528 B/op	       6 allocs/op
+BenchmarkReviewQueryMetadata-10           	 1563478	       759.7 ns/op	     528 B/op	       6 allocs/op
+BenchmarkReviewQueryMetadata-10           	 1771321	       713.0 ns/op	     528 B/op	       6 allocs/op
+BenchmarkReviewQueryMetadata-10           	 1945620	       610.2 ns/op	     528 B/op	       6 allocs/op
+BenchmarkReviewDisabledQueryLogging-10    	 5545880	       208.4 ns/op	     432 B/op	       4 allocs/op
+BenchmarkReviewDisabledQueryLogging-10    	 6109210	       203.3 ns/op	     432 B/op	       4 allocs/op
+BenchmarkReviewDisabledQueryLogging-10    	 6580173	       196.5 ns/op	     432 B/op	       4 allocs/op
+BenchmarkReviewDisabledQueryLogging-10    	 5374380	       220.7 ns/op	     432 B/op	       4 allocs/op
+BenchmarkReviewDisabledQueryLogging-10    	 4395151	       255.8 ns/op	     432 B/op	       4 allocs/op
+PASS
+ok  	github.com/CaliLuke/go-typeql/driver	25.872s

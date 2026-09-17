@@ -1,6 +1,6 @@
-module github.com/CaliLuke/go-typeql
+module github.com/CaliLuke/go-typeql/v2
 
-go 1.27rc2
+go 1.27.0
 
 require (
 	github.com/alecthomas/participle/v2 v2.1.4

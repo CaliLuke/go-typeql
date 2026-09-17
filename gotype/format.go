@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/CaliLuke/go-typeql/ast"
+	"github.com/CaliLuke/go-typeql/v2/ast"
 )
 
 // FormatValue converts a Go value into its TypeQL literal string representation.

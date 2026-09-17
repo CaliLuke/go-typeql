@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/given"
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
 
 // PoolConfig specifies connection pool behavior.
@@ -552,7 +552,11 @@ func (pca *poolConnAdapter) TransactionContext(ctx context.Context, dbName strin
 	}
 
 	// Wrap the transaction to return connection to pool on close
-	return &pooledTx{tx: tx, conn: conn, pool: pca.pool}, nil
+	pooled := &pooledTx{tx: tx, conn: conn, pool: pca.pool}
+	if batch, ok := tx.(batchInsertTx); ok {
+		return &pooledBatchTx{pooledTx: pooled, batchInsertTx: batch}, nil
+	}
+	return pooled, nil
 }
 
 // acquireCtx returns the context used for pool acquisition in the adapter's
@@ -646,6 +650,13 @@ type pooledTx struct {
 	conn Conn
 	pool *ConnPool
 	once sync.Once
+}
+
+// Preserve the optional batch capability without advertising it for legacy
+// transactions. Lifecycle methods still return the connection through pooledTx.
+type pooledBatchTx struct {
+	*pooledTx
+	batchInsertTx
 }
 
 func (pt *pooledTx) Query(query string) ([]map[string]any, error) {

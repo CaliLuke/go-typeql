@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/CaliLuke/go-typeql/tqlgen"
+	"github.com/CaliLuke/go-typeql/v2/tqlgen"
 )
 
 const version = "0.4.0"

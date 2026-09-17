@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/internal/typeqlcheck"
-	"github.com/CaliLuke/go-typeql/tqlgen"
+	"github.com/CaliLuke/go-typeql/v2/internal/typeqlcheck"
+	"github.com/CaliLuke/go-typeql/v2/tqlgen"
 )
 
 type syntaxKeyedRelation struct {

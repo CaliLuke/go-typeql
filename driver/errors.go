@@ -70,4 +70,7 @@ var (
 	// in-flight query goroutine frees the underlying native handle once the
 	// driver call returns; the transaction cannot be reused.
 	ErrTransactionAbandoned = errors.New("driver: transaction abandoned after context cancellation")
+	// ErrTransactionBusy rejects queries, commits, rollbacks, and checked closes
+	// while a streaming query owns the transaction. IsOpen remains available.
+	ErrTransactionBusy = errors.New("driver: transaction has an active query stream")
 )

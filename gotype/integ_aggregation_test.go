@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 func setupAggDB(t *testing.T) *gotype.Manager[Person] {

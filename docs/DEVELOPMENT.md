@@ -2,20 +2,18 @@
 
 ## Prerequisites
 
-- **Go 1.27 RC2+** (Go 1.27.0 once generally available; macOS 13+ on Darwin)
+- **Go 1.27+** (release checks use Go 1.27.1; macOS 13+ on Darwin)
 - **Rust 1.97+** (1.97.1 is pinned for the edition 2024 FFI driver) — install via [rustup](https://rustup.rs/)
 - **TypeDB 3.x server** (for integration tests) — run via Docker Compose or install directly
 - **Colima with Docker Compose** (optional, for running TypeDB in tests on this machine)
 
-Go-aware development tools must also be built with Go 1.27 to parse generic
-methods and the new export-data format. During the RC period, rebuild the
-current tool versions with RC2. Staticcheck 2026.1 does not support Go 1.27's
-export data, so use the tested upstream revision until its next release:
+Go development tools must use Go 1.27 to parse generic methods and the new export-data format.
+The following versions pass the repository quality gates with Go 1.27.1:
 
 ```bash
-GOTOOLCHAIN=go1.27rc2 go install golang.org/x/tools/cmd/goimports@v0.48.0
-GOTOOLCHAIN=go1.27rc2 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
-GOTOOLCHAIN=go1.27rc2 go install honnef.co/go/tools/cmd/staticcheck@d69e7ee19e2d
+GOTOOLCHAIN=go1.27.1 go install golang.org/x/tools/cmd/goimports@v0.48.0
+GOTOOLCHAIN=go1.27.1 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+GOTOOLCHAIN=go1.27.1 go install honnef.co/go/tools/cmd/staticcheck@d69e7ee19e2d
 ```
 
 `check.sh` uses `~/go/bin/staticcheck` by default. Set `STATICCHECK_BIN` to
@@ -130,7 +128,7 @@ The project uses build tags to isolate CGo-dependent code:
 The `ast/`, `given/`, `gotype/`, and `tqlgen/` packages compile and test without build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
-# Unit tests (default, no tags needed) — 437 tests
+# Unit tests (default, no tags needed) — 707 tests
 go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests
@@ -202,7 +200,7 @@ The four packages form a layered architecture:
 
 ### Godoc
 
-All exported types and functions have doc comments that render on [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql). To preview locally:
+All exported types and functions have doc comments that render on [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2). To preview locally:
 
 ```bash
 make docs
@@ -212,8 +210,8 @@ make docs
 Or in the terminal:
 
 ```bash
-go doc github.com/CaliLuke/go-typeql/gotype.Manager
-go doc -all github.com/CaliLuke/go-typeql/ast
+go doc github.com/CaliLuke/go-typeql/v2/gotype.Manager
+go doc -all github.com/CaliLuke/go-typeql/v2/ast
 ```
 
 Regenerate the checked-in markdown reference after exported API changes:

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/ast"
-	"github.com/CaliLuke/go-typeql/driver"
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/ast"
+	"github.com/CaliLuke/go-typeql/v2/driver"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 // Test models

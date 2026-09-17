@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/CaliLuke/go-typeql/ast"
+	"github.com/CaliLuke/go-typeql/v2/ast"
 )
 
 // Manager provides high-level, generic CRUD (Create, Read, Update, Delete) operations

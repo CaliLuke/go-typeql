@@ -1,0 +1,24 @@
+{
+  "measured_at_utc": "2026-09-17T01:52:25.106076+00:00",
+  "release_tag": "v1.15.0-alpha.3",
+  "release_commit": "5ec3482b63e305ac75b421b09b1258ebd71b68af",
+  "current_commit": "d69aa00b48fc420f358f572170735a0a3c7fb463",
+  "current_includes_uncommitted_fixes": true,
+  "current_patch_sha256": "cf7e01ed0659836664ae5514cda2a1356df2465046b28b5ab0da91789026060b",
+  "go": "go1.27.1 darwin/arm64",
+  "hardware": "Apple M5, 10 cores, 24 GiB",
+  "os": "macOS 26.6.2 (25G83)",
+  "server_image": "typedb/typedb:3.13.0",
+  "server_address": "localhost:1731",
+  "GOMAXPROCS": 4,
+  "live_benchtime": "10x",
+  "micro_benchtime": "300ms",
+  "independent_samples_per_revision": 5,
+  "native_libraries": "Each revision built from its own Rust sources and Cargo.lock with cargo build --release.",
+  "one_minute_load_during_live_runs": [
+    12.0,
+    13.9
+  ],
+  "statistics": "Median per benchmark, equal-weight geometric mean of release/current ns/op ratios.",
+  "results": "All 50 benchmark processes passed; 32 benchmark cases, 5 samples per revision, 320 measurements."
+}

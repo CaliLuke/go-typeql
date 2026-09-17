@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 func TestIntegration_QueryNoCountOptionalEmptyAndRepeatedMatches(t *testing.T) {

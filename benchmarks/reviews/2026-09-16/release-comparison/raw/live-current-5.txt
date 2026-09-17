@@ -1,0 +1,17 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/gotype
+cpu: Apple M5
+BenchmarkReleaseComparison/ReadByIID-4         	      10	   1400621 ns/op	    1764 B/op	      42 allocs/op
+BenchmarkReleaseComparison/ReadByKey-4         	      10	   1372800 ns/op	    1782 B/op	      47 allocs/op
+BenchmarkReleaseComparison/GetOne-4            	      10	   1616667 ns/op	    1784 B/op	      47 allocs/op
+BenchmarkReleaseComparison/All256-4            	      10	   9832988 ns/op	   50880 B/op	    2085 allocs/op
+BenchmarkReleaseComparison/WithRoles256-4      	      10	  16240029 ns/op	  284190 B/op	    6953 allocs/op
+BenchmarkReleaseComparison/ExistsBroad256-4    	      10	   1489317 ns/op	    2305 B/op	      44 allocs/op
+BenchmarkReleaseComparison/PutOne-4            	      10	   3803433 ns/op	    2799 B/op	      63 allocs/op
+BenchmarkReleaseComparison/Insert16-4          	      10	   4120042 ns/op	   24805 B/op	     397 allocs/op
+BenchmarkReleaseComparison/Put16-4             	      10	   5646988 ns/op	   23852 B/op	     419 allocs/op
+BenchmarkReleaseComparison/Update16-4          	      10	   9060842 ns/op	   38171 B/op	     615 allocs/op
+BenchmarkReleaseComparison/Delete16-4          	      10	   5862471 ns/op	    7406 B/op	     110 allocs/op
+BenchmarkReleaseComparison/Delete16Strict-4    	      10	   8929371 ns/op	   20086 B/op	     255 allocs/op
+PASS

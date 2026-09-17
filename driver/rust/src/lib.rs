@@ -1787,7 +1787,7 @@ mod tests {
             "redefine employment:employee label old-employee;",
         ] {
             typeql::parse_query(query).unwrap_or_else(|err| {
-                panic!("TypeQL 3.12.2 rejected native rename {query:?}: {err}")
+                panic!("TypeQL rejected native rename {query:?}: {err}")
             });
         }
     }

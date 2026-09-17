@@ -3,7 +3,7 @@ package tqlgen
 import (
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/internal/typeqlcheck"
+	"github.com/CaliLuke/go-typeql/v2/internal/typeqlcheck"
 )
 
 // TestTypeQLSyntax_ParserConformance cross-checks the tqlgen parser against

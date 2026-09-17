@@ -17,7 +17,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/CaliLuke/go-typeql/given"
+	"github.com/CaliLuke/go-typeql/v2/given"
 
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -48,6 +48,11 @@ var msgpackDecoderPool = sync.Pool{
 type Transaction struct {
 	ptr unsafe.Pointer
 	mu  sync.Mutex // serializes FFI calls on the single-threaded native handle
+
+	// The stream retains native ownership while callbacks run without mu.
+	streaming            bool
+	streamCloseRequested bool
+	streamCloseCallbacks []func(error)
 
 	// stateMu guards the abandonment bookkeeping below. It is a cheap
 	// secondary lock that is never held across FFI calls, so lifecycle fast
@@ -404,8 +409,8 @@ func (t *Transaction) markClosedLocked(reason string) {
 // (through the async close worker when possible) so that the server-side
 // transaction is not left open until the server times it out.
 func (t *Transaction) finalize() {
-	job := t.detachCloseJob(time.Now(), nil)
-	if job.ptr == nil {
+	job, err := t.detachCloseJob(time.Now(), nil)
+	if err != nil || job.ptr == nil {
 		return
 	}
 	slog.Warn("typedb_go.tx.finalizer.leak", "tx_id", t.id, "db", t.dbName, "tx_type", int(t.txType))
@@ -462,6 +467,12 @@ func (t *Transaction) finishContextCall() {
 	}
 
 	t.mu.Lock()
+	// A background stream can be inside a callback with mu released. An
+	// abandoned nested call must leave cleanup to that stream's owner.
+	if t.streaming {
+		t.mu.Unlock()
+		return
+	}
 	job := transactionCloseJob{id: t.id, dbName: t.dbName, txType: t.txType, start: time.Now(), release: t.releaseSlot}
 	if t.ptr != nil {
 		job.ptr = t.claimNativeHandle()
@@ -525,7 +536,7 @@ func (t *Transaction) IsOpen() bool {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.ptr == nil {
+	if t.ptr == nil || t.streamCloseRequested {
 		return false
 	}
 	return bool(C.typedb_transaction_is_open(t.ptr))
@@ -580,6 +591,9 @@ func (t *Transaction) queryDecoded(
 ) error {
 	query := meta.query
 	start := time.Now()
+	if nilGivenRows(rows) {
+		rows = nil
+	}
 	logFields := func() []any { return append([]any{"with_options", opts != nil, "with_rows", rows != nil}, logExtra...) }
 
 	if t.isAbandoned() {
@@ -601,6 +615,9 @@ func (t *Transaction) queryDecoded(
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if t.streaming {
+		return ErrTransactionBusy
+	}
 	if t.ptr == nil {
 		t.logQueryDuration(start, meta, 0, 0, ErrNotConnected, logFields)
 		return ErrNotConnected
@@ -688,11 +705,17 @@ func (t *Transaction) queryEachConfigured(
 	}
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	if t.streaming {
+		t.mu.Unlock()
+		return ErrTransactionBusy
+	}
 	if t.ptr == nil {
+		t.mu.Unlock()
 		t.logQueryDuration(start, meta, 0, 0, ErrNotConnected, logFields)
 		return ErrNotConnected
 	}
+	t.streaming = true
+	defer t.finishStream()
 
 	cQuery := C.CString(query)
 	defer C.free(unsafe.Pointer(cQuery))
@@ -740,8 +763,12 @@ func (t *Transaction) queryEachConfigured(
 			if onChunk != nil {
 				onChunk(int(chunkRows), int(outLen))
 			}
-			decodedRows, err := decodeMsgpackEach(buf, outLen, fn)
-			C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
+			decodedRows, err := func() (int, error) {
+				defer C.typedb_free_bytes(buf, outLen)
+				return decodeMsgpackEach(buf, outLen, func(count int, row map[string]any) error {
+					return t.consumeStreamRow(fn, count, row)
+				})
+			}()
 			if err != nil {
 				err = withQuery(err, query)
 				t.logQueryDuration(start, meta, rowCount, byteCount, err, logFields)
@@ -767,9 +794,50 @@ func (t *Transaction) queryEachConfigured(
 	}
 }
 
+// consumeStreamRow releases only the transaction mutex. The native stream
+// stays owned by queryEachConfigured, and other mutating operations fail busy.
+func (t *Transaction) consumeStreamRow(fn func(int, map[string]any) error, count int, row map[string]any) (err error) {
+	if t.streamCloseRequested {
+		return ErrNotConnected
+	}
+	t.mu.Unlock()
+	defer func() {
+		t.mu.Lock()
+		if err == nil && t.streamCloseRequested {
+			err = ErrNotConnected
+		}
+	}()
+	return fn(count, row)
+}
+
+// finishStream runs with mu held, after the native stream has been dropped.
+func (t *Transaction) finishStream() {
+	t.streaming = false
+	if !t.streamCloseRequested && !t.isAbandoned() {
+		t.mu.Unlock()
+		return
+	}
+	callbacks := t.streamCloseCallbacks
+	t.streamCloseCallbacks = nil
+	t.streamCloseRequested = false
+	onDone := func(err error) {
+		for _, callback := range callbacks {
+			callback(err)
+		}
+	}
+	job := t.detachCloseJobLocked(time.Now(), onDone)
+	t.mu.Unlock()
+	t.closeAsyncJob(job, onDone)
+}
+
 // QueryEachWithContext executes a TypeQL query and calls fn for each result.
 // The rowCount argument is the number of results in the current stream chunk.
 // The driver reuses the row map, so fn must not retain it.
+// Callbacks can call IsOpen. Queries, Commit, Rollback, and CloseChecked on the
+// same transaction return ErrTransactionBusy while the stream is active.
+// Close and CloseAsync request a close after the current callback returns.
+// The stream then stops with ErrNotConnected unless the callback returns an error.
+// Cancellation waits for the current callback. No callback runs after this call returns.
 func (t *Transaction) QueryEachWithContext(
 	ctx context.Context,
 	query string,
@@ -1085,8 +1153,9 @@ func decodeMsgpackEachBytes(
 }
 
 // Commit persists the changes made in the transaction to the database.
-// Whether Commit succeeds or fails, the underlying Rust transaction handle is
-// consumed and cannot be reused, rolled back, or closed again meaningfully.
+// An active query stream returns ErrTransactionBusy without committing.
+// Once the native commit starts, it consumes the underlying Rust transaction
+// handle on success or failure. The transaction cannot be reused afterwards.
 // Commit on a transaction abandoned by a cancelled QueryWithContext call
 // returns ErrTransactionAbandoned immediately.
 func (t *Transaction) Commit() error {
@@ -1098,6 +1167,9 @@ func (t *Transaction) Commit() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if t.streaming {
+		return ErrTransactionBusy
+	}
 	if t.ptr == nil {
 		t.logTransactionDuration("tx.commit", start, ErrNotConnected)
 		return ErrNotConnected
@@ -1118,6 +1190,7 @@ func (t *Transaction) Commit() error {
 }
 
 // Rollback discards all changes made within the transaction.
+// An active query stream returns ErrTransactionBusy without rolling back.
 // Rollback on a transaction abandoned by a cancelled QueryWithContext call
 // returns ErrTransactionAbandoned immediately.
 func (t *Transaction) Rollback() error {
@@ -1129,6 +1202,9 @@ func (t *Transaction) Rollback() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if t.streaming {
+		return ErrTransactionBusy
+	}
 	if t.ptr == nil {
 		t.logTransactionDuration("tx.rollback", start, ErrNotConnected)
 		return ErrNotConnected
@@ -1151,6 +1227,7 @@ func (t *Transaction) Rollback() error {
 
 // Close terminates the transaction without committing any changes.
 // It should be used in a 'defer' block to ensure resources are released.
+// During a stream callback, it requests a close after the callback returns.
 func (t *Transaction) Close() {
 	t.CloseAsync(nil)
 }
@@ -1164,9 +1241,32 @@ func (t *Transaction) Close() {
 //     locally (no checked close result is available);
 //   - if the transaction was already committed, rolled back, closed, or
 //     abandoned, with nil, before CloseAsync returns.
+//
+// During a stream callback, the close and onDone wait until the stream releases
+// its native handle. Later rows are not delivered.
 func (t *Transaction) CloseAsync(onDone func(error)) {
 	start := time.Now()
-	job := t.detachCloseJob(start, onDone)
+	if t.isAbandoned() {
+		if onDone != nil {
+			onDone(nil)
+		}
+		return
+	}
+	t.mu.Lock()
+	if t.streaming {
+		t.streamCloseRequested = true
+		if onDone != nil {
+			t.streamCloseCallbacks = append(t.streamCloseCallbacks, onDone)
+		}
+		t.mu.Unlock()
+		return
+	}
+	job := t.detachCloseJobLocked(start, onDone)
+	t.mu.Unlock()
+	t.closeAsyncJob(job, onDone)
+}
+
+func (t *Transaction) closeAsyncJob(job transactionCloseJob, onDone func(error)) {
 	if job.ptr == nil {
 		if onDone != nil {
 			onDone(nil)
@@ -1188,9 +1288,13 @@ func (t *Transaction) CloseAsync(onDone func(error)) {
 // CloseChecked terminates the transaction synchronously and returns the checked
 // TypeDB close error, if any. It returns nil immediately when the transaction
 // was already committed, rolled back, closed, or abandoned.
+// It returns ErrTransactionBusy while a query stream is active.
 func (t *Transaction) CloseChecked() error {
 	start := time.Now()
-	job := t.detachCloseJob(start, nil)
+	job, err := t.detachCloseJob(start, nil)
+	if err != nil {
+		return err
+	}
 	if job.ptr == nil {
 		return nil
 	}
@@ -1199,7 +1303,7 @@ func (t *Transaction) CloseChecked() error {
 	var closeErr *C.char
 	C.typedb_transaction_close(job.ptr, &closeErr)
 	duration := time.Since(closeStart)
-	err := getError(closeErr)
+	err = getError(closeErr)
 	logTransactionClose(job, err)
 	job.cleanup.finish(job, true, err, duration, false)
 	job.releaseSlot()
@@ -1210,14 +1314,20 @@ func (t *Transaction) CloseChecked() error {
 // closing. It returns the zero job when there is nothing to close: the
 // transaction already ended, or it was abandoned (in which case the in-flight
 // query goroutine owns the handle and frees it when the driver call returns).
-func (t *Transaction) detachCloseJob(start time.Time, onDone func(error)) transactionCloseJob {
+func (t *Transaction) detachCloseJob(start time.Time, onDone func(error)) (transactionCloseJob, error) {
 	if t.isAbandoned() {
-		return transactionCloseJob{}
+		return transactionCloseJob{}, nil
 	}
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.streaming {
+		return transactionCloseJob{}, ErrTransactionBusy
+	}
+	return t.detachCloseJobLocked(start, onDone), nil
+}
 
+func (t *Transaction) detachCloseJobLocked(start time.Time, onDone func(error)) transactionCloseJob {
 	if t.ptr == nil {
 		return transactionCloseJob{}
 	}

@@ -10,8 +10,8 @@ import (
     "fmt"
     "log"
 
-    "github.com/CaliLuke/go-typeql/driver"
-    "github.com/CaliLuke/go-typeql/gotype"
+    "github.com/CaliLuke/go-typeql/v2/driver"
+    "github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 // 1. Define models — struct tags map fields to TypeDB attributes and roles.

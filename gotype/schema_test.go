@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/tqlgen"
+	"github.com/CaliLuke/go-typeql/v2/tqlgen"
 )
 
 func TestGenerateSchemaFor_Entity(t *testing.T) {

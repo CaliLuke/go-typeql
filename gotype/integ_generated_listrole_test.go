@@ -21,7 +21,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 // LrPerson mirrors tqlgen output for: entity lr-person, owns lr-name @key, plays ...

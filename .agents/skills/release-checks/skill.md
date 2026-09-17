@@ -16,7 +16,7 @@ Follow semver:
 
 - **Patch** (`v1.0.2`): bug fixes, doc updates, no API changes
 - **Minor** (`v1.1.0`): new features, backward-compatible API additions
-- **Major** (`v2.0.0`): breaking changes (requires module path change to `github.com/CaliLuke/go-typeql/v2`)
+- **Major** (`v2.0.0`): breaking changes (requires module path change to `github.com/CaliLuke/go-typeql/v2/v2`)
 
 If `$ARGUMENTS` is empty, ask the user what version to release.
 
@@ -133,7 +133,7 @@ After updating `Cargo.toml`, always run `cargo update` inside `driver/rust/` to 
 Update every user-facing version reference and artifact instruction:
 
 ```bash
-go get github.com/CaliLuke/go-typeql@$ARGUMENTS
+go get github.com/CaliLuke/go-typeql/v2@$ARGUMENTS
 ```
 
 Specifically verify:
@@ -175,15 +175,16 @@ gh release edit $ARGUMENTS --notes "..."
 
 ## 14. Verify published assets and pkg.go.dev
 
-Visit `https://pkg.go.dev/github.com/CaliLuke/go-typeql@$ARGUMENTS`. Force indexing if needed:
+Visit `https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2@$ARGUMENTS`. Force indexing if needed:
 
 ```bash
-GOPROXY=https://proxy.golang.org go get github.com/CaliLuke/go-typeql@$ARGUMENTS
+GOPROXY=https://proxy.golang.org go get github.com/CaliLuke/go-typeql/v2@$ARGUMENTS
 ```
 
 Also verify the GitHub release contains the expected Rust static libraries and that their names match the documented install flow:
 
 - `libtypedb_go_ffi-linux-amd64.a`
+- `libtypedb_go_ffi-linux-arm64.a`
 - `libtypedb_go_ffi-darwin-amd64.a`
 - `libtypedb_go_ffi-darwin-arm64.a`
 

@@ -1,0 +1,114 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/gotype
+cpu: Apple M5
+BenchmarkReviewPut/InlineFetch=false-10         	     194	   5911107 ns/op	    7404 B/op	     140 allocs/op
+BenchmarkReviewPut/InlineFetch=false-10         	     219	   6717088 ns/op	    7399 B/op	     140 allocs/op
+BenchmarkReviewPut/InlineFetch=false-10         	     182	   6217716 ns/op	    7404 B/op	     140 allocs/op
+BenchmarkReviewPut/InlineFetch=false-10         	     192	   8573031 ns/op	    7399 B/op	     140 allocs/op
+BenchmarkReviewPut/InlineFetch=false-10         	     130	   8554063 ns/op	    7410 B/op	     140 allocs/op
+BenchmarkReviewPut/InlineFetch=true-10          	     249	   7121653 ns/op	    4668 B/op	      82 allocs/op
+BenchmarkReviewPut/InlineFetch=true-10          	     162	   7292809 ns/op	    4677 B/op	      82 allocs/op
+BenchmarkReviewPut/InlineFetch=true-10          	     182	   6490270 ns/op	    4676 B/op	      82 allocs/op
+BenchmarkReviewPut/InlineFetch=true-10          	     100	  12391828 ns/op	    4699 B/op	      82 allocs/op
+BenchmarkReviewPut/InlineFetch=true-10          	     166	   6613429 ns/op	    4676 B/op	      82 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=false-10  	     213	  12085833 ns/op	      1557 drain-ms	    3241 B/op	      55 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=false-10  	     100	  11190640 ns/op	       482.4 drain-ms	    3342 B/op	      55 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=false-10  	     100	  10517299 ns/op	       345.9 drain-ms	    3436 B/op	      55 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=false-10  	     177	  11409826 ns/op	      1448 drain-ms	    3231 B/op	      55 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=false-10  	2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3594 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2033
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3600 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2045
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3599 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2053
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3597 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2154
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3598 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2155
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3595 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2156
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3596 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2157
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3604 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2144
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3601 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2145
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3603 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2146
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3602 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2264
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3610 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2247
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3607 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2252
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3609 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2260
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3608 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2267
+2026/09/16 12:32:03 WARN typedb_go.tx.close.slow tx_id=3605 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2268
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3606 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2275
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3612 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2160
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3613 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2161
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3614 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2225
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3611 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2226
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3618 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2192
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3615 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2193
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3619 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2195
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3617 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2196
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3620 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2194
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3616 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2195
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3623 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2165
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3621 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2167
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3622 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2168
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3624 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2169
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3626 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2147
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3629 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2148
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3630 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2149
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3625 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2149
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3627 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2150
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3628 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2151
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3632 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2130
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3631 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2130
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3633 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2129
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3634 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2131
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3716 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2001
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3717 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2002
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3714 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2002
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3713 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2004
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3719 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2006
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3720 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2006
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3721 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2005
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3730 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2005
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3726 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2006
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3727 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2007
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3723 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2008
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3725 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2009
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3729 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3724 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2011
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3728 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2008
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3722 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2009
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3731 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2006
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3736 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2008
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3738 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2009
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3735 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3733 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3737 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2011
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3734 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2012
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3732 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2013
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3743 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2008
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3747 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2009
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3740 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3742 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3741 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2011
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3748 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3746 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3745 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2011
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3739 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2012
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3744 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2013
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3752 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3753 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3749 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2011
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3750 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2012
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3751 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2013
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3757 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2012
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3758 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2012
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3754 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2013
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3756 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2011
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3755 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3759 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2010
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3763 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2009
+2026/09/16 12:32:04 WARN typedb_go.tx.close.slow tx_id=3761 db=bench_async_close_1789587090012248000 tx_type=0 result=ok elapsed_ms=2005
+     212	  13297660 ns/op	      1907 drain-ms	    3310 B/op	      55 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=true-10   	    2888	    406773 ns/op	         0.001000 drain-ms	    3204 B/op	      54 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=true-10   	    3556	    395269 ns/op	         0.001000 drain-ms	    3204 B/op	      54 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=true-10   	    3582	    380642 ns/op	         0 drain-ms	    3203 B/op	      54 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=true-10   	    2919	    431508 ns/op	         0.001000 drain-ms	    3204 B/op	      54 allocs/op
+BenchmarkReviewCloseLifecycle/Checked=true-10   	    2442	    560447 ns/op	         0.001000 drain-ms	    3204 B/op	      54 allocs/op
+PASS
+ok  	github.com/CaliLuke/go-typeql/gotype	42.309s

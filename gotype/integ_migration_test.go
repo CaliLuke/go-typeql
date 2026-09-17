@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/driver"
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/driver"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 // MigratedPerson is Person with an extra attribute for migration tests.

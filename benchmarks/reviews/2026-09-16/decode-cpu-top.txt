@@ -1,0 +1,20 @@
+File: driver.test
+Type: cpu
+Time: 2026-09-16 12:30:59 PDT
+Duration: 6.45s, Total samples = 5200ms (80.57%)
+Showing nodes accounting for 2820ms, 54.23% of 5200ms total
+Dropped 86 nodes (cum <= 26ms)
+Showing top 12 nodes out of 112
+      flat  flat%   sum%        cum   cum%
+     430ms  8.27%  8.27%      430ms  8.27%  runtime.madvise
+     420ms  8.08% 16.35%      590ms 11.35%  runtime.mallocgcTinySC2
+     310ms  5.96% 22.31%      310ms  5.96%  runtime.kevent
+     220ms  4.23% 26.54%      840ms 16.15%  github.com/vmihailenco/msgpack/v5.(*Decoder).readN
+     220ms  4.23% 30.77%      500ms  9.62%  io.ReadAtLeast
+     190ms  3.65% 34.42%      280ms  5.38%  bytes.(*Reader).Read
+     190ms  3.65% 38.08%      190ms  3.65%  runtime.memmove
+     190ms  3.65% 41.73%      190ms  3.65%  runtime.pthread_kill
+     180ms  3.46% 45.19%      210ms  4.04%  internal/runtime/maps.(*Map).putSlotSmallFastStr
+     160ms  3.08% 48.27%      300ms  5.77%  runtime.mallocgcSmallScanNoHeaderSC2
+     160ms  3.08% 51.35%      970ms 18.65%  runtime.slicebytetostring
+     150ms  2.88% 54.23%      150ms  2.88%  bytes.(*Reader).ReadByte

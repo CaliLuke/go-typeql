@@ -14,7 +14,7 @@ type Rows interface {
 // Value is a typed value in a TypeQL given row.
 type Value struct {
 	Type  string `json:"type"`
-	Value any    `json:"value,omitempty"`
+	Value any    `json:"value,omitzero"`
 }
 
 // TypedRows contains values ordered by the declared TypeQL variable names.

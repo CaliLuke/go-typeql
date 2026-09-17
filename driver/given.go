@@ -7,7 +7,10 @@ import "C"
 import (
 	json "encoding/json/v2"
 	"fmt"
+	"reflect"
 	"unsafe"
+
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
 
 // GivenRows contains typed input rows for a TypeQL query with a given stage.
@@ -22,7 +25,21 @@ type GivenRows struct {
 // GivenValue is a typed value or opaque concept handle for a given input row.
 type GivenValue struct {
 	Type  GivenValueType `json:"type"`
-	Value any            `json:"value,omitempty"`
+	Value any            `json:"value,omitzero"`
+}
+
+// nilGivenRows treats typed nil inputs like an absent optional argument.
+func nilGivenRows(rows given.Rows) bool {
+	if rows == nil {
+		return true
+	}
+	v := reflect.ValueOf(rows)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 // GivenValueType identifies the TypeDB value type for a given row entry.

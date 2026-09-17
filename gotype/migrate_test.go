@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/tqlgen"
+	"github.com/CaliLuke/go-typeql/v2/tqlgen"
 )
 
 func TestDiffSchema_Empty(t *testing.T) {

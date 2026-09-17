@@ -1,0 +1,13 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/CaliLuke/go-typeql/gotype
+cpu: Apple M5
+BenchmarkHydrate_100Rows-4             	   34027	     10672 ns/op	    8896 B/op	     101 allocs/op
+BenchmarkHydrate_1000Rows-4            	    3394	    113181 ns/op	   88192 B/op	    1001 allocs/op
+BenchmarkHydrate_10000Rows-4           	     334	   1125990 ns/op	  881920 B/op	   10001 allocs/op
+BenchmarkHydrate_SingleRow-4           	 3098870	       116.8 ns/op	      80 B/op	       1 allocs/op
+BenchmarkExtractModelInfo_Entity-4     	  240133	      1481 ns/op	    4216 B/op	      29 allocs/op
+BenchmarkExtractModelInfo_Relation-4   	  347697	      1016 ns/op	    1784 B/op	      28 allocs/op
+BenchmarkUnwrapResult-4                	 2868891	       120.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkReleaseFetchProjection-4      	 4048891	        81.76 ns/op	      56 B/op	       3 allocs/op
+PASS

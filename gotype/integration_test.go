@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/ast"
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/ast"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 // ---------------------------------------------------------------------------

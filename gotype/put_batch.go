@@ -3,7 +3,7 @@ package gotype
 import (
 	"context"
 
-	"github.com/CaliLuke/go-typeql/given"
+	"github.com/CaliLuke/go-typeql/v2/given"
 )
 
 // putManyBatched selects only the scalar, single-string-key entity subset.

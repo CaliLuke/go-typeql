@@ -1,0 +1,11 @@
+File: gotype.test
+Type: alloc_space
+Time: 2026-09-16 12:24:46 PDT
+Showing nodes accounting for 3027.97MB, 99.81% of 3033.72MB total
+Dropped 53 nodes (cum <= 15.17MB)
+      flat  flat%   sum%        cum   cum%
+ 2742.71MB 90.41% 90.41%  2742.71MB 90.41%  github.com/CaliLuke/go-typeql/gotype.hydrateNewWithInfo[go.shape.struct { github.com/CaliLuke/go-typeql/gotype.BaseEntity; Name string "typedb:\"name,key\""; Email string "typedb:\"email\""; Age int "typedb:\"age\""; City string "typedb:\"city\""; Score int "typedb:\"score\"" }]
+  279.76MB  9.22% 99.63%  3022.47MB 99.63%  github.com/CaliLuke/go-typeql/gotype.(*Manager[go.shape.struct { github.com/CaliLuke/go-typeql/gotype.BaseEntity; Name string "typedb:\"name,key\""; Email string "typedb:\"email\""; Age int "typedb:\"age\""; City string "typedb:\"city\""; Score int "typedb:\"score\"" }]).hydrateResults
+    5.50MB  0.18% 99.81%  3027.97MB 99.81%  github.com/CaliLuke/go-typeql/gotype.BenchmarkHydrate_10000Rows
+         0     0% 99.81%  3027.97MB 99.81%  testing.(*B).run1.func1
+         0     0% 99.81%  3027.97MB 99.81%  testing.(*B).runN

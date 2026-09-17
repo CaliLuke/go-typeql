@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/gotype"
+	"github.com/CaliLuke/go-typeql/v2/gotype"
 )
 
 // DecimalItem exercises TypeDB decimal attributes via the value:decimal tag
