@@ -48,7 +48,7 @@ func TestInsertRunPreservesMetricSeries(t *testing.T) {
 }
 
 func TestBenchmarkGroupsAreExplicit(t *testing.T) {
-	for _, name := range []string{"unit", "decode", "bulk", "projections", "typed-reads", "result-reads", "lifecycle", "pool", "get-one", "get-one-duplicates"} {
+	for _, name := range []string{"unit", "decode", "bulk", "projections", "typed-reads", "result-reads", "lifecycle", "pool", "get-one", "get-one-duplicates", "prefetch", "stream-latency"} {
 		spec, err := benchmarkGroup(name)
 		if err != nil || spec.pattern == "" || len(spec.packages) == 0 {
 			t.Fatalf("group %s: %+v, %v", name, spec, err)
@@ -118,5 +118,39 @@ func TestValidatePoolGroupRequiresAllConcurrencyCases(t *testing.T) {
 	}
 	if err := validateGroupSeries(spec, results[:len(results)-1]); err == nil {
 		t.Fatal("missing concurrency case was accepted")
+	}
+}
+
+func TestStreamTuningGroupRequiresAllCases(t *testing.T) {
+	spec, err := benchmarkGroup("prefetch")
+	if err != nil || len(spec.required) != 39 {
+		t.Fatalf("spec=%+v err=%v", spec, err)
+	}
+	results := make([]benchmarkResult, len(spec.required))
+	for i, name := range spec.required {
+		results[i] = benchmarkResult{Name: name}
+	}
+	if err := validateGroupSeries(spec, results); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateGroupSeries(spec, results[:len(results)-1]); err == nil {
+		t.Fatal("missing early-stop chunk case was accepted")
+	}
+}
+
+func TestStreamLatencyGroupRequiresAllCases(t *testing.T) {
+	spec, err := benchmarkGroup("stream-latency")
+	if err != nil || len(spec.required) != 24 {
+		t.Fatalf("spec=%+v err=%v", spec, err)
+	}
+	results := make([]benchmarkResult, len(spec.required))
+	for i, name := range spec.required {
+		results[i] = benchmarkResult{Name: name}
+	}
+	if err := validateGroupSeries(spec, results); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateGroupSeries(spec, results[:len(results)-1]); err == nil {
+		t.Fatal("missing latency case was accepted")
 	}
 }

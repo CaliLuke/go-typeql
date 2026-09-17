@@ -661,6 +661,23 @@ func (t *Transaction) queryEachWithMeta(
 	fn func(rowCount int, row map[string]any) error,
 	logExtra ...any,
 ) error {
+	return t.queryEachConfigured(meta, nil, queryStreamChunkRows, nil, fn, logExtra...)
+}
+
+// queryEachConfigured keeps the public streaming defaults unchanged while
+// allowing in-package benchmarks to vary the FFI row limit and server prefetch
+// independently. onChunk observes each native buffer before it is freed.
+func (t *Transaction) queryEachConfigured(
+	meta *queryMetadata,
+	opts *QueryOptions,
+	chunkLimit int,
+	onChunk func(rows, bytes int),
+	fn func(rowCount int, row map[string]any) error,
+	logExtra ...any,
+) error {
+	if chunkLimit <= 0 {
+		return fmt.Errorf("driver: query stream chunk size must be positive")
+	}
 	query := meta.query
 	start := time.Now()
 	logFields := func() []any { return append([]any{"row_consumer", true}, logExtra...) }
@@ -684,7 +701,11 @@ func (t *Transaction) queryEachWithMeta(
 	defer decActiveTxQueryLazy(func() []any { return t.queryLogFields(meta, "reason", "finish") })
 
 	var queryErr *C.char
-	stream := C.typedb_transaction_query_stream_open(t.ptr, cQuery, nil, false, &queryErr)
+	var cOpts unsafe.Pointer
+	if opts != nil {
+		cOpts = opts.ptr
+	}
+	stream := C.typedb_transaction_query_stream_open(t.ptr, cQuery, cOpts, false, &queryErr)
 	if stream == nil {
 		err := withQuery(getError(queryErr), query)
 		if err == nil {
@@ -704,7 +725,7 @@ func (t *Transaction) queryEachWithMeta(
 		var nextErr *C.char
 		buf := C.typedb_query_stream_next(
 			stream,
-			C.size_t(queryStreamChunkRows),
+			C.size_t(chunkLimit),
 			&chunkRows,
 			&done,
 			&outLen,
@@ -716,6 +737,9 @@ func (t *Transaction) queryEachWithMeta(
 		}
 
 		if buf != nil {
+			if onChunk != nil {
+				onChunk(int(chunkRows), int(outLen))
+			}
 			decodedRows, err := decodeMsgpackEach(buf, outLen, fn)
 			C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
 			if err != nil {

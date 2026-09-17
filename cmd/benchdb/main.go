@@ -90,9 +90,42 @@ func benchmarkGroup(name string) (groupSpec, error) {
 		return groupSpec{pattern: "^BenchmarkGetOneRepeatedRows$", benchTime: "100x", packages: []string{"./gotype/..."}, required: []string{
 			"BenchmarkGetOneRepeatedRows/current", "BenchmarkGetOneRepeatedRows/count-first", "BenchmarkGetOneRepeatedRows/bounded-two",
 		}}, nil
+	case "prefetch":
+		return groupSpec{pattern: "^BenchmarkLiveStreamTuning$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./driver/..."}, live: true, required: streamTuningSeries()}, nil
+	case "stream-latency":
+		return groupSpec{pattern: "^BenchmarkLiveStreamLatency$", tags: "cgo,typedb,integration", benchTime: "2x", packages: []string{"./driver/..."}, live: true, required: streamLatencySeries()}, nil
 	default:
 		return groupSpec{}, fmt.Errorf("unknown benchmark group %q", name)
 	}
+}
+
+func streamTuningSeries() []string {
+	series := make([]string, 0, 39)
+	for _, shape := range []string{"narrow-64", "wide-64", "nested-256", "large-512"} {
+		for _, chunk := range []int{32, 128, 256} {
+			for _, prefetch := range []string{"default", "prefetch-1", "prefetch-256"} {
+				series = append(series, fmt.Sprintf("BenchmarkLiveStreamTuning/%s/chunk=%d/%s", shape, chunk, prefetch))
+			}
+			if shape == "large-512" {
+				series = append(series, fmt.Sprintf("BenchmarkLiveStreamTuning/%s/chunk=%d/stop-first", shape, chunk))
+			}
+		}
+	}
+	return series
+}
+
+func streamLatencySeries() []string {
+	series := make([]string, 0, 24)
+	for _, shape := range []string{"narrow-64", "large-512"} {
+		for _, delay := range []int{0, 2} {
+			for _, chunk := range []int{32, 256} {
+				for _, prefetch := range []string{"default", "prefetch-1", "prefetch-256"} {
+					series = append(series, fmt.Sprintf("BenchmarkLiveStreamLatency/%s/delay=%dms/chunk=%d/%s", shape, delay, chunk, prefetch))
+				}
+			}
+		}
+	}
+	return series
 }
 
 func main() {
@@ -106,7 +139,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("benchdb", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "record reviewed results in this sqlite database (omit for exploratory stdout only)")
 	count := fs.Int("count", 5, "benchmark sample count")
-	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates")
+	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency")
 	bench := fs.String("bench", "", "override the group's benchmark regex")
 	benchTime := fs.String("benchtime", "", "override the group's benchmark duration or fixed iterations")
 	reset := fs.Bool("reset", false, "clear existing benchmark history before saving the new run")
