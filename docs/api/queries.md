@@ -157,6 +157,7 @@ first, err := q.First(ctx)              // first match (nil if none); doesn't mu
 count, err := q.Count(ctx)              // count of distinct matching entities
 exists, err := q.Exists(ctx)            // true if any match exists
 deleted, err := q.Delete(ctx)           // delete all matches, return distinct-entity count
+err := q.DeleteNoCount(ctx)              // delete all matches without a count query
 ```
 
 `Count` and `Delete` count distinct entities, not answer rows — an entity matched
@@ -185,7 +186,19 @@ Updates specific attributes on all matching instances using per-attribute delete
 count, err := persons.Query().
     Filter(gotype.Eq("status", "pending")).
     Update(ctx, map[string]any{"status": "active"})
+
+err = persons.Query().
+    Filter(gotype.Eq("status", "pending")).
+    UpdateNoCount(ctx, map[string]any{"status": "active"})
 ```
+
+`UpdateNoCount` and `DeleteNoCount` use the same filter and mutation query as
+their count-returning counterparts. They skip the separate distinct-count
+query and return only success or failure. No matches are a successful no-op.
+An empty update map also does nothing. An unbound manager commits the mutation
+in one write transaction. A transaction-bound manager leaves commit or rollback
+to its caller. The count-free methods ignore `OrderAsc`, `OrderDesc`, `Offset`,
+and `Limit`, just as `Update` and `Delete` do.
 
 ## Aggregations
 

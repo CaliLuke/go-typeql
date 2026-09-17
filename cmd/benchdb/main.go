@@ -118,6 +118,13 @@ func benchmarkGroup(name string) (groupSpec, error) {
 		return groupSpec{pattern: "^BenchmarkLiveTypedIteration$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./gotype/..."}, live: true, required: []string{
 			"BenchmarkLiveTypedIteration/all", "BenchmarkLiveTypedIteration/for-each",
 		}}, nil
+	case "query-no-count":
+		return groupSpec{pattern: "^BenchmarkLiveQueryNoCount$", tags: "cgo,typedb,integration", benchTime: "10x", packages: []string{"./gotype/..."}, live: true, required: []string{
+			"BenchmarkLiveQueryNoCount/update/broad/counted", "BenchmarkLiveQueryNoCount/update/broad/no-count",
+			"BenchmarkLiveQueryNoCount/update/selective/counted", "BenchmarkLiveQueryNoCount/update/selective/no-count",
+			"BenchmarkLiveQueryNoCount/delete/broad/counted", "BenchmarkLiveQueryNoCount/delete/broad/no-count",
+			"BenchmarkLiveQueryNoCount/delete/selective/counted", "BenchmarkLiveQueryNoCount/delete/selective/no-count",
+		}}, nil
 	default:
 		return groupSpec{}, fmt.Errorf("unknown benchmark group %q", name)
 	}
@@ -184,7 +191,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("benchdb", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "record reviewed results in this sqlite database (omit for exploratory stdout only)")
 	count := fs.Int("count", 5, "benchmark sample count")
-	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency, cancellation, membership-build, membership-live, projection-reads, projection-transfer, typed-iteration")
+	group := fs.String("group", "unit", "benchmark group: unit, decode, bulk, projections, typed-reads, lifecycle, result-reads, pool, get-one, get-one-duplicates, prefetch, stream-latency, cancellation, membership-build, membership-live, projection-reads, projection-transfer, typed-iteration, query-no-count")
 	bench := fs.String("bench", "", "override the group's benchmark regex")
 	benchTime := fs.String("benchtime", "", "override the group's benchmark duration or fixed iterations")
 	reset := fs.Bool("reset", false, "clear existing benchmark history before saving the new run")

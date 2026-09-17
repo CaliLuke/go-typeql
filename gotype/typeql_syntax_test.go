@@ -294,6 +294,31 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 		}
 	})
 
+	t.Run("count-free bulk update and delete", func(t *testing.T) {
+		writeTx := &mockTx{}
+		mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{writeTx}}, "test_db"))
+		if err := mgr.Query().Filter(Eq("name", "Alice")).UpdateNoCount(context.Background(), map[string]any{
+			"email": "updated@example.com",
+			"age":   40,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if len(writeTx.queries) != 1 {
+			t.Fatalf("expected one mutation query, got %d", len(writeTx.queries))
+		}
+		assertTypeQL(t, "count-free bulk update", writeTx.queries[0], "")
+
+		deleteTx := &mockTx{}
+		mgr = MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{deleteTx}}, "test_db"))
+		if err := mgr.Query().Filter(Gt("age", 20)).DeleteNoCount(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if len(deleteTx.queries) != 1 {
+			t.Fatalf("expected one delete query, got %d", len(deleteTx.queries))
+		}
+		assertTypeQL(t, "count-free delete", deleteTx.queries[0], "")
+	})
+
 	t.Run("update multi-valued attribute", func(t *testing.T) {
 		ClearRegistry()
 		MustRegister[testTagged]()

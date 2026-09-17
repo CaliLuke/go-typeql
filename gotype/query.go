@@ -149,6 +149,28 @@ func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
 	return q.countThenWrite(ctx, "delete", countQuery, deleteQuery)
 }
 
+// DeleteNoCount removes matching instances without querying the affected-row
+// count. It uses the same distinct-entity selection as Delete.
+func (q *Query[T]) DeleteNoCount(ctx context.Context) error {
+	query, err := q.buildDeleteQuery()
+	if err != nil {
+		return fmt.Errorf("delete_no_count %s: build: %w", q.mgr.info.TypeName, err)
+	}
+	return q.writeWithoutCount(ctx, "delete_no_count", query)
+}
+
+func (q *Query[T]) writeWithoutCount(ctx context.Context, op, query string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%s %s: %w", op, q.mgr.info.TypeName, err)
+	}
+	return q.mgr.withWriteTx(ctx, op, q.mgr.writeTx, func(tx Tx) error {
+		if _, err := tx.QueryWithContext(ctx, query); err != nil {
+			return fmt.Errorf("%s %s: %w", op, q.mgr.info.TypeName, err)
+		}
+		return ctx.Err()
+	})
+}
+
 // countThenWrite executes a distinct-count query followed by a write query
 // inside a (possibly bound) write transaction and returns the count.
 func (q *Query[T]) countThenWrite(ctx context.Context, op, countQuery, writeQuery string) (int64, error) {
@@ -366,16 +388,34 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 	if len(updates) == 0 {
 		return 0, nil
 	}
-
-	// Build match clause from filters
-	match, err := q.buildMatchClause()
+	query, err := q.buildBulkUpdateQuery(updates)
 	if err != nil {
 		return 0, fmt.Errorf("bulk_update %s: build: %w", q.mgr.info.TypeName, err)
 	}
-
 	countQuery, err := q.buildCountQuery()
 	if err != nil {
 		return 0, fmt.Errorf("bulk_update %s: build count: %w", q.mgr.info.TypeName, err)
+	}
+	return q.countThenWrite(ctx, "bulk_update", countQuery, query)
+}
+
+// UpdateNoCount applies the same bulk attribute mutation as Update but does
+// not query or return an affected-row count. An empty updates map is a no-op.
+func (q *Query[T]) UpdateNoCount(ctx context.Context, updates map[string]any) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	query, err := q.buildBulkUpdateQuery(updates)
+	if err != nil {
+		return fmt.Errorf("bulk_update_no_count %s: build: %w", q.mgr.info.TypeName, err)
+	}
+	return q.writeWithoutCount(ctx, "bulk_update_no_count", query)
+}
+
+func (q *Query[T]) buildBulkUpdateQuery(updates map[string]any) (string, error) {
+	match, err := q.buildMatchClause()
+	if err != nil {
+		return "", err
 	}
 
 	// Build a single match-delete-insert query for all attributes.
@@ -387,21 +427,19 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 	for i, attr := range slices.Sorted(maps.Keys(updates)) {
 		// Update attribute names are interpolated raw (issue #45).
 		if err := validateAttrName(attr); err != nil {
-			return 0, fmt.Errorf("bulk_update %s: %w", q.mgr.info.TypeName, err)
+			return "", err
 		}
 		tryMatches = append(tryMatches, fmt.Sprintf("try { $e has %s $old%d; };", attr, i))
 		tryDeletes = append(tryDeletes, fmt.Sprintf("try { $old%d of $e; };", i))
 		lit, err := q.mgr.formatAttrValue(attr, updates[attr])
 		if err != nil {
-			return 0, fmt.Errorf("bulk_update %s: %w", q.mgr.info.TypeName, err)
+			return "", err
 		}
 		insHas = append(insHas, fmt.Sprintf("has %s %s", attr, lit))
 	}
-	query := match + "\n" + strings.Join(tryMatches, "\n") +
+	return match + "\n" + strings.Join(tryMatches, "\n") +
 		"\ndelete\n" + strings.Join(tryDeletes, "\n") +
-		fmt.Sprintf("\ninsert $e %s;", strings.Join(insHas, ", "))
-
-	return q.countThenWrite(ctx, "bulk_update", countQuery, query)
+		fmt.Sprintf("\ninsert $e %s;", strings.Join(insHas, ", ")), nil
 }
 
 // --- Aggregate queries ---
