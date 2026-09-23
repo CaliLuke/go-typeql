@@ -114,7 +114,7 @@ func ExtractAnnotations(input string) map[string]map[string]string
 ExtractAnnotations parses comment annotations of the form "\# @key value" from schema text. Returns a map of type name \-\> annotation map.
 
 <a name="Render"></a>
-## func [Render](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L55>)
+## func [Render](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L57>)
 
 ```go
 func Render(w io.Writer, schema *ParsedSchema, cfg RenderConfig) error
@@ -1013,7 +1013,7 @@ type RelationSpec struct {
 ```
 
 <a name="RenderConfig"></a>
-## type [RenderConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L17-L34>)
+## type [RenderConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L19-L36>)
 
 RenderConfig specifies the settings for generating Go code from a TypeQL schema.
 
@@ -1039,7 +1039,7 @@ type RenderConfig struct {
 ```
 
 <a name="DefaultConfig"></a>
-### func [DefaultConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L37>)
+### func [DefaultConfig](<https://github.com/CaliLuke/go-typeql/blob/main/tqlgen/render.go#L39>)
 
 ```go
 func DefaultConfig() RenderConfig
