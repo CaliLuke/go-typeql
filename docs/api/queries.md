@@ -17,7 +17,7 @@ q := persons.Query()
 
 All filters implement the `Filter` interface. They generate TypeQL pattern strings injected into the match clause.
 
-**Variable scoping gotcha**: Variable names use the format `$e__attr_name` (double underscore separator) to avoid TypeQL implicit equality semantics. Hyphens in attribute names are replaced with underscores in variable names.
+**Variable scoping gotcha**: Each attribute filter binds its own variable, in the format `$e__attr_name` (double underscore separator), to avoid TypeQL implicit equality semantics. For labels with letters, digits, and hyphens, hyphens become underscores (`first-name` → `$e__first_name`). Labels with underscores use an escaped form (`first_name` → `$e___first_uname`), so two labels never share a variable. Use `gotype.AttrVar("e", attr)` to get the variable name. Do not write it by hand.
 
 **Decimal comparison gotcha**: Filter combinators are context-free — they don't know
 the attribute's value type, so `Eq("price", 0.1)` emits the double literal `0.1`,
@@ -105,7 +105,7 @@ gotype.Computed("total",
 
 // Filter where abs(balance) > 1000
 gotype.Computed("abs_bal",
-    gotype.BuiltinFuncExpr("abs", "$e__balance"),
+    gotype.BuiltinFuncExpr("abs", gotype.AttrVar("e", "balance")),
     ">", 1000.0)
 ```
 
@@ -213,7 +213,9 @@ avgAge, _ := persons.Query().
 
 Available: `Sum`, `Avg`, `Min`, `Max`, `Median`, `Std`, `Variance`.
 
-**TypeDB gotcha**: TypeDB uses `mean` (not `avg`) for average aggregation. The `Avg` method handles this mapping for you.
+**TypeDB gotcha**: TypeDB uses `mean` (not `avg`) for average aggregation. The `Avg` method handles this mapping for you. TypeQL has no variance reducer, so `Variance` squares the result of `std`. TypeDB's `std` is the sample standard deviation, so `Variance` gives the sample variance.
+
+`AggregateSpec.Fn` accepts `sum`, `mean`, `avg`, `min`, `max`, `median`, `std`, `variance`, and `count`. Other names return an error, because the name goes into the query text.
 
 ### Multi-Aggregation
 

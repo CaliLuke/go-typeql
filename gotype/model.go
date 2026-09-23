@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/CaliLuke/go-typeql/v2/internal/naming"
 )
 
 // ModelKind specifies whether a registered TypeDB model is an entity or a relation.
@@ -229,7 +230,7 @@ func addRoleField(info *ModelInfo, field reflect.StructField, tag FieldTag) erro
 			ft = ft.Elem()
 		}
 	}
-	role.PlayerTypeName = toKebabCase(ft.Name())
+	role.PlayerTypeName = declaredTypeName(ft)
 
 	info.Roles = append(info.Roles, role)
 	return nil
@@ -481,33 +482,29 @@ func lookupStrategy[T any]() (*ModelInfo, ModelStrategy, error) {
 	return info, strategyFor(info.Kind), nil
 }
 
-// toKebabCase converts a PascalCase Go struct name to kebab-case, treating
-// consecutive uppercase runs as initialisms.
-// e.g. "UserAccount" → "user-account", "HTTPServer" → "http-server",
-// "User2FA" → "user2-fa".
+// toKebabCase converts a PascalCase Go struct name to kebab-case; see
+// naming.KebabCase.
 func toKebabCase(name string) string {
-	if name == "" {
-		return ""
-	}
-	runes := []rune(name)
-	isUpper := func(r rune) bool { return r >= 'A' && r <= 'Z' }
-	var b strings.Builder
-	for i, r := range runes {
-		if isUpper(r) {
-			// Start a new word when the previous rune is not uppercase (end of a
-			// lowercase/digit run), or when this uppercase rune starts a new word
-			// after an initialism run (next rune is lowercase).
-			startsWord := i > 0 && (!isUpper(runes[i-1]) ||
-				(i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'))
-			if startsWord {
-				b.WriteByte('-')
+	return naming.KebabCase(name)
+}
+
+// declaredTypeName returns the TypeDB type name that model type t registers
+// under: its type: tag override when one is present, otherwise the kebab-case
+// struct name. Role players use it so a relation agrees with the player's own
+// registration even before the player is registered.
+func declaredTypeName(t reflect.Type) string {
+	if t.Kind() == reflect.Struct {
+		for i := range t.NumField() {
+			tagStr := t.Field(i).Tag.Get("typedb")
+			if tagStr == "" || tagStr == "-" {
+				continue
 			}
-			b.WriteByte(byte(r - 'A' + 'a'))
-		} else {
-			b.WriteRune(r)
+			if tag, err := ParseTag(tagStr); err == nil && tag.TypeName != "" {
+				return tag.TypeName
+			}
 		}
 	}
-	return b.String()
+	return toKebabCase(t.Name())
 }
 
 // goTypeToTypeDB maps Go types to TypeDB value type strings. It returns an

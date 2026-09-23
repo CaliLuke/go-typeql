@@ -103,3 +103,48 @@ func TestIntegration_Aggregate_EmptySet(t *testing.T) {
 		t.Errorf("expected 0 for empty set, got %f", sum)
 	}
 }
+
+func TestIntegration_Aggregate_StdAndVariance(t *testing.T) {
+	mgr := setupAggDB(t)
+	ctx := context.Background()
+
+	// Ages 30, 25, 35, 28: squared deviations from 29.5 sum to 53, so the
+	// sample variance is 53/3 (TypeDB's std is the sample deviation).
+	std, err := mgr.Query().Std("age").Execute(ctx)
+	if err != nil {
+		t.Fatalf("std: %v", err)
+	}
+	if want := math.Sqrt(53.0 / 3); math.Abs(std-want) > 1e-9 {
+		t.Errorf("std = %f, want %f", std, want)
+	}
+	variance, err := mgr.Query().Variance("age").Execute(ctx)
+	if err != nil {
+		t.Fatalf("variance: %v", err)
+	}
+	if want := 53.0 / 3; math.Abs(variance-want) > 1e-9 {
+		t.Errorf("variance = %f, want %f", variance, want)
+	}
+}
+
+func TestIntegration_GroupBy_Aggregate(t *testing.T) {
+	mgr := setupAggDB(t)
+	ctx := context.Background()
+
+	groups, err := mgr.Query().GroupBy("name").Aggregate(ctx,
+		gotype.AggregateSpec{Attr: "age", Fn: "sum"},
+		gotype.AggregateSpec{Attr: "age", Fn: "avg"},
+	)
+	if err != nil {
+		t.Fatalf("groupby: %v", err)
+	}
+	// Eve has no age, so she forms no group.
+	want := map[string]float64{"Alice": 30, "Bob": 25, "Charlie": 35, "Diana": 28}
+	if len(groups) != len(want) {
+		t.Fatalf("got %d groups %v, want %d", len(groups), groups, len(want))
+	}
+	for name, age := range want {
+		if got := groups[name]; got["sum_age"] != age || got["avg_age"] != age {
+			t.Errorf("group %s = %v, want sum_age and avg_age %v", name, got, age)
+		}
+	}
+}

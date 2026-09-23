@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixes
+
+- Fixed generated models that registered under the wrong TypeDB name. `tqlgen` now adds a `type:` tag when the Go name does not convert back to the schema label, for example `user_account`, `tag-2fa`, or `api-url`.
+- Fixed role players with a `type:` tag. Relations now use the player's tag, not the kebab-case Go name, for hydration, projections, schema generation, and migrations.
+- Fixed filters that used one TypeQL variable for two different attributes, for example `first-name` and `first_name`. TypeQL treated the variable as an equality between the two values, so the query failed or matched nothing. Attribute variables now use an injective encoding. Existence filters now bind the anonymous `$_`. Inside `or` and `not` blocks, role and attribute variables with the same label now get different names. `ast` `Set` calls on such attributes also get different variables, and so do `RolePlayer` filters on roles such as `first-author` and `first_author`. For labels with underscores, the variable name changes (`first_name` now binds `$e___first_uname`). If you write attribute variables by hand in `Computed` or `BuiltinFuncExpr` expressions, use the new `gotype.AttrVar` helper.
+- Fixed `GroupBy(...).Aggregate`. It emitted `group`, which is not valid TypeQL (the keyword is `groupby`), and it read the group value from the wrong result key.
+- Fixed `Variance`. It emitted a `variance` reducer, which TypeQL does not have. It now squares `std`, which gives the sample variance.
+- Fixed aggregate function names that went into the query without validation. `Aggregate` and `GroupBy` now reject unknown names, and `GroupBy` now maps `avg` to `mean`.
+- Fixed pooled transactions that returned their connection to the pool after a failed `Commit`, `Rollback`, or `CloseChecked` left them open. The pool could then close the connection, and the open transaction with it.
+
 ## v2.0.0 - 2026-09-16
 
 ### Breaking changes

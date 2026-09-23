@@ -829,6 +829,103 @@ func TestPooledTx_ReturnsConnectionOnCommit(t *testing.T) {
 	}
 }
 
+// failingLifecycleTx is a transaction whose Commit or Rollback fails. With
+// staysOpen it models a failure that leaves the transaction usable, such as
+// driver.ErrTransactionBusy during a stream callback or a failed rollback.
+type failingLifecycleTx struct {
+	*mockTx
+	err       error
+	staysOpen bool
+}
+
+func (m *failingLifecycleTx) Commit() error   { return m.fail() }
+func (m *failingLifecycleTx) Rollback() error { return m.fail() }
+
+func (m *failingLifecycleTx) fail() error {
+	if !m.staysOpen {
+		m.closed = true
+	}
+	return m.err
+}
+
+// newFailingPooledTx opens a pooled transaction over a single-connection pool.
+func newFailingPooledTx(t *testing.T, failing *failingLifecycleTx) (*ConnPool, *poolMockConn, Tx) {
+	t.Helper()
+	conn := newPoolMockConn(1)
+	pool, err := NewConnPool(PoolConfig{MaxSize: 1}, func() (Conn, error) {
+		return &fixedTxConn{poolMockConn: conn, tx: failing}, nil
+	})
+	if err != nil {
+		t.Fatalf("NewConnPool failed: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	tx, err := (&poolConnAdapter{pool: pool, dbName: "testdb"}).Transaction("testdb", 1)
+	if err != nil {
+		t.Fatalf("Transaction failed: %v", err)
+	}
+	return pool, conn, tx
+}
+
+// A failed Commit or Rollback that leaves the transaction open must keep its
+// connection checked out: returning it would let the pool hand it out, reap
+// it as idle, or close it (driver.Driver.Close closes every open transaction)
+// while the caller still uses the transaction.
+func TestPooledTx_FailedLifecycleCallKeepsOpenTransactionsConnection(t *testing.T) {
+	errBusy := errors.New("transaction busy")
+	for _, tc := range []struct {
+		name string
+		call func(Tx) error
+	}{
+		{"commit", Tx.Commit},
+		{"rollback", Tx.Rollback},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool, conn, tx := newFailingPooledTx(t, &failingLifecycleTx{mockTx: &mockTx{}, err: errBusy, staysOpen: true})
+
+			if err := tc.call(tx); !errors.Is(err, errBusy) {
+				t.Fatalf("%s error = %v, want %v", tc.name, err, errBusy)
+			}
+			if stats := pool.Stats(); stats.InUse != 1 || stats.Available != 0 {
+				t.Fatalf("open transaction's connection returned to the pool: stats=%+v", stats)
+			}
+
+			pool.Close()
+			if conn.closed.Load() {
+				t.Fatal("pool closed the connection of a transaction that is still open")
+			}
+
+			tx.Close()
+			if !conn.closed.Load() {
+				t.Fatal("connection not released after the transaction closed")
+			}
+		})
+	}
+}
+
+// A failed Commit or Rollback that ends the transaction (the driver's commit
+// consumes the native handle on failure) still returns the connection.
+func TestPooledTx_FailedLifecycleCallReturnsEndedTransactionsConnection(t *testing.T) {
+	errCommit := errors.New("commit failed")
+	for _, tc := range []struct {
+		name string
+		call func(Tx) error
+	}{
+		{"commit", Tx.Commit},
+		{"rollback", Tx.Rollback},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool, _, tx := newFailingPooledTx(t, &failingLifecycleTx{mockTx: &mockTx{}, err: errCommit})
+
+			if err := tc.call(tx); !errors.Is(err, errCommit) {
+				t.Fatalf("%s error = %v, want %v", tc.name, err, errCommit)
+			}
+			if stats := pool.Stats(); stats.InUse != 0 || stats.Available != 1 {
+				t.Fatalf("ended transaction's connection not returned: stats=%+v", stats)
+			}
+		})
+	}
+}
+
 func TestPoolConnAdapter_TransactionContext_UsesCallerContext(t *testing.T) {
 	factory := func() (Conn, error) {
 		return newPoolMockConn(1), nil

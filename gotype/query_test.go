@@ -692,7 +692,7 @@ func TestQuery_Variance(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"result": float64(30.25)}},
+			{{"result": float64(5.5)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -703,10 +703,11 @@ func TestQuery_Variance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Variance failed: %v", err)
 	}
+	// TypeQL has no variance reducer: Variance squares the sample std.
 	if val != 30.25 {
 		t.Errorf("expected 30.25, got %f", val)
 	}
-	assertContains(t, readTx.queries[0], "reduce $result = variance($e__age);")
+	assertContains(t, readTx.queries[0], "reduce $result = std($e__age);")
 }
 
 func TestQuery_Aggregate_Multi(t *testing.T) {
@@ -765,8 +766,8 @@ func TestQuery_GroupBy(t *testing.T) {
 	readTx := &mockTx{
 		responses: [][]map[string]any{
 			{
-				{"name": "Engineering", "sum_age": float64(120)},
-				{"name": "Marketing", "sum_age": float64(90)},
+				{"e__name": "Engineering", "result0": float64(120)},
+				{"e__name": "Marketing", "result0": float64(90)},
 			},
 		},
 	}
@@ -785,9 +786,13 @@ func TestQuery_GroupBy(t *testing.T) {
 		t.Fatalf("expected 2 groups, got %d", len(results))
 	}
 
+	if got := results["Engineering"]["sum_age"]; got != 120 {
+		t.Errorf("Engineering sum_age = %v, want 120", got)
+	}
+
 	q := readTx.queries[0]
-	assertContains(t, q, "group $e__name")
-	assertContains(t, q, "sum($e__age)")
+	assertContains(t, q, "reduce $result0 = sum($e__age) groupby $e__name;")
+	assertTypeQL(t, "group by aggregate", q, "")
 }
 
 func TestManager_GetByIID(t *testing.T) {

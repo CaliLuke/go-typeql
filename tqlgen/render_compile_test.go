@@ -45,6 +45,19 @@ func containsCode(out, want string) bool {
 // `go build` on it. It fails the test if the generated code does not compile.
 func compileGenerated(t *testing.T, source string) {
 	t.Helper()
+	runGenerated(t, source, nil, []string{"build", "./..."})
+}
+
+// testGenerated is compileGenerated plus a test file in the generated package:
+// it runs `go test` so behavior of the generated models (not only their
+// shape) can be checked against gotype.
+func testGenerated(t *testing.T, source, testSource string) {
+	t.Helper()
+	runGenerated(t, source, map[string]string{"models_gen_test.go": testSource}, []string{"test", "./..."})
+}
+
+func runGenerated(t *testing.T, source string, extra map[string]string, goArgs []string) {
+	t.Helper()
 
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -55,6 +68,11 @@ func compileGenerated(t *testing.T, source string) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "models_gen.go"), []byte(source), 0o644); err != nil {
 		t.Fatalf("write generated source: %v", err)
+	}
+	for name, src := range extra {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
 	}
 	goMod := "module rendercompiletest\n\ngo 1.27.0\n\n" +
 		"require github.com/CaliLuke/go-typeql/v2 v2.0.0\n\n" +
@@ -69,7 +87,7 @@ func compileGenerated(t *testing.T, source string) {
 	}
 
 	env := append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
-	for _, args := range [][]string{{"mod", "tidy"}, {"build", "./..."}} {
+	for _, args := range [][]string{{"mod", "tidy"}, goArgs} {
 		cmd := exec.Command("go", args...)
 		cmd.Dir = dir
 		cmd.Env = env
@@ -465,4 +483,73 @@ entity ticket, owns status;
 			}
 		})
 	}
+}
+
+// TestRenderCompile_TypeNameRoundTrip pins the naming contract with gotype:
+// a generated model must register under its schema label. gotype derives the
+// default name from the Go name (naming.KebabCase), which cannot recover every
+// label (formal/lean/Naming.lean proves the Go name does not determine the
+// label), so labels that do not round-trip carry an explicit type: tag.
+func TestRenderCompile_TypeNameRoundTrip(t *testing.T) {
+	src := `define
+attribute name, value string;
+entity person, owns name @key;
+entity user_account, owns name @key, plays member_of:group_member;
+entity tag-2fa, owns name @key;
+entity http-api, owns name @key;
+relation member_of, relates group_member;
+`
+	out, warnings := renderSchema(t, src, DefaultConfig())
+
+	for _, want := range []string{
+		"gotype.BaseEntity `typedb:\"type:user_account\"`",
+		"gotype.BaseEntity `typedb:\"type:tag-2fa\"`",
+		"gotype.BaseEntity `typedb:\"type:http-api\"`", // HTTPAPI → httpapi without the tag
+		"gotype.BaseRelation `typedb:\"type:member_of\"`",
+	} {
+		if !containsCode(out, want) {
+			t.Errorf("missing %q in generated code\n%s", want, out)
+		}
+	}
+	// Labels that already round-trip keep the untagged base.
+	if !containsCode(out, "type Person struct { gotype.BaseEntity Name") {
+		t.Errorf("person should embed an untagged BaseEntity\n%s", out)
+	}
+	if warnings != "" {
+		t.Errorf("unexpected warnings: %q", warnings)
+	}
+
+	testGenerated(t, out, `package models
+
+import (
+	"testing"
+
+	"github.com/CaliLuke/go-typeql/v2/gotype"
+)
+
+func TestRegisteredNamesMatchSchema(t *testing.T) {
+	gotype.ClearRegistry()
+	for _, register := range []func() error{
+		gotype.Register[Person], gotype.Register[UserAccount], gotype.Register[Tag2fa],
+		gotype.Register[HTTPAPI], gotype.Register[MemberOf],
+	} {
+		if err := register(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, label := range []string{"person", "user_account", "tag-2fa", "http-api", "member_of"} {
+		if _, ok := gotype.Lookup(label); !ok {
+			t.Errorf("no model registered for schema label %q", label)
+		}
+	}
+	rel, _ := gotype.Lookup("member_of")
+	if rel == nil || len(rel.Roles) != 1 {
+		t.Fatalf("member_of roles: %+v", rel)
+	}
+	// The player's own type: tag decides the role player type, not its Go name.
+	if got := rel.Roles[0].PlayerTypeName; got != "user_account" {
+		t.Errorf("role player type = %q, want %q", got, "user_account")
+	}
+}
+`)
 }

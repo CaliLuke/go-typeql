@@ -479,6 +479,44 @@ func TestExtractModelInfo_EmbeddedBaseTagHonored(t *testing.T) {
 	}
 }
 
+// A role player's type name comes from the player's own type: override, so a
+// relation agrees with the name the player registers under (tqlgen emits the
+// override for labels such as "user_account" that do not round-trip through
+// the Go name).
+type renamedPlayer struct {
+	BaseEntity `typedb:"type:user_account"`
+	Name       string `typedb:"name,key"`
+}
+
+type blankRenamedPlayer struct {
+	BaseEntity
+	_    byte   `typedb:"type:tag-2fa"`
+	Name string `typedb:"name,key"`
+}
+
+type renamedPlayerRelation struct {
+	BaseRelation `typedb:"type:member_of"`
+	Member       *renamedPlayer        `typedb:"role:member"`
+	Tags         []*blankRenamedPlayer `typedb:"role:tag"`
+	Plain        *testPerson           `typedb:"role:plain"`
+}
+
+func TestExtractModelInfo_RolePlayerUsesPlayerTypeOverride(t *testing.T) {
+	info, err := ExtractModelInfo(reflect.TypeOf(renamedPlayerRelation{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := map[string]string{"member": "user_account", "tag": "tag-2fa", "plain": "test-person"}
+	for _, role := range info.Roles {
+		if role.PlayerTypeName != want[role.RoleName] {
+			t.Errorf("role %s: PlayerTypeName = %q, want %q", role.RoleName, role.PlayerTypeName, want[role.RoleName])
+		}
+	}
+	if len(info.Roles) != len(want) {
+		t.Errorf("got %d roles, want %d", len(info.Roles), len(want))
+	}
+}
+
 func TestExtractModelInfo_EmbeddedBaseTagWithFieldOptionsErrors(t *testing.T) {
 	if _, err := ExtractModelInfo(reflect.TypeOf(embeddedBadTagModel{})); err == nil {
 		t.Fatal("expected error for attribute tag on embedded base field")

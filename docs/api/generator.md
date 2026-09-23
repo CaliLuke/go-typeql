@@ -350,6 +350,18 @@ tqlgen converts kebab-case and snake_case TypeDB names to PascalCase Go names. W
 
 The recognized acronyms are: ID, URL, UUID, API, HTTP, IID, NF.
 
+gotype gets the TypeDB type name of a model from its Go name (`UserAccount` becomes `user-account`). This conversion cannot find every original label. For example, `user_account` and `user-account` both become `UserAccount`. When the conversion does not give the schema label, tqlgen adds a `type:` tag to the embedded base:
+
+```go
+// entity user_account, owns name @key;
+type UserAccount struct {
+    gotype.BaseEntity `typedb:"type:user_account"`
+    Name              string `typedb:"name,key"`
+}
+```
+
+Labels that need the tag include snake_case labels (`user_account`), segments that start with a digit (`tag-2fa`), one-letter segments (`a-b`), and adjacent acronyms (`api-url` becomes `APIURL`). Relations use the tag of each role player, so role player types also match the schema.
+
 ## Supported TypeQL Features
 
 - `attribute` definitions with value types (string, long, double, boolean, datetime)

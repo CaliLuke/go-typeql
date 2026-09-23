@@ -34,6 +34,26 @@ $n has status "done";`) {
 	}
 }
 
+// Chained Sets on distinct labels must bind distinct old-value variables;
+// a shared $old_first_name made TypeQL require the two values to be equal,
+// so the update matched nothing.
+func TestFluentMatch_SetDistinctLabelsBindDistinctVariables(t *testing.T) {
+	query, err := FluentMatch("n", "person").
+		Has("id", "p1").
+		Set("first-name", "Ann").
+		Set("first_name", "Bob").
+		Build()
+	if err != nil {
+		t.Fatalf("build error: %v", err)
+	}
+	for _, want := range []string{"$n has first-name $old_first_name", "$n has first_name $old__first_uname"} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("expected %q, got:\n%s", want, query)
+		}
+	}
+	assertTypeQL(t, "set distinct labels", query, "")
+}
+
 func TestMatchFunction_SelectBuild(t *testing.T) {
 	query, err := MatchFunction("get_edges_for_node", "$target").
 		Select("$did_t", "$rel_label").

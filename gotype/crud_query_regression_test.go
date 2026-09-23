@@ -188,11 +188,11 @@ func boundTxFixture(t *testing.T, responses [][]map[string]any) (*Manager[testPe
 func TestQuery_BoundTx_ReadPathsUseBoundTx(t *testing.T) {
 	registerTestTypes(t)
 	mgr, tx, conn := boundTxFixture(t, [][]map[string]any{
-		nil,                                    // Execute
-		{{"count": int64(1)}},                  // Count
-		{{"result": float64(10)}},              // Sum
-		{{"result0": float64(5)}},              // Aggregate
-		{{"name": "x", "sum_age": float64(3)}}, // GroupBy
+		nil,                       // Execute
+		{{"count": int64(1)}},     // Count
+		{{"result": float64(10)}}, // Sum
+		{{"result0": float64(5)}}, // Aggregate
+		{{"e__name": "x", "result0": float64(3)}}, // GroupBy
 	})
 	ctx := context.Background()
 

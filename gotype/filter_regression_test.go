@@ -390,8 +390,8 @@ func TestQuery_OrInsideNot_DistinctScopeSuffixes(t *testing.T) {
 	// The not block takes suffix 1; the nested or branches take 2 and 3 from
 	// the same scope, then get re-scoped under the not prefix.
 	assertContains(t, query, "not {")
-	assertContains(t, query, `$e_n1__e_o2__name == "Alice";`)
-	assertContains(t, query, `$e_n1__e_o3__name == "Bob";`)
+	assertContains(t, query, `$e_n1_v_e_o2__name == "Alice";`)
+	assertContains(t, query, `$e_n1_v_e_o3__name == "Bob";`)
 }
 
 func TestQuery_RolePlayerWrappingOr_ThreadsScope(t *testing.T) {
@@ -425,5 +425,124 @@ func TestOrFilter_StandaloneToPatterns_Deterministic(t *testing.T) {
 	second := strings.Join(f.ToPatterns("e"), "\n")
 	if first != second {
 		t.Errorf("standalone ToPatterns is not deterministic:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+// Distinct attribute labels must bind distinct variables: TypeQL treats a
+// shared variable as an implicit equality, so filters on first-name and
+// first_name used to require the two values to be equal and matched nothing.
+func TestFilter_DistinctLabelsBindDistinctVariables(t *testing.T) {
+	registerTestTypes(t)
+	query, err := newScopeTestQuery(t).
+		Filter(Eq("first-name", "Ann"), Eq("first_name", "Bob")).
+		buildQuery()
+	if err != nil {
+		t.Fatalf("buildQuery failed: %v", err)
+	}
+	assertContains(t, query, "$e has first-name $e__first_name;\n$e__first_name == \"Ann\";")
+	assertContains(t, query, "$e has first_name $e___first_uname;\n$e___first_uname == \"Bob\";")
+}
+
+// Existence filters bind the anonymous $_, which stays anonymous under or {}
+// and not {} scoping, so they never constrain other filters on the attribute.
+func TestFilter_ExistsBindsAnonymousVariable(t *testing.T) {
+	registerTestTypes(t)
+	query, err := newScopeTestQuery(t).
+		Filter(Gt("age", 30), Not(Or(HasAttr("age"), HasAttr("name")))).
+		buildQuery()
+	if err != nil {
+		t.Fatalf("buildQuery failed: %v", err)
+	}
+	assertContains(t, query, "{ $e has age $_; } or { $e has name $_; }")
+	if strings.Contains(query, "__;") {
+		t.Errorf("existence filter bound a named variable:\n%s", query)
+	}
+}
+
+// Inside a scope, attribute variables and other variables (role players,
+// computed values) get different infixes, so a role and an attribute with the
+// same label do not share a variable.
+func TestScopeLocalVars_RoleAndAttributeWithSameLabel(t *testing.T) {
+	got := scopeLocalVars(`$e has member $e__member; $member isa person; $_ has name "x";`, "e", "e_o1")
+	want := `$e has member $e_o1__member; $e_o1_v_member isa person; $_ has name "x";`
+	if got != want {
+		t.Errorf("scopeLocalVars:\n got %s\nwant %s", got, want)
+	}
+}
+
+// Aggregate function names are interpolated into the query, so unknown names
+// are rejected before any query runs.
+func TestAggregate_RejectsUnknownFunction(t *testing.T) {
+	registerTestTypes(t)
+	readTx := &mockTx{}
+	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{readTx}}, "test_db"))
+	ctx := context.Background()
+	bad := AggregateSpec{Attr: "age", Fn: "sum($e__age); match $x isa thing; reduce $y = count"}
+	if _, err := mgr.Query().Aggregate(ctx, bad); err == nil {
+		t.Error("Aggregate accepted an unknown function")
+	}
+	if _, err := mgr.Query().GroupBy("name").Aggregate(ctx, bad); err == nil {
+		t.Error("GroupBy.Aggregate accepted an unknown function")
+	}
+	if len(readTx.queries) != 0 {
+		t.Errorf("queries ran for an invalid aggregate: %v", readTx.queries)
+	}
+}
+
+// avg and variance have no TypeQL reducer; both aggregate paths translate
+// them (mean, and the square of std).
+func TestAggregate_TranslatesAvgAndVariance(t *testing.T) {
+	registerTestTypes(t)
+	aggTx := &mockTx{responses: [][]map[string]any{{{"result0": float64(4), "result1": float64(3)}}}}
+	groupTx := &mockTx{responses: [][]map[string]any{{{"e__name": "x", "result0": float64(4), "result1": float64(3)}}}}
+	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{aggTx, groupTx}}, "test_db"))
+	ctx := context.Background()
+	specs := []AggregateSpec{{Attr: "age", Fn: "avg"}, {Attr: "age", Fn: "variance"}}
+
+	agg, err := mgr.Query().Aggregate(ctx, specs...)
+	if err != nil {
+		t.Fatalf("Aggregate: %v", err)
+	}
+	grouped, err := mgr.Query().GroupBy("name").Aggregate(ctx, specs...)
+	if err != nil {
+		t.Fatalf("GroupBy.Aggregate: %v", err)
+	}
+	for label, got := range map[string]map[string]float64{"aggregate": agg, "groupby": grouped["x"]} {
+		if got["avg_age"] != 4 || got["variance_age"] != 9 {
+			t.Errorf("%s results = %v, want avg_age 4 and variance_age 9", label, got)
+		}
+	}
+	for _, q := range []string{aggTx.queries[0], groupTx.queries[0]} {
+		assertContains(t, q, "$result0 = mean($e__age), $result1 = std($e__age)")
+		assertTypeQL(t, "translated aggregate", q, "")
+	}
+}
+
+// Role labels get the injective encoding too: first-author and first_author
+// used to share one player variable, so the query could never match.
+func TestRolePlayer_DistinctRoleLabelsBindDistinctVariables(t *testing.T) {
+	patterns := strings.Join(And(
+		RolePlayer("first-author", Eq("name", "A")),
+		RolePlayer("first_author", Eq("name", "B")),
+	).ToPatterns("e"), " ")
+	for _, want := range []string{
+		"$e links (first-author: $first_author);",
+		`$first_author__name == "A";`,
+		"$e links (first_author: $_first_uauthor);",
+		`$_first_uauthor__name == "B";`,
+	} {
+		assertContains(t, patterns, want)
+	}
+}
+
+// AttrVar names the same variable the filters bind, so hand-written
+// expressions reference the filtered attribute.
+func TestAttrVar_MatchesFilterVariables(t *testing.T) {
+	for _, attr := range []string{"balance", "first-name", "balance_due"} {
+		patterns := strings.Join(Gt(attr, 0).ToPatterns("e"), " ")
+		assertContains(t, patterns, AttrVar("e", attr)+" > 0;")
+	}
+	if got := AttrVar("e", "balance_due"); got != "$e___balance_udue" {
+		t.Errorf("AttrVar(e, balance_due) = %q", got)
 	}
 }

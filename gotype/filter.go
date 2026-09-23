@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/CaliLuke/go-typeql/v2/internal/naming"
 )
 
 // Filter represents a query filter expression that generates TypeQL patterns.
@@ -112,7 +114,7 @@ func (f *ComparisonFilter) ToPatterns(varName string) []string {
 	if !isScalarFilterValue(f.Value) {
 		panic(fmt.Sprintf("gotype: comparison filter %q requires a scalar value, got %T", f.Attr, f.Value))
 	}
-	attrVar := sanitizeVar(varName + "__" + f.Attr)
+	attrVar := attrVarName(varName, f.Attr)
 	hasPattern := fmt.Sprintf("$%s has %s $%s", varName, f.Attr, attrVar)
 
 	if f.Op == "==" {
@@ -218,7 +220,7 @@ func (f *StringFilter) Validate() error {
 
 // ToPatterns generates TypeQL patterns for a string filter.
 func (f *StringFilter) ToPatterns(varName string) []string {
-	attrVar := sanitizeVar(varName + "__" + f.Attr)
+	attrVar := attrVarName(varName, f.Attr)
 	hasPattern := fmt.Sprintf("$%s has %s $%s;", varName, f.Attr, attrVar)
 	constraint := fmt.Sprintf("$%s %s %s;", attrVar, f.Op, FormatValue(f.Pattern))
 
@@ -277,7 +279,7 @@ func (f *InFilter) ToPatterns(varName string) []string {
 		return []string{matchNothingPattern(varName)}
 	}
 
-	attrVar := sanitizeVar(varName + "__" + f.Attr)
+	attrVar := attrVarName(varName, f.Attr)
 	hasPattern := fmt.Sprintf("$%s has %s $%s;", varName, f.Attr, attrVar)
 
 	var branches []string
@@ -330,7 +332,7 @@ func (f *RangeFilter) Validate() error {
 
 // ToPatterns generates TypeQL patterns for a range filter.
 func (f *RangeFilter) ToPatterns(varName string) []string {
-	attrVar := sanitizeVar(varName + "__" + f.Attr)
+	attrVar := attrVarName(varName, f.Attr)
 	hasPattern := fmt.Sprintf("$%s has %s $%s;", varName, f.Attr, attrVar)
 	minConstraint := fmt.Sprintf("$%s >= %s;", attrVar, FormatValue(f.Min))
 	maxConstraint := fmt.Sprintf("$%s <= %s;", attrVar, FormatValue(f.Max))
@@ -363,7 +365,7 @@ func (f *RegexFilter) Validate() error {
 
 // ToPatterns generates TypeQL patterns for a regex filter.
 func (f *RegexFilter) ToPatterns(varName string) []string {
-	attrVar := sanitizeVar(varName + "__" + f.Attr)
+	attrVar := attrVarName(varName, f.Attr)
 	hasPattern := fmt.Sprintf("$%s has %s $%s;", varName, f.Attr, attrVar)
 	constraint := fmt.Sprintf("$%s like %s;", attrVar, FormatValue(f.Pattern))
 
@@ -405,7 +407,9 @@ func (f *ExistsFilter) Validate() error {
 
 // ToPatterns generates TypeQL patterns for an existence filter.
 func (f *ExistsFilter) ToPatterns(varName string) []string {
-	pattern := fmt.Sprintf("$%s has %s $%s__;", varName, f.Attr, sanitizeVar(varName+"__"+f.Attr))
+	// The anonymous $_ keeps existence independent of every other filter on
+	// the same attribute and cannot collide with a generated variable.
+	pattern := fmt.Sprintf("$%s has %s $_;", varName, f.Attr)
 	if f.Negated {
 		return wrapNot([]string{pattern})
 	}
@@ -640,7 +644,9 @@ func (f *NotFilter) toPatternsScoped(varName string, scope *varScope) []string {
 // (TypeDB 3.x constraint). The entity variable ($varName) is kept unchanged;
 // attribute variables keep their suffix ($varName__X → $scopedName__X); any
 // other variable — role players from RolePlayer, computed variables from
-// Computed, nested scopes — is prefixed ($author → $scopedName__author).
+// Computed, nested scopes — is prefixed ($author → $scopedName_v_author). The
+// two forms differ right after scopedName, so a role and an attribute with
+// the same label never share a variable. The anonymous $_ is left as is.
 // Variables inside quoted string literals are left untouched.
 func scopeLocalVars(pattern, varName, scopedName string) string {
 	var b strings.Builder
@@ -684,13 +690,13 @@ func isVarNameChar(c byte) bool {
 
 // scopedVarToken renames a single variable name per the scopeLocalVars rules.
 func scopedVarToken(name, varName, scopedName string) string {
-	if name == "" || name == varName {
+	if name == "" || name == "_" || name == varName { // $_ stays anonymous
 		return "$" + name
 	}
 	if rest, ok := strings.CutPrefix(name, varName+"__"); ok {
 		return "$" + scopedName + "__" + rest
 	}
-	return "$" + scopedName + "__" + name
+	return "$" + scopedName + "_v_" + name
 }
 
 // Not negates a filter.
@@ -720,7 +726,9 @@ func (f *RolePlayerFilter) ToPatterns(varName string) []string {
 }
 
 func (f *RolePlayerFilter) toPatternsScoped(varName string, scope *varScope) []string {
-	roleVar := sanitizeVar(f.RoleName)
+	// Injective in the role label, like attribute variables: roles such as
+	// first-author and first_author must not share a player variable.
+	roleVar := naming.VarLabel(f.RoleName)
 	// Link the role player variable to the relation
 	linkPattern := fmt.Sprintf("$%s links (%s: $%s);", varName, f.RoleName, roleVar)
 
@@ -787,9 +795,23 @@ func Computed(varName, expr, op string, value any) Filter {
 // ArithmeticExpr builds a TypeQL arithmetic expression string from two attribute
 // references and an operator. Useful with Computed filter.
 func ArithmeticExpr(varName, leftAttr, op, rightAttr string) string {
-	left := sanitizeVar(varName + "__" + leftAttr)
-	right := sanitizeVar(varName + "__" + rightAttr)
+	left := attrVarName(varName, leftAttr)
+	right := attrVarName(varName, rightAttr)
 	return fmt.Sprintf("$%s %s $%s", left, op, right)
+}
+
+// AttrVar returns the TypeQL variable, with its "$", that filters bind for
+// attribute attr of the thing variable varName (the entity or relation is
+// "e"). Use it to reference attributes in hand-written Computed or
+// BuiltinFuncExpr expressions:
+//
+//	gotype.BuiltinFuncExpr("abs", gotype.AttrVar("e", "balance_due"))
+//
+// Names are "$e__balance" for labels without underscores; labels with
+// underscores use an escaped form so that distinct labels never share a
+// variable, so build names with AttrVar rather than by hand.
+func AttrVar(varName, attr string) string {
+	return "$" + attrVarName(varName, attr)
 }
 
 // BuiltinFuncExpr builds a TypeQL function call expression string.
@@ -803,6 +825,14 @@ func BuiltinFuncExpr(funcName string, args ...string) string {
 // sanitizeVar replaces hyphens with underscores for TypeQL variable names.
 func sanitizeVar(name string) string {
 	return strings.ReplaceAll(name, "-", "_")
+}
+
+// attrVarName returns the variable name (without "$") bound to attribute attr
+// of varName. naming.VarLabel keeps it injective in attr: "first-name" and
+// "first_name" get distinct variables, which TypeQL would otherwise treat as
+// an implicit equality between the two attribute values.
+func attrVarName(varName, attr string) string {
+	return sanitizeVar(varName) + "__" + naming.VarLabel(attr)
 }
 
 // wrapNot wraps patterns in a TypeQL not {} block.

@@ -695,16 +695,35 @@ func (pt *pooledTx) QueryEachWithContext(
 	return nil
 }
 
+// Commit commits the transaction. The connection returns to the pool only
+// once the transaction has ended; a failed Commit that leaves it open (such as
+// ErrTransactionBusy during a stream callback) keeps the connection checked
+// out so the pool cannot hand it out, reap it, or close it underneath the
+// caller.
 func (pt *pooledTx) Commit() error {
 	err := pt.tx.Commit()
-	pt.once.Do(func() { pt.pool.Put(pt.conn) })
+	pt.releaseIfEnded(err)
 	return err
 }
 
+// Rollback rolls the transaction back; see Commit for when the connection
+// returns to the pool.
 func (pt *pooledTx) Rollback() error {
 	err := pt.tx.Rollback()
-	pt.once.Do(func() { pt.pool.Put(pt.conn) })
+	pt.releaseIfEnded(err)
 	return err
+}
+
+// releaseIfEnded returns the connection to the pool after a lifecycle call
+// that either succeeded or left the transaction closed.
+func (pt *pooledTx) releaseIfEnded(err error) {
+	if err == nil || !pt.tx.IsOpen() {
+		pt.release()
+	}
+}
+
+func (pt *pooledTx) release() {
+	pt.once.Do(func() { pt.pool.Put(pt.conn) })
 }
 
 func (pt *pooledTx) Close() {
@@ -718,12 +737,12 @@ func (pt *pooledTx) CloseAsync(onDone func(error)) {
 				onDone(err)
 			}
 		})
-		pt.once.Do(func() { pt.pool.Put(pt.conn) })
+		pt.release()
 		return
 	}
 
 	pt.tx.Close()
-	pt.once.Do(func() { pt.pool.Put(pt.conn) })
+	pt.release()
 	if onDone != nil {
 		onDone(nil)
 	}
@@ -736,7 +755,8 @@ func (pt *pooledTx) CloseChecked() error {
 	} else {
 		pt.tx.Close()
 	}
-	pt.once.Do(func() { pt.pool.Put(pt.conn) })
+	// CloseChecked returns ErrTransactionBusy without closing during a stream.
+	pt.releaseIfEnded(err)
 	return err
 }
 

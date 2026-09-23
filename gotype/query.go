@@ -255,7 +255,7 @@ func (q *Query[T]) buildQueryWithFetch(matchAdditions, fetch string) (string, er
 			if err := validateAttrName(o.Attr); err != nil {
 				return "", err
 			}
-			attrVar := sanitizeVar("e__" + o.Attr)
+			attrVar := attrVarName("e", o.Attr)
 			// Ensure we have a has pattern for the sort attribute
 			b.WriteString("\n$e has ")
 			b.WriteString(o.Attr)
@@ -270,7 +270,7 @@ func (q *Query[T]) buildQueryWithFetch(matchAdditions, fetch string) (string, er
 				b.WriteString(", ")
 			}
 			b.WriteByte('$')
-			b.WriteString(sanitizeVar("e__" + o.Attr))
+			b.WriteString(attrVarName("e", o.Attr))
 			if o.Desc {
 				b.WriteString(" desc")
 			} else {
@@ -495,6 +495,10 @@ func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error) {
 	if err := validateAttrName(aq.attr); err != nil {
 		return 0, fmt.Errorf("%s %s: %w", aq.fn, aq.mgr.info.TypeName, err)
 	}
+	red, err := reducerFor(aq.fn)
+	if err != nil {
+		return 0, fmt.Errorf("%s %s.%s: %w", aq.fn, aq.mgr.info.TypeName, aq.attr, err)
+	}
 	varName := "e"
 	var patterns []string
 	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, aq.mgr.info.TypeName))
@@ -503,11 +507,11 @@ func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error) {
 		patterns = append(patterns, filterPatterns(f, varName, scope)...)
 	}
 
-	attrVar := sanitizeVar(varName + "__" + aq.attr)
+	attrVar := attrVarName(varName, aq.attr)
 	patterns = append(patterns, fmt.Sprintf("$%s has %s $%s;", varName, aq.attr, attrVar))
 
 	match := "match\n" + strings.Join(patterns, "\n")
-	query := match + fmt.Sprintf("\nreduce $result = %s($%s);", aq.fn, attrVar)
+	query := match + fmt.Sprintf("\nreduce $result = %s($%s);", red.typeql, attrVar)
 
 	results, err := aq.mgr.readQuery(ctx, query)
 	if err != nil {
@@ -520,7 +524,37 @@ func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%s %s.%s: %w", aq.fn, aq.mgr.info.TypeName, aq.attr, err)
 	}
-	return val, nil
+	return red.finish(val), nil
+}
+
+// reducer is the TypeQL reduce function that computes an aggregate, plus a
+// post-processing step for aggregates TypeQL has no reducer for.
+type reducer struct {
+	typeql string
+	post   func(float64) float64
+}
+
+func (r reducer) finish(v float64) float64 {
+	if r.post != nil {
+		return r.post(v)
+	}
+	return v
+}
+
+// reducerFor maps an aggregate function name to its TypeQL reducer. Names are
+// interpolated into the query, so anything outside this list is rejected.
+// TypeQL has no avg or variance reducers: avg is mean, and variance is the
+// square of std (the sample standard deviation).
+func reducerFor(fn string) (reducer, error) {
+	switch fn {
+	case "sum", "mean", "min", "max", "median", "std", "count":
+		return reducer{typeql: fn}, nil
+	case "avg":
+		return reducer{typeql: "mean"}, nil
+	case "variance":
+		return reducer{typeql: "std", post: func(v float64) float64 { return v * v }}, nil
+	}
+	return reducer{}, fmt.Errorf("gotype: unsupported aggregate function %q", fn)
 }
 
 // --- Multi-aggregate ---
@@ -541,10 +575,16 @@ func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[s
 	if err := validateFilters(q.filters...); err != nil {
 		return nil, fmt.Errorf("aggregate %s: %w", q.mgr.info.TypeName, err)
 	}
-	for _, spec := range specs {
+	reducers := make([]reducer, len(specs))
+	for i, spec := range specs {
 		if err := validateAttrName(spec.Attr); err != nil {
 			return nil, fmt.Errorf("aggregate %s: %w", q.mgr.info.TypeName, err)
 		}
+		red, err := reducerFor(spec.Fn)
+		if err != nil {
+			return nil, fmt.Errorf("aggregate %s: %w", q.mgr.info.TypeName, err)
+		}
+		reducers[i] = red
 	}
 
 	// Build match patterns
@@ -560,18 +600,13 @@ func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[s
 	var assignments []string
 	resultKeys := make([]string, len(specs))
 	for i, spec := range specs {
-		attrVar := sanitizeVar(varName + "__" + spec.Attr)
+		attrVar := attrVarName(varName, spec.Attr)
 		resultVar := fmt.Sprintf("result%d", i)
 		resultKeys[i] = spec.Fn + "_" + spec.Attr
 
 		patterns = append(patterns, fmt.Sprintf("$%s has %s $%s;", varName, spec.Attr, attrVar))
 
-		// Map fn to TypeDB aggregation function (TypeDB uses "mean" not "avg")
-		fn := spec.Fn
-		if fn == "avg" {
-			fn = "mean"
-		}
-		assignments = append(assignments, fmt.Sprintf("$%s = %s($%s)", resultVar, fn, attrVar))
+		assignments = append(assignments, fmt.Sprintf("$%s = %s($%s)", resultVar, reducers[i].typeql, attrVar))
 	}
 
 	// Build complete query: match ... reduce ...
@@ -597,7 +632,7 @@ func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[s
 		if err != nil {
 			return nil, fmt.Errorf("aggregate %s (%s): %w", q.mgr.info.TypeName, key, err)
 		}
-		results[key] = val
+		results[key] = reducers[i].finish(val)
 	}
 
 	return results, nil
@@ -629,10 +664,16 @@ func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec
 	if err := validateAttrName(gq.groupBy); err != nil {
 		return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
 	}
-	for _, spec := range specs {
+	reducers := make([]reducer, len(specs))
+	for i, spec := range specs {
 		if err := validateAttrName(spec.Attr); err != nil {
 			return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
 		}
+		red, err := reducerFor(spec.Fn)
+		if err != nil {
+			return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
+		}
+		reducers[i] = red
 	}
 
 	varName := "e"
@@ -644,7 +685,7 @@ func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec
 	}
 
 	// Add has clause for the group-by attribute
-	groupVar := sanitizeVar(varName + "__" + gq.groupBy)
+	groupVar := attrVarName(varName, gq.groupBy)
 	patterns = append(patterns, fmt.Sprintf("$%s has %s $%s;", varName, gq.groupBy, groupVar))
 
 	// Add has clauses for each aggregate attribute (if not already the group-by attr)
@@ -655,7 +696,7 @@ func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec
 			continue
 		}
 		if _, exists := attrVars[spec.Attr]; !exists {
-			av := sanitizeVar(varName + "__" + spec.Attr)
+			av := attrVarName(varName, spec.Attr)
 			patterns = append(patterns, fmt.Sprintf("$%s has %s $%s;", varName, spec.Attr, av))
 			attrVars[spec.Attr] = av
 		}
@@ -663,33 +704,37 @@ func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec
 
 	match := "match\n" + strings.Join(patterns, "\n")
 
-	// Build reduce clauses
+	// Build reduce clauses. Result variables are positional, like Aggregate,
+	// so they cannot collide with each other or with attribute variables.
 	var reduces []string
-	for _, spec := range specs {
-		av := attrVars[spec.Attr]
-		key := spec.Fn + "_" + spec.Attr
-		reduces = append(reduces, fmt.Sprintf("$%s = %s($%s)", sanitizeVar(key), spec.Fn, av))
+	for i, spec := range specs {
+		reduces = append(reduces, fmt.Sprintf("$result%d = %s($%s)", i, reducers[i].typeql, attrVars[spec.Attr]))
 	}
 
-	query := match + fmt.Sprintf("\nreduce %s, group $%s;", strings.Join(reduces, ", "), groupVar)
+	query := match + fmt.Sprintf("\nreduce %s groupby $%s;", strings.Join(reduces, ", "), groupVar)
 
 	rawResults, err := gq.mgr.readQuery(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
 	}
 
-	// Parse results: each row has the group value and aggregate results
+	// Parse results: each row holds the group variable and the reduced values.
 	results := make(map[string]map[string]float64)
 	for _, row := range rawResults {
-		groupVal := fmt.Sprintf("%v", unwrapValue(row[gq.groupBy]))
+		flat := unwrapResult(row)
+		group, ok := flat[groupVar]
+		if !ok {
+			return nil, fmt.Errorf("groupby %s: result row has no %q key", gq.mgr.info.TypeName, groupVar)
+		}
+		groupVal := fmt.Sprintf("%v", unwrapValue(group))
 		aggs := make(map[string]float64)
-		for _, spec := range specs {
+		for i, spec := range specs {
 			key := spec.Fn + "_" + spec.Attr
-			val, err := floatFromResult(row, sanitizeVar(key))
+			val, err := floatFromResult(flat, fmt.Sprintf("result%d", i))
 			if err != nil {
 				return nil, fmt.Errorf("groupby %s (%s): %w", gq.mgr.info.TypeName, key, err)
 			}
-			aggs[key] = val
+			aggs[key] = reducers[i].finish(val)
 		}
 		results[groupVal] = aggs
 	}

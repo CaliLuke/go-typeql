@@ -412,6 +412,16 @@ func TestTypeQLSyntax_FilterEmissions(t *testing.T) {
 		)
 	})
 
+	t.Run("filters on hyphen and underscore labels", func(t *testing.T) {
+		runFiltered(t, "hyphen/underscore labels query",
+			Eq("first-name", "Ann"), Eq("first_name", "Bob"), Gt("a_b-c", 1))
+	})
+
+	t.Run("existence inside or and not", func(t *testing.T) {
+		runFiltered(t, "exists-in-or query",
+			Or(HasAttr("name"), NotHasAttr("email")), Not(Or(HasAttr("age"), HasAttr("name"))))
+	})
+
 	t.Run("or nested inside not", func(t *testing.T) {
 		runFiltered(t, "or-inside-not query",
 			Not(Or(Eq("name", "Alice"), Eq("name", "Bob"))))

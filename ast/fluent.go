@@ -3,6 +3,8 @@ package ast
 import (
 	"fmt"
 	"strings"
+
+	"github.com/CaliLuke/go-typeql/v2/internal/naming"
 )
 
 // IdentifierMatcher determines whether an identifier should be treated as an IID.
@@ -296,7 +298,9 @@ func (b MatchBuilder) Let(assignments ...LetAssignment) MatchStage {
 // Set emits a standard Match-Delete-Insert sequence for updating one attribute.
 func (b MatchBuilder) Set(attrName string, value any) MatchStage {
 	next := b.state.clone()
-	oldVar := "$old_" + sanitizeIdentifier(attrName)
+	// naming.VarLabel is injective, so chained Sets on attributes such as
+	// first-name and first_name bind distinct old-value variables.
+	oldVar := "$old_" + naming.VarLabel(attrName)
 	next.matchPatterns = append(next.matchPatterns, HasPattern{ThingVar: next.mainVar, AttrType: attrName, AttrVar: oldVar})
 	next.deleteStatements = append(next.deleteStatements, DeleteHas(oldVar, next.mainVar))
 	next.insertStatements = append(next.insertStatements, HasStmt(next.mainVar, attrName, ValueFromGo(value)))
@@ -632,19 +636,4 @@ func ensureVar(v string) string {
 		return v
 	}
 	return "$" + v
-}
-
-func sanitizeIdentifier(s string) string {
-	if s == "" {
-		return "attr"
-	}
-	var b strings.Builder
-	for _, ch := range s {
-		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') {
-			b.WriteRune(ch)
-		} else {
-			b.WriteByte('_')
-		}
-	}
-	return b.String()
 }

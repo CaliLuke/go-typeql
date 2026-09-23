@@ -11,6 +11,8 @@ import (
 	"strings"
 	"text/template"
 	"unicode"
+
+	"github.com/CaliLuke/go-typeql/v2/internal/naming"
 )
 
 // RenderConfig specifies the settings for generating Go code from a TypeQL schema.
@@ -283,6 +285,7 @@ type metaCtx struct {
 type entityCtx struct {
 	GoName             string
 	TypeName           string // TypeDB name
+	BaseTag            string // struct tag on the embedded base, if any
 	Abstract           bool
 	Comment            string
 	MetaComments       []string
@@ -295,6 +298,7 @@ type entityCtx struct {
 type relationCtx struct {
 	GoName             string
 	TypeName           string
+	BaseTag            string // struct tag on the embedded base, if any
 	Abstract           bool
 	Comment            string
 	MetaComments       []string
@@ -435,6 +439,7 @@ func (r *renderer) buildEntityCtx(e EntitySpec) entityCtx {
 		SchemaMeta:   schemaMeta(e.Meta),
 		SchemaDoc:    e.Doc,
 	}
+	ctx.BaseTag = baseTypeTag(ctx.GoName, e.Name)
 	if e.Doc != "" {
 		ctx.Comment = docComment(e.Doc)
 	}
@@ -459,6 +464,7 @@ func (r *renderer) buildRelationCtx(rel RelationSpec) relationCtx {
 		SchemaMeta:   schemaMeta(rel.Meta),
 		SchemaDoc:    rel.Doc,
 	}
+	ctx.BaseTag = baseTypeTag(ctx.GoName, rel.Name)
 	if rel.Doc != "" {
 		ctx.Comment = docComment(rel.Doc)
 	}
@@ -780,6 +786,17 @@ func isOptional(o OwnsSpec) bool {
 	return false
 }
 
+// baseTypeTag returns the struct tag for a generated model's embedded base.
+// gotype derives a model's TypeDB name from its Go name, and that mapping
+// cannot recover every label ("user_account" and "user-account" both become
+// UserAccount), so labels that do not round-trip get an explicit type: tag.
+func baseTypeTag(goName, label string) string {
+	if naming.KebabCase(goName) == label {
+		return ""
+	}
+	return fmt.Sprintf("`typedb:\"type:%s\"`", label)
+}
+
 func goTypeName(name string, cfg RenderConfig) string {
 	if cfg.UseAcronyms {
 		return ToPascalCaseAcronyms(name)
@@ -907,7 +924,7 @@ type {{.GoName}} struct {
 // {{.InheritanceComment}}
 {{- end}}
 type {{.GoName}} struct {
-	gotype.BaseEntity
+	gotype.BaseEntity{{if .BaseTag}} {{.BaseTag}}{{end}}
 {{- range .Fields}}
 {{- if .Comment}}
 	// {{.GoName}} — {{.Comment}}
@@ -947,7 +964,7 @@ func ({{.GoName}}) SchemaMeta() map[string]string {
 // {{.InheritanceComment}}
 {{- end}}
 type {{.GoName}} struct {
-	gotype.BaseRelation
+	gotype.BaseRelation{{if .BaseTag}} {{.BaseTag}}{{end}}
 {{- range .Roles}}
 {{- if .Comment}}
 	// {{.GoName}} — {{.Comment}}

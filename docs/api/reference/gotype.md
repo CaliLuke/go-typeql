@@ -48,6 +48,7 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
 - [Variables](<#variables>)
 - [func ActiveTransactionContexts\(\) int64](<#ActiveTransactionContexts>)
 - [func ArithmeticExpr\(varName, leftAttr, op, rightAttr string\) string](<#ArithmeticExpr>)
+- [func AttrVar\(varName, attr string\) string](<#AttrVar>)
 - [func BuiltinFuncExpr\(funcName string, args ...string\) string](<#BuiltinFuncExpr>)
 - [func ClearRegistry\(\)](<#ClearRegistry>)
 - [func EnsureDatabase\(ctx context.Context, conn Conn, name string\) \(bool, error\)](<#EnsureDatabase>)
@@ -513,7 +514,7 @@ func ActiveTransactionContexts() int64
 ActiveTransactionContexts returns the number of TransactionContexts that have been opened and not yet closed, committed, rolled back, or leaked.
 
 <a name="ArithmeticExpr"></a>
-## func [ArithmeticExpr](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L789>)
+## func [ArithmeticExpr](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L797>)
 
 ```go
 func ArithmeticExpr(varName, leftAttr, op, rightAttr string) string
@@ -521,8 +522,23 @@ func ArithmeticExpr(varName, leftAttr, op, rightAttr string) string
 
 ArithmeticExpr builds a TypeQL arithmetic expression string from two attribute references and an operator. Useful with Computed filter.
 
+<a name="AttrVar"></a>
+## func [AttrVar](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L813>)
+
+```go
+func AttrVar(varName, attr string) string
+```
+
+AttrVar returns the TypeQL variable, with its "$", that filters bind for attribute attr of the thing variable varName \(the entity or relation is "e"\). Use it to reference attributes in hand\-written Computed or BuiltinFuncExpr expressions:
+
+```
+gotype.BuiltinFuncExpr("abs", gotype.AttrVar("e", "balance_due"))
+```
+
+Names are "$e\_\_balance" for labels without underscores; labels with underscores use an escaped form so that distinct labels never share a variable, so build names with AttrVar rather than by hand.
+
 <a name="BuiltinFuncExpr"></a>
-## func [BuiltinFuncExpr](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L797>)
+## func [BuiltinFuncExpr](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L819>)
 
 ```go
 func BuiltinFuncExpr(funcName string, args ...string) string
@@ -560,7 +576,7 @@ FormatValue converts a Go value into its TypeQL literal string representation. I
 This function delegates to ast.FormatGoValue for the actual formatting logic.
 
 <a name="FromDict"></a>
-## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L449>)
+## func [FromDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L450>)
 
 ```go
 func FromDict[T any](data map[string]any) (*T, error)
@@ -727,7 +743,7 @@ This is useful when a database's schema was applied in bulk \(e.g., via ExecuteS
 Supports WithSeqDryRun \(report without stamping\), WithSeqTarget \(stamp up to a named migration\), and WithSeqLogger \(progress callback\).
 
 <a name="ToDict"></a>
-## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L405>)
+## func [ToDict](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L406>)
 
 ```go
 func ToDict[T any](instance *T) (map[string]any, error)
@@ -736,7 +752,7 @@ func ToDict[T any](instance *T) (map[string]any, error)
 ToDict converts a registered model instance to a map\[string\]any using TypeDB attribute names as keys. Includes "\_iid" if set.
 
 <a name="ToInsertQuery"></a>
-## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L454>)
+## func [ToInsertQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L455>)
 
 ```go
 func ToInsertQuery[T any](instance *T) (string, error)
@@ -745,7 +761,7 @@ func ToInsertQuery[T any](instance *T) (string, error)
 ToInsertQuery generates a TypeQL insert query string for the given instance.
 
 <a name="ToMatchQuery"></a>
-## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L463>)
+## func [ToMatchQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L464>)
 
 ```go
 func ToMatchQuery[T any](instance *T) (string, error)
@@ -1078,7 +1094,7 @@ func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error)
 Execute runs the aggregate query and returns the result as float64.
 
 <a name="AggregateSpec"></a>
-## type [AggregateSpec](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L529-L532>)
+## type [AggregateSpec](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L563-L566>)
 
 AggregateSpec describes a single aggregation to compute.
 
@@ -1090,7 +1106,7 @@ type AggregateSpec struct {
 ```
 
 <a name="AndFilter"></a>
-## type [AndFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L490-L492>)
+## type [AndFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L494-L496>)
 
 AndFilter combines multiple filters with AND \(conjunction\).
 
@@ -1101,7 +1117,7 @@ type AndFilter struct {
 ```
 
 <a name="AndFilter.ToPatterns"></a>
-### func \(\*AndFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L500>)
+### func \(\*AndFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L504>)
 
 ```go
 func (f *AndFilter) ToPatterns(varName string) []string
@@ -1110,7 +1126,7 @@ func (f *AndFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns by concatenating all child filter patterns.
 
 <a name="AndFilter.Validate"></a>
-### func \(\*AndFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L495>)
+### func \(\*AndFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L499>)
 
 ```go
 func (f *AndFilter) Validate() error
@@ -1261,7 +1277,7 @@ func (e *ChecksumMismatchError) Error() string
 
 
 <a name="ComparisonFilter"></a>
-## type [ComparisonFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L85-L90>)
+## type [ComparisonFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L87-L92>)
 
 ComparisonFilter compares an attribute to a value using a TypeQL operator.
 
@@ -1275,7 +1291,7 @@ type ComparisonFilter struct {
 ```
 
 <a name="ComparisonFilter.ToPatterns"></a>
-### func \(\*ComparisonFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L111>)
+### func \(\*ComparisonFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L113>)
 
 ```go
 func (f *ComparisonFilter) ToPatterns(varName string) []string
@@ -1284,7 +1300,7 @@ func (f *ComparisonFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for a comparison filter. It panics on a non\-scalar value when called directly; query execution paths validate first \(see Validate\) and return an error instead.
 
 <a name="ComparisonFilter.Validate"></a>
-### func \(\*ComparisonFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L95>)
+### func \(\*ComparisonFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L97>)
 
 ```go
 func (f *ComparisonFilter) Validate() error
@@ -1293,7 +1309,7 @@ func (f *ComparisonFilter) Validate() error
 Validate reports construction errors: an invalid attribute name, an unsupported operator, or a non\-scalar comparison value \(use In for set membership\). Query execution calls this before building query text.
 
 <a name="ComputedFilter"></a>
-## type [ComputedFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L745-L754>)
+## type [ComputedFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L753-L762>)
 
 ComputedFilter uses a let\-assignment to compute a value and compare it. Generates: let $computed = \<expr\>; $computed \<op\> \<value\>;
 
@@ -1311,7 +1327,7 @@ type ComputedFilter struct {
 ```
 
 <a name="ComputedFilter.ToPatterns"></a>
-### func \(\*ComputedFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L773>)
+### func \(\*ComputedFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L781>)
 
 ```go
 func (f *ComputedFilter) ToPatterns(varName string) []string
@@ -1320,7 +1336,7 @@ func (f *ComputedFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL let\-assignment and comparison patterns.
 
 <a name="ComputedFilter.Validate"></a>
-### func \(\*ComputedFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L759>)
+### func \(\*ComputedFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L767>)
 
 ```go
 func (f *ComputedFilter) Validate() error
@@ -1645,7 +1661,7 @@ type Entity interface {
 ```
 
 <a name="ExistsFilter"></a>
-## type [ExistsFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L396-L399>)
+## type [ExistsFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L398-L401>)
 
 ExistsFilter checks whether an attribute exists \(has\) or not.
 
@@ -1657,7 +1673,7 @@ type ExistsFilter struct {
 ```
 
 <a name="ExistsFilter.ToPatterns"></a>
-### func \(\*ExistsFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L407>)
+### func \(\*ExistsFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L409>)
 
 ```go
 func (f *ExistsFilter) ToPatterns(varName string) []string
@@ -1666,7 +1682,7 @@ func (f *ExistsFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for an existence filter.
 
 <a name="ExistsFilter.Validate"></a>
-### func \(\*ExistsFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L402>)
+### func \(\*ExistsFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L404>)
 
 ```go
 func (f *ExistsFilter) Validate() error
@@ -1691,7 +1707,7 @@ type FetchBuilder interface {
 ```
 
 <a name="FieldInfo"></a>
-## type [FieldInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L26-L52>)
+## type [FieldInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L27-L53>)
 
 FieldInfo contains metadata about a single field in a model struct, mapping it to a TypeDB attribute.
 
@@ -1771,7 +1787,7 @@ func (ft FieldTag) IsRole() bool
 IsRole returns true if the tag identifies the field as a role player in a relation.
 
 <a name="Filter"></a>
-## type [Filter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L19-L23>)
+## type [Filter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L21-L25>)
 
 Filter represents a query filter expression that generates TypeQL patterns. Filters compose via And, Or, and Not to build complex match clauses.
 
@@ -1786,7 +1802,7 @@ type Filter interface {
 ```
 
 <a name="And"></a>
-### func [And](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L513>)
+### func [And](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L517>)
 
 ```go
 func And(filters ...Filter) Filter
@@ -1795,7 +1811,7 @@ func And(filters ...Filter) Filter
 And combines filters with logical AND.
 
 <a name="ByIID"></a>
-### func [ByIID](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L445>)
+### func [ByIID](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L449>)
 
 ```go
 func ByIID(iid string) Filter
@@ -1804,7 +1820,7 @@ func ByIID(iid string) Filter
 ByIID creates a filter matching a specific internal ID. The IID must match 0x\[0\-9a\-fA\-F\]\+; anything else is rejected when the query is executed \(see Validate\).
 
 <a name="Computed"></a>
-### func [Computed](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L783>)
+### func [Computed](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L791>)
 
 ```go
 func Computed(varName, expr, op string, value any) Filter
@@ -1813,7 +1829,7 @@ func Computed(varName, expr, op string, value any) Filter
 Computed creates a filter that assigns a computed expression to a variable and compares it using the given operator.
 
 <a name="Contains"></a>
-### func [Contains](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L234>)
+### func [Contains](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L236>)
 
 ```go
 func Contains(attr string, pattern string) Filter
@@ -1822,7 +1838,7 @@ func Contains(attr string, pattern string) Filter
 Contains creates a string contains filter. The pattern is a literal substring, not a regex.
 
 <a name="Eq"></a>
-### func [Eq](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L167>)
+### func [Eq](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L169>)
 
 ```go
 func Eq(attr string, value any) Filter
@@ -1831,7 +1847,7 @@ func Eq(attr string, value any) Filter
 Eq creates an equality filter: attribute == value.
 
 <a name="Gt"></a>
-### func [Gt](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L177>)
+### func [Gt](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L179>)
 
 ```go
 func Gt(attr string, value any) Filter
@@ -1840,7 +1856,7 @@ func Gt(attr string, value any) Filter
 Gt creates a greater\-than filter: attribute \> value.
 
 <a name="Gte"></a>
-### func [Gte](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L182>)
+### func [Gte](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L184>)
 
 ```go
 func Gte(attr string, value any) Filter
@@ -1849,7 +1865,7 @@ func Gte(attr string, value any) Filter
 Gte creates a greater\-or\-equal filter: attribute \>= value.
 
 <a name="HasAttr"></a>
-### func [HasAttr](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L416>)
+### func [HasAttr](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L420>)
 
 ```go
 func HasAttr(attr string) Filter
@@ -1858,7 +1874,7 @@ func HasAttr(attr string) Filter
 HasAttr creates an attribute existence filter.
 
 <a name="IIDIn"></a>
-### func [IIDIn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L483>)
+### func [IIDIn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L487>)
 
 ```go
 func IIDIn(iids ...string) Filter
@@ -1867,7 +1883,7 @@ func IIDIn(iids ...string) Filter
 IIDIn creates a filter matching any of the specified internal IDs. Each IID must match 0x\[0\-9a\-fA\-F\]\+; anything else is rejected when the query is executed \(see Validate\). With no IIDs the filter matches nothing.
 
 <a name="In"></a>
-### func [In](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L297>)
+### func [In](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L299>)
 
 ```go
 func In(attr string, values []any) Filter
@@ -1876,7 +1892,7 @@ func In(attr string, values []any) Filter
 In creates a filter that checks if an attribute value is in a set.
 
 <a name="Like"></a>
-### func [Like](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L241>)
+### func [Like](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L243>)
 
 ```go
 func Like(attr string, pattern string) Filter
@@ -1885,7 +1901,7 @@ func Like(attr string, pattern string) Filter
 Like creates a string like filter \(TypeQL regex matching\). The pattern is a raw regular expression; regex metacharacters are NOT escaped. Use Startswith for a literal prefix match.
 
 <a name="Lt"></a>
-### func [Lt](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L187>)
+### func [Lt](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L189>)
 
 ```go
 func Lt(attr string, value any) Filter
@@ -1894,7 +1910,7 @@ func Lt(attr string, value any) Filter
 Lt creates a less\-than filter: attribute \< value.
 
 <a name="Lte"></a>
-### func [Lte](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L192>)
+### func [Lte](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L194>)
 
 ```go
 func Lte(attr string, value any) Filter
@@ -1903,7 +1919,7 @@ func Lte(attr string, value any) Filter
 Lte creates a less\-or\-equal filter: attribute \<= value.
 
 <a name="Neq"></a>
-### func [Neq](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L172>)
+### func [Neq](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L174>)
 
 ```go
 func Neq(attr string, value any) Filter
@@ -1912,7 +1928,7 @@ func Neq(attr string, value any) Filter
 Neq creates a not\-equal filter: attribute \!= value.
 
 <a name="Not"></a>
-### func [Not](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L697>)
+### func [Not](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L703>)
 
 ```go
 func Not(filter Filter) Filter
@@ -1921,7 +1937,7 @@ func Not(filter Filter) Filter
 Not negates a filter.
 
 <a name="NotHasAttr"></a>
-### func [NotHasAttr](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L421>)
+### func [NotHasAttr](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L425>)
 
 ```go
 func NotHasAttr(attr string) Filter
@@ -1930,7 +1946,7 @@ func NotHasAttr(attr string) Filter
 NotHasAttr creates a negated attribute existence filter.
 
 <a name="NotIn"></a>
-### func [NotIn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L302>)
+### func [NotIn](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L304>)
 
 ```go
 func NotIn(attr string, values []any) Filter
@@ -1939,7 +1955,7 @@ func NotIn(attr string, values []any) Filter
 NotIn creates a filter that checks if an attribute value is NOT in a set.
 
 <a name="Or"></a>
-### func [Or](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L562>)
+### func [Or](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L566>)
 
 ```go
 func Or(filters ...Filter) Filter
@@ -1948,7 +1964,7 @@ func Or(filters ...Filter) Filter
 Or combines filters with logical OR.
 
 <a name="Range"></a>
-### func [Range](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L346>)
+### func [Range](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L348>)
 
 ```go
 func Range(attr string, min, max any) Filter
@@ -1957,7 +1973,7 @@ func Range(attr string, min, max any) Filter
 Range creates a filter that checks if an attribute value is between min and max \(inclusive\).
 
 <a name="Regex"></a>
-### func [Regex](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L379>)
+### func [Regex](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L381>)
 
 ```go
 func Regex(attr string, pattern string) Filter
@@ -1966,7 +1982,7 @@ func Regex(attr string, pattern string) Filter
 Regex creates a filter that matches an attribute value against a regex pattern. The pattern is a raw regular expression; metacharacters are NOT escaped.
 
 <a name="RolePlayer"></a>
-### func [RolePlayer](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L737>)
+### func [RolePlayer](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L745>)
 
 ```go
 func RolePlayer(roleName string, inner Filter) Filter
@@ -1975,7 +1991,7 @@ func RolePlayer(roleName string, inner Filter) Filter
 RolePlayer creates a filter that matches relations where the given role player satisfies the inner filter.
 
 <a name="Startswith"></a>
-### func [Startswith](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L389>)
+### func [Startswith](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L391>)
 
 ```go
 func Startswith(attr string, prefix string) Filter
@@ -2040,7 +2056,7 @@ func (fq *FunctionQuery) Execute(ctx context.Context) ([]map[string]any, error)
 Execute runs the function query and returns the raw results.
 
 <a name="GroupByQuery"></a>
-## type [GroupByQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L609-L613>)
+## type [GroupByQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L644-L648>)
 
 GroupByQuery groups results by an attribute and supports aggregate operations.
 
@@ -2051,7 +2067,7 @@ type GroupByQuery[T any] struct {
 ```
 
 <a name="GroupByQuery[T].Aggregate"></a>
-### func \(\*GroupByQuery\[T\]\) [Aggregate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L622>)
+### func \(\*GroupByQuery\[T\]\) [Aggregate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L657>)
 
 ```go
 func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[string]map[string]float64, error)
@@ -2091,7 +2107,7 @@ func (e *HydrationError) Unwrap() error
 Unwrap returns the underlying cause of the HydrationError.
 
 <a name="IIDFilter"></a>
-## type [IIDFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L428-L430>)
+## type [IIDFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L432-L434>)
 
 IIDFilter matches by internal ID.
 
@@ -2102,7 +2118,7 @@ type IIDFilter struct {
 ```
 
 <a name="IIDFilter.ToPatterns"></a>
-### func \(\*IIDFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L438>)
+### func \(\*IIDFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L442>)
 
 ```go
 func (f *IIDFilter) ToPatterns(varName string) []string
@@ -2111,7 +2127,7 @@ func (f *IIDFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for an IID filter.
 
 <a name="IIDFilter.Validate"></a>
-### func \(\*IIDFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L433>)
+### func \(\*IIDFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L437>)
 
 ```go
 func (f *IIDFilter) Validate() error
@@ -2120,7 +2136,7 @@ func (f *IIDFilter) Validate() error
 Validate reports a malformed IID \(anything not matching 0x\[0\-9a\-fA\-F\]\+\).
 
 <a name="IIDInFilter"></a>
-## type [IIDInFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L450-L452>)
+## type [IIDInFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L454-L456>)
 
 IIDInFilter matches any of multiple internal IDs using an OR pattern.
 
@@ -2131,7 +2147,7 @@ type IIDInFilter struct {
 ```
 
 <a name="IIDInFilter.ToPatterns"></a>
-### func \(\*IIDInFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L465>)
+### func \(\*IIDInFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L469>)
 
 ```go
 func (f *IIDInFilter) ToPatterns(varName string) []string
@@ -2140,7 +2156,7 @@ func (f *IIDInFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for matching multiple IIDs.
 
 <a name="IIDInFilter.Validate"></a>
-### func \(\*IIDInFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L455>)
+### func \(\*IIDInFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L459>)
 
 ```go
 func (f *IIDInFilter) Validate() error
@@ -2149,7 +2165,7 @@ func (f *IIDInFilter) Validate() error
 Validate reports the first malformed IID in the set.
 
 <a name="InFilter"></a>
-## type [InFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L248-L252>)
+## type [InFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L250-L254>)
 
 InFilter checks whether an attribute value is in a set of values.
 
@@ -2162,7 +2178,7 @@ type InFilter struct {
 ```
 
 <a name="InFilter.ToPatterns"></a>
-### func \(\*InFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L269>)
+### func \(\*InFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L271>)
 
 ```go
 func (f *InFilter) ToPatterns(varName string) []string
@@ -2171,7 +2187,7 @@ func (f *InFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for a set membership filter.
 
 <a name="InFilter.Validate"></a>
-### func \(\*InFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L256>)
+### func \(\*InFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L258>)
 
 ```go
 func (f *InFilter) Validate() error
@@ -2429,7 +2445,7 @@ func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error
 PutMany upserts multiple instances in a single transaction. For keyed models, each put returns its IID in the same query. IIDs are assigned after the transaction completes successfully.
 
 <a name="Manager[T].Query"></a>
-### func \(\*Manager\[T\]\) [Query](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L702>)
+### func \(\*Manager\[T\]\) [Query](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L747>)
 
 ```go
 func (m *Manager[T]) Query() *Query[T]
@@ -2474,7 +2490,7 @@ type MatchBuilder interface {
 ```
 
 <a name="Meta"></a>
-## type [Meta](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L287-L292>)
+## type [Meta](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L288-L293>)
 
 Meta describes a TypeDB @meta\("key", "value"\) annotation.
 
@@ -2655,7 +2671,7 @@ func (ms *MigrationState) Record(ctx context.Context, hash, summary string) erro
 Record saves a new migration record to the database after it has been applied.
 
 <a name="ModelInfo"></a>
-## type [ModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L56-L83>)
+## type [ModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L57-L84>)
 
 ModelInfo contains comprehensive metadata about a registered TypeDB model, including its mapping to a Go struct and its TypeDB schema properties.
 
@@ -2686,7 +2702,7 @@ type ModelInfo struct {
 ```
 
 <a name="ExtractModelInfo"></a>
-### func [ExtractModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L111>)
+### func [ExtractModelInfo](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L112>)
 
 ```go
 func ExtractModelInfo(t reflect.Type) (*ModelInfo, error)
@@ -2749,7 +2765,7 @@ func SubtypesOf(typeName string) []*ModelInfo
 SubtypesOf returns a slice of registered types that are direct subtypes of the specified parent type, sorted by TypeName.
 
 <a name="ModelInfo.FieldByAttrName"></a>
-### func \(\*ModelInfo\) [FieldByAttrName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L96>)
+### func \(\*ModelInfo\) [FieldByAttrName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L97>)
 
 ```go
 func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool)
@@ -2758,7 +2774,7 @@ func (m *ModelInfo) FieldByAttrName(attrName string) (FieldInfo, bool)
 FieldByAttrName retrieves FieldInfo by the TypeDB attribute name.
 
 <a name="ModelInfo.FieldByName"></a>
-### func \(\*ModelInfo\) [FieldByName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L86>)
+### func \(\*ModelInfo\) [FieldByName](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L87>)
 
 ```go
 func (m *ModelInfo) FieldByName(name string) (FieldInfo, bool)
@@ -2767,7 +2783,7 @@ func (m *ModelInfo) FieldByName(name string) (FieldInfo, bool)
 FieldByName retrieves FieldInfo by the Go struct field name.
 
 <a name="ModelKind"></a>
-## type [ModelKind](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L15>)
+## type [ModelKind](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L16>)
 
 ModelKind specifies whether a registered TypeDB model is an entity or a relation.
 
@@ -2850,7 +2866,7 @@ func (op ModifyOwnership) ToTypeQL() string
 
 
 <a name="NotFilter"></a>
-## type [NotFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L607-L609>)
+## type [NotFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L611-L613>)
 
 NotFilter negates a filter expression.
 
@@ -2861,7 +2877,7 @@ type NotFilter struct {
 ```
 
 <a name="NotFilter.ToPatterns"></a>
-### func \(\*NotFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L620>)
+### func \(\*NotFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L624>)
 
 ```go
 func (f *NotFilter) ToPatterns(varName string) []string
@@ -2870,7 +2886,7 @@ func (f *NotFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns wrapped in a not \{\} block. The scope suffix \(\_n1, \_n2, ...\) is allocated from a fresh per\-call scope, so the output is deterministic; query builders thread one shared scope through all filters of a query via filterPatterns \(see varScope\).
 
 <a name="NotFilter.Validate"></a>
-### func \(\*NotFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L612>)
+### func \(\*NotFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L616>)
 
 ```go
 func (f *NotFilter) Validate() error
@@ -2958,7 +2974,7 @@ type Operation interface {
 ```
 
 <a name="OrFilter"></a>
-## type [OrFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L527-L529>)
+## type [OrFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L531-L533>)
 
 OrFilter combines alternatives with OR \(disjunction\).
 
@@ -2969,7 +2985,7 @@ type OrFilter struct {
 ```
 
 <a name="OrFilter.ToPatterns"></a>
-### func \(\*OrFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L541>)
+### func \(\*OrFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L545>)
 
 ```go
 func (f *OrFilter) ToPatterns(varName string) []string
@@ -2978,7 +2994,7 @@ func (f *OrFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL or\-branch patterns with scoped variables. Branch suffixes \(\_o1, \_o2, ...\) are allocated from a fresh per\-call scope, so the output is deterministic. Query builders instead thread one shared scope through all filters of a query via filterPatterns, so sibling or/not blocks never reuse a suffix within the same query.
 
 <a name="OrFilter.Validate"></a>
-### func \(\*OrFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L532>)
+### func \(\*OrFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L536>)
 
 ```go
 func (f *OrFilter) Validate() error
@@ -3129,7 +3145,7 @@ type Query[T any] struct {
 ```
 
 <a name="Query[T].Aggregate"></a>
-### func \(\*Query\[T\]\) [Aggregate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L537>)
+### func \(\*Query\[T\]\) [Aggregate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L571>)
 
 ```go
 func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[string]float64, error)
@@ -3237,7 +3253,7 @@ func (q *Query[T]) ForEach(ctx context.Context, fn func(*T) error) error
 ForEach runs the fluent query and delivers one owned model per answer row. Filters, sorting, offset, and limit match Execute. Returning ErrStopIteration from fn ends the read without an error.
 
 <a name="Query[T].GroupBy"></a>
-### func \(\*Query\[T\]\) [GroupBy](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L616>)
+### func \(\*Query\[T\]\) [GroupBy](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/query.go#L651>)
 
 ```go
 func (q *Query[T]) GroupBy(attr string) *GroupByQuery[T]
@@ -3363,7 +3379,7 @@ func (q *Query[T]) Variance(attr string) *AggregateQuery[T]
 Variance creates an aggregate query for the variance of an attribute.
 
 <a name="RangeFilter"></a>
-## type [RangeFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L309-L314>)
+## type [RangeFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L311-L316>)
 
 RangeFilter checks whether an attribute value falls between min and max \(inclusive\).
 
@@ -3377,7 +3393,7 @@ type RangeFilter struct {
 ```
 
 <a name="RangeFilter.ToPatterns"></a>
-### func \(\*RangeFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L332>)
+### func \(\*RangeFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L334>)
 
 ```go
 func (f *RangeFilter) ToPatterns(varName string) []string
@@ -3386,7 +3402,7 @@ func (f *RangeFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for a range filter.
 
 <a name="RangeFilter.Validate"></a>
-### func \(\*RangeFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L318>)
+### func \(\*RangeFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L320>)
 
 ```go
 func (f *RangeFilter) Validate() error
@@ -3395,7 +3411,7 @@ func (f *RangeFilter) Validate() error
 Validate reports construction errors: an invalid attribute name or a non\-scalar bound.
 
 <a name="RegexFilter"></a>
-## type [RegexFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L353-L357>)
+## type [RegexFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L355-L359>)
 
 RegexFilter applies a regex match on a string attribute using TypeQL "like".
 
@@ -3408,7 +3424,7 @@ type RegexFilter struct {
 ```
 
 <a name="RegexFilter.ToPatterns"></a>
-### func \(\*RegexFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L365>)
+### func \(\*RegexFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L367>)
 
 ```go
 func (f *RegexFilter) ToPatterns(varName string) []string
@@ -3417,7 +3433,7 @@ func (f *RegexFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for a regex filter.
 
 <a name="RegexFilter.Validate"></a>
-### func \(\*RegexFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L360>)
+### func \(\*RegexFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L362>)
 
 ```go
 func (f *RegexFilter) Validate() error
@@ -3881,7 +3897,7 @@ type RoleInfo struct {
 ```
 
 <a name="RolePlayerFilter"></a>
-## type [RolePlayerFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L704-L707>)
+## type [RolePlayerFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L710-L713>)
 
 RolePlayerFilter matches relations where a given role player satisfies the inner filter.
 
@@ -3893,7 +3909,7 @@ type RolePlayerFilter struct {
 ```
 
 <a name="RolePlayerFilter.ToPatterns"></a>
-### func \(\*RolePlayerFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L718>)
+### func \(\*RolePlayerFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L724>)
 
 ```go
 func (f *RolePlayerFilter) ToPatterns(varName string) []string
@@ -3902,7 +3918,7 @@ func (f *RolePlayerFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns linking a role player and applying inner filters.
 
 <a name="RolePlayerFilter.Validate"></a>
-### func \(\*RolePlayerFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L710>)
+### func \(\*RolePlayerFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L716>)
 
 ```go
 func (f *RolePlayerFilter) Validate() error
@@ -3959,7 +3975,7 @@ func (op RunTypeQL) ToTypeQL() string
 
 
 <a name="SchemaAnnotated"></a>
-## type [SchemaAnnotated](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L296-L298>)
+## type [SchemaAnnotated](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L297-L299>)
 
 SchemaAnnotated can be implemented by a model to emit type\-level TypeDB @meta annotations during schema generation.
 
@@ -4178,7 +4194,7 @@ func (d *SchemaDiff) Summary() string
 Summary returns a human\-readable description of the changes in the diff.
 
 <a name="SchemaDocumented"></a>
-## type [SchemaDocumented](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L282-L284>)
+## type [SchemaDocumented](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/model.go#L283-L285>)
 
 SchemaDocumented can be implemented by a model to emit a type\-level TypeDB @doc annotation during schema generation.
 
@@ -4363,7 +4379,7 @@ TQLMigration creates a SequentialMigration from raw TypeQL statement slices.
 When run through RunSequentialMigrations or RollbackSequentialMigration, all statements execute in a single transaction together with the migration tracking record \(see the Statements field\). The generated Up/Down functions instead route each statement to ExecuteSchema or ExecuteWrite based on its prefix, one transaction per statement.
 
 <a name="StringFilter"></a>
-## type [StringFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L199-L204>)
+## type [StringFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L201-L206>)
 
 StringFilter applies string operations \(contains, like\) on an attribute.
 
@@ -4377,7 +4393,7 @@ type StringFilter struct {
 ```
 
 <a name="StringFilter.ToPatterns"></a>
-### func \(\*StringFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L220>)
+### func \(\*StringFilter\) [ToPatterns](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L222>)
 
 ```go
 func (f *StringFilter) ToPatterns(varName string) []string
@@ -4386,7 +4402,7 @@ func (f *StringFilter) ToPatterns(varName string) []string
 ToPatterns generates TypeQL patterns for a string filter.
 
 <a name="StringFilter.Validate"></a>
-### func \(\*StringFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L208>)
+### func \(\*StringFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L210>)
 
 ```go
 func (f *StringFilter) Validate() error
