@@ -11,3 +11,7 @@ driver/rust/target/
 reference
 !docs/api/reference/
 !docs/api/reference/*.md
+
+# TLC model-checker output
+formal/tla/states/
+formal/tla/*.old
