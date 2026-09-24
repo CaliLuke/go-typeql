@@ -2,7 +2,7 @@
 
 # Version of the official TypeQL syntax checker (typedb/typedb-tools).
 # Keep in lockstep with the TypeDB server version pinned in docker-compose.yml.
-TYPEQL_CHECK_VERSION ?= 3.13.0
+TYPEQL_CHECK_VERSION ?= 3.13.6
 
 # Build the Rust FFI static library
 # MACOSX_DEPLOYMENT_TARGET=13.0 matches Go 1.27's minimum supported macOS.

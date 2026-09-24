@@ -215,9 +215,10 @@ func TestCompile_ExpressionConstructors(t *testing.T) {
 	for want, e := range map[string]Expr{
 		"($e__age + 2)": Add(a, b), "($e__age - 2)": Sub(a, b), "($e__age * 2)": Mul(a, b),
 		"($e__age / 2)": Div(a, b), "($e__age % 2)": Mod(a, b), "($e__age ^ 2)": Pow(a, b),
-		"abs($e__age)": Abs(a), "ceil($e__age)": Ceil(a), "floor($e__age)": Floor(a),
-		"round($e__age)": Round(a), "len($e__age)": Length(a),
-		"max($e__age, 2)": Max(a, b), "min($e__age, 2)": Min(a, b),
+		"std::math::abs($e__age)": Abs(a), "std::math::ceil($e__age)": Ceil(a),
+		"std::math::floor($e__age)": Floor(a), "std::math::round($e__age)": Round(a),
+		"std::math::log10($e__age)": Log10(a), "std::string::len($e__age)": Length(a),
+		"std::math::max($e__age, 2)": Max(a, b), "std::math::min($e__age, 2)": Min(a, b),
 	} {
 		q := buildTestQuery(t, Computed(e, ">", 0))
 		assertContains(t, q, "let $result1 = "+want+";")

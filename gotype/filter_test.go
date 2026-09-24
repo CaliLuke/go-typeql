@@ -288,9 +288,9 @@ func TestComputedFilter_Hyphens(t *testing.T) {
 func TestComputedFilter_Functions(t *testing.T) {
 	joined := strings.Join(compilePatterns(Computed(Abs(Attr("balance")), ">", 1000)), " ")
 	assertContains(t, joined, "$e has balance $e__balance;")
-	assertContains(t, joined, "let $result1 = abs($e__balance);")
+	assertContains(t, joined, "let $result1 = std::math::abs($e__balance);")
 	joined = strings.Join(compilePatterns(Computed(Max(Attr("score"), Literal(2)), ">=", 2)), " ")
-	assertContains(t, joined, "let $result1 = max($e__score, 2);")
+	assertContains(t, joined, "let $result1 = std::math::max($e__score, 2);")
 }
 
 // A Computed attribute shares the variable of a filter on the same attribute

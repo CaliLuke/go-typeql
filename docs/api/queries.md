@@ -108,7 +108,7 @@ gotype.Computed(gotype.Abs(gotype.Attr("balance")), ">", 1000.0)
 - `Attr(label)` is an attribute of the queried instance, or of the role player inside a `RolePlayer` filter. The compiler binds the attribute. You do not need a separate filter on it.
 - `Literal(v)` is a scalar value.
 - The operators are `Add`, `Sub`, `Mul`, `Div`, `Mod`, and `Pow`.
-- The built-in functions are `Abs`, `Ceil`, `Floor`, `Round`, `Length`, `Max`, and `Min`.
+- The built-in functions are `Abs`, `Ceil`, `Floor`, `Round`, `Log10`, `Length`, `Max`, and `Min`. They emit the fully qualified TypeQL names, for example `std::math::abs` and `std::string::len`. These names need TypeDB server 3.13.6 or later. TypeDB 3.13.0 rejects them with a `[TQL03]` parse error. `Log10` exists only under its qualified name.
 
 The compiler gives each `Computed` filter its own result variable.
 
@@ -235,7 +235,7 @@ results, _ := persons.Query().
 
 ## Function Queries
 
-Call TypeDB schema functions (defined with `fun`) using `FunctionQuery`:
+Use `FunctionQuery` to call a TypeDB schema function (defined with `fun`). It can also call a fully qualified built-in function, such as `std::math::log10`.
 
 ```go
 fq := gotype.NewFunctionQuery(db, "get_user_score").
@@ -244,20 +244,23 @@ fq := gotype.NewFunctionQuery(db, "get_user_score").
 
 // Build the TypeQL string
 query := fq.Build()
+// match
 // let $result = get_user_score("Alice", 42);
-// return $result;
+// select $result;
 
 // Or execute directly
 results, err := fq.Execute(ctx)
 ```
 
-Use `ArgRaw` for pre-formatted expressions like variable references:
+Use `ArgRaw` for a pre-formatted TypeQL expression of constants. The query has no match patterns, so a variable reference such as `$x` is not bound, and the server rejects the query.
 
 ```go
 fq := gotype.NewFunctionQuery(db, "compute_total").
-    ArgRaw("$x").
+    ArgRaw("2 + 3").
     Arg(1.5)
 ```
+
+`FunctionQuery` supports functions that return a single value. For a function that returns a stream or a tuple, write the query and run it with `Database.ExecuteRead`.
 
 ## Complete Example
 

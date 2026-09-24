@@ -2,55 +2,38 @@ package gotype
 
 import (
 	"fmt"
-	"strings"
 	"unicode"
 )
 
 // TypeQLReservedWords is the set of TypeQL reserved keywords that cannot be
-// used as type names, attribute names, or role names.
+// used as type names, attribute names, or role names. It is the keyword list
+// of typeql::is_reserved_keyword (typeql 3.13.4), which is the `reserved`
+// rule of typeql-reference/typeql.pest. The server rejects these words only
+// in lowercase, so "Match" and "MATCH" are valid names. Other TypeQL words,
+// such as "label", "count", "string", and "abs", are valid names too.
 var TypeQLReservedWords = map[string]bool{
-	// Schema queries
-	"define": true, "undefine": true, "redefine": true,
-	// Data manipulation stages
-	"given": true, "match": true, "fetch": true, "insert": true, "delete": true, "update": true, "put": true,
-	// Stream manipulation stages
-	"select": true, "require": true, "sort": true, "limit": true, "offset": true, "reduce": true,
-	// Special stages
-	"with": true, "end": true,
-	// Pattern logic
-	"or": true, "not": true, "try": true,
-	// Type definition statements
+	// Query stages and clauses
+	"with": true, "given": true, "match": true, "fetch": true, "update": true,
+	"define": true, "undefine": true, "redefine": true, "insert": true, "put": true,
+	"delete": true, "end": true, "return": true, "asc": true, "desc": true,
+	// Type definitions
 	"entity": true, "relation": true, "attribute": true, "role": true, "struct": true, "fun": true,
-	// Constraint definition statements
-	"sub": true, "relates": true, "plays": true, "value": true, "owns": true, "alias": true,
-	// Instance statements
-	"isa": true, "links": true, "has": true, "is": true, "let": true, "contains": true, "like": true,
-	// Identity statements
-	"label": true, "iid": true,
-	// Annotations (without @)
-	"card": true, "cascade": true, "independent": true, "abstract": true,
-	"key": true, "subkey": true, "unique": true, "values": true,
-	"range": true, "regex": true, "distinct": true, "doc": true, "meta": true,
-	// Reductions
-	"check": true, "first": true, "last": true, "count": true, "max": true, "min": true,
-	"mean": true, "median": true, "std": true, "sum": true, "list": true,
-	// Value types
-	"boolean": true, "integer": true, "double": true, "decimal": true,
-	"datetime-tz": true, "datetime_tz": true, "datetime": true,
-	"date": true, "duration": true, "string": true,
-	// Built-in functions
-	"round": true, "ceil": true, "floor": true, "abs": true, "length": true,
+	// Constraints and statements
+	"alias": true, "sub": true, "owns": true, "as": true, "plays": true, "relates": true,
+	"iid": true, "isa": true, "links": true, "has": true, "is": true,
+	// Pattern logic
+	"or": true, "not": true, "try": true, "in": true,
 	// Literals
 	"true": true, "false": true,
 	// Miscellaneous
-	"asc": true, "desc": true, "return": true, "of": true,
-	"from": true, "in": true, "as": true,
+	"of": true, "from": true, "first": true, "last": true,
 }
 
 // IsReservedWord returns true if the given name is a TypeQL reserved keyword.
-// The check is case-insensitive.
+// The check is case-sensitive, like the TypeDB server: "match" is reserved,
+// and "Match" is not.
 func IsReservedWord(name string) bool {
-	return TypeQLReservedWords[strings.ToLower(name)]
+	return TypeQLReservedWords[name]
 }
 
 // ValidateIdentifier checks that a name is a valid TypeQL identifier.

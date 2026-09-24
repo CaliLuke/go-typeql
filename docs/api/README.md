@@ -12,7 +12,7 @@ See [Upgrading to v3](../UPGRADING_V3.md) for the breaking changes and migration
 | [CRUD](crud.md)           | Insert, Get, Update, Delete, Put, batch ops, transactions       |
 | [Selected fields](projections.md) | Read selected attributes without unsafe partial-model updates |
 | [Typed iteration](iteration.md) | Read models through a callback without retaining the full model slice |
-| [Queries](queries.md)     | Filters, sorting, pagination, aggregations, group-by            |
+| [Queries](queries.md)     | Filters, sorting, pagination, aggregations, group-by, function queries |
 | [Schema](schema.md)       | Schema generation, migration workflows, sequential migrations   |
 | [Generator](generator.md) | tqlgen: generate Go structs from TypeQL schemas                 |
 | [AST](ast.md)             | Low-level TypeQL AST for programmatic query building            |

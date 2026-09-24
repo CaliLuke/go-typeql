@@ -127,7 +127,7 @@ metadata does not fit Go struct tags cleanly.
 
 ## Registration
 
-All model types must be registered before use. Registration extracts metadata via reflection and stores it in a global registry. Reserved TypeQL keywords (111 words like `define`, `match`, `entity`, etc.) are rejected during registration.
+All model types must be registered before use. Registration extracts metadata via reflection and stores it in a global registry. Registration rejects the 42 reserved TypeQL keywords, such as `define`, `match`, and `entity`. The check matches case.
 
 ```go
 // Register returns an error if the type is invalid
@@ -205,5 +205,5 @@ See `GetByIIDPolymorphic` and `GetByIIDPolymorphicAny` in the [CRUD docs](crud.m
 
 - **ModelInfo** holds all extracted metadata for a registered type: Go type, kind (entity/relation), TypeDB name, fields, roles, key fields. You can look up fields by Go name or TypeDB attribute name.
 - **ModelStrategy** is the internal strategy pattern (`entityStrategy` / `relationStrategy`) that builds TypeQL strings for different type kinds. You don't interact with it directly.
-- **Reserved words**: 111 TypeQL keywords are checked case-insensitively during registration. Using one as a type or attribute name produces a `ReservedWordError`.
+- **Reserved words**: Registration checks names against the 42 reserved TypeQL keywords (`TypeQLReservedWords`). If a type, attribute, or role name is one of them, `Register` returns a `ReservedWordError`. The check matches case, like the server: `match` is reserved, and `Match` is not. Other TypeQL words, such as `label` and `count`, are valid names.
 - **Identifier validation**: Type names, attribute names, and role names are validated during registration. Valid identifiers start with a letter or underscore and contain only letters, digits, hyphens, or underscores. Invalid identifiers produce an `InvalidIdentifierError`. Use `ValidateIdentifier(name, context)` to check programmatically.

@@ -16,7 +16,7 @@ Follow semver:
 
 - **Patch** (`v1.0.2`): bug fixes, doc updates, no API changes
 - **Minor** (`v1.1.0`): new features, backward-compatible API additions
-- **Major** (`v3.0.0`): breaking changes (requires a module path change, for example `github.com/CaliLuke/go-typeql/v3` to `/v4`)
+- **Major** (`v4.0.0`): breaking changes (requires a module path change, for example `github.com/CaliLuke/go-typeql/v3` to `/v4`)
 
 If `$ARGUMENTS` is empty, ask the user what version to release.
 
@@ -118,6 +118,11 @@ Check that all upstream version pins are consistent with each other and with the
 | TypeQL grammar file               | `typeql-reference/typeql.pest` | vendored copy — diff against upstream tag |
 | Driver version mention            | `docs/DEVELOPMENT.md`          | prose reference                           |
 | Driver version mention            | `docs/api/driver.md`           | prose reference                           |
+| Version mentions                  | `README.md`, `docs/SKILL.md`, `benchmarks/README.md` | prose reference     |
+| Server version test               | `driver/driver_options_integration_test.go` | `TestServerVersion` expected version |
+| Rust toolchain                    | `rust-toolchain.toml`          | `channel = "..."`                         |
+| Rust toolchain (CI)               | `.github/workflows/build-ffi.yml` | `dtolnay/rust-toolchain@...`           |
+| typeql-check CLI                  | `Makefile`                     | `TYPEQL_CHECK_VERSION ?= ...`             |
 
 Version sources to check:
 

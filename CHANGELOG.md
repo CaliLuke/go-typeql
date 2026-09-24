@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.1.0 - 2026-09-24
+
+### Upgrade notes
+
+- The built-in function expressions (`Abs`, `Ceil`, `Floor`, `Round`, `Log10`, `Length`, `Max`, `Min`) and `FunctionQuery` calls of qualified built-ins need TypeDB server `3.13.6` or later. TypeDB `3.13.0` rejects the qualified names with `[TQL03] ... parsing error: expected identifier`. Before you upgrade go-typeql, upgrade the server.
+
+### Features
+
+- Adopted the fully qualified names of TypeQL 3.13.4 for built-in functions. The typed expressions `Abs`, `Ceil`, `Floor`, `Round`, `Max`, `Min`, and `Length` now emit `std::math::abs`, `std::math::ceil`, `std::math::floor`, `std::math::round`, `std::math::max`, `std::math::min`, and `std::string::len`. On TypeDB 3.13.6, the global names are aliases of the qualified names, so the results are the same.
+- Added `Log10`, which emits `std::math::log10`. This function exists only under its qualified name.
+- Documented and tested fully qualified built-in names in `FunctionQuery`, for example `NewFunctionQuery(db, "std::math::log10")`.
+
+### Fixes
+
+- `Register` rejected valid names. `TypeQLReservedWords` had 111 words, but the TypeDB server reserves only the 42 keywords of `typeql::is_reserved_keyword`. Words such as `label`, `count`, `string`, `value`, `key`, and `abs` are now valid type, attribute, and role names. `IsReservedWord` now matches case, like the server: `match` is reserved, and `Match` is not. A unit test now makes sure that the set is equal to the `reserved` rule of the vendored grammar. Code that calls `IsReservedWord` or reads `TypeQLReservedWords` directly gets the smaller, case-sensitive set.
+- Fixed `FunctionQuery.Build`, which emitted `let $result = f(...); return $result;`. That text is not a valid TypeQL query, so `Execute` always failed. It now emits `match let $result = f(...); select $result;`, and each result row has the key `result`. `FunctionQuery` supports only functions that return a single value. `ArgRaw` takes constant expressions only, because the query has no `match` patterns to bind a variable.
+
+### Dependencies
+
+- Upgraded the TypeDB server target to `3.13.6`, the `typedb-driver` crate to `3.13.6`, and the `typeql` crate to `3.13.4`. The vendored TypeQL grammar matches `typeql` `3.13.4`, which adds namespaced function names in expressions (`std::math::abs($x)`).
+- Upgraded the `typeql-check` syntax checker to `3.13.6` (`make install-typeql-check`).
+- Upgraded the Go dependencies: `modernc.org/sqlite` `v1.59.0` and its indirect dependencies. `participle` and `msgpack` are already at their latest versions.
+- Upgraded the release workflow to `actions/checkout@v7`, `actions/upload-artifact@v7`, and Rust `1.98.1`. The minimum Rust version for source builds stays `1.97`.
+
 ## v3.0.0 - 2026-09-24
 
 ### Breaking changes

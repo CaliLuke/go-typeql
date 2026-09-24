@@ -6,6 +6,9 @@ package gotype_test
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/CaliLuke/go-typeql/v3/gotype"
@@ -81,22 +84,31 @@ func TestIntegration_Compile_NotBodyOwnVariable(t *testing.T) {
 // parser accepts any function name, so only the server can check them.
 func TestIntegration_Compile_BuiltinFunctions(t *testing.T) {
 	ctx, mgr := setupCompileDB(t)
-	for name, f := range map[string]gotype.Filter{
-		"abs":    gotype.Computed(gotype.Abs(gotype.Attr("ic-rate")), ">", 2),
-		"ceil":   gotype.Computed(gotype.Ceil(gotype.Attr("ic-rate")), "==", -2),
-		"floor":  gotype.Computed(gotype.Floor(gotype.Attr("ic-rate")), "==", -3),
-		"round":  gotype.Computed(gotype.Round(gotype.Attr("ic-rate")), "<", 0),
-		"length": gotype.Computed(gotype.Length(gotype.Attr("ic-tag")), "==", 3),
-		"max":    gotype.Computed(gotype.Max(gotype.Attr("ic-score"), gotype.Literal(4)), "==", 5),
-		"min":    gotype.Computed(gotype.Min(gotype.Attr("ic-score"), gotype.Literal(4)), "==", 3),
+	for name, tc := range map[string]struct {
+		f    gotype.Filter
+		want string
+	}{
+		"abs":    {gotype.Computed(gotype.Abs(gotype.Attr("ic-rate")), ">", 2), "a"},
+		"ceil":   {gotype.Computed(gotype.Ceil(gotype.Attr("ic-rate")), "==", -2), "a"},
+		"floor":  {gotype.Computed(gotype.Floor(gotype.Attr("ic-rate")), "==", -3), "a"},
+		"round":  {gotype.Computed(gotype.Round(gotype.Attr("ic-rate")), "<", 0), "a"},
+		"length": {gotype.Computed(gotype.Length(gotype.Attr("ic-tag")), "==", 3), "a"},
+		"max":    {gotype.Computed(gotype.Max(gotype.Attr("ic-score"), gotype.Literal(4)), "==", 5), "a"},
+		"min":    {gotype.Computed(gotype.Min(gotype.Attr("ic-score"), gotype.Literal(4)), "==", 3), "a,b"},
+		"log10":  {gotype.Computed(gotype.Log10(gotype.Attr("ic-score")), ">", 1), "c"},
 	} {
-		rows, err := mgr.Query().Filter(f).All(ctx)
+		rows, err := mgr.Query().Filter(tc.f).All(ctx)
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		if got := names(rows); !got["a"] {
-			t.Errorf("%s: got %v, want a", name, got)
+		var got []string
+		for n := range names(rows) {
+			got = append(got, n)
+		}
+		slices.Sort(got)
+		if strings.Join(got, ",") != tc.want {
+			t.Errorf("%s: got %v, want %s", name, got, tc.want)
 		}
 	}
 }
@@ -115,5 +127,34 @@ func TestIntegration_Compile_OutputsByAllocatedName(t *testing.T) {
 	}
 	if agg["sum_ic-score"] != 31 || agg["max_ic-score"] != 12 {
 		t.Fatalf("aggregate = %v, want sum 31 and max 12", agg)
+	}
+}
+
+// FunctionQuery calls a schema function and a fully qualified built-in
+// function (TypeQL 3.13.4).
+func TestIntegration_FunctionQuery(t *testing.T) {
+	db := setupTestDBWith(t, func() { _ = gotype.Register[IcItem]() })
+	ctx := context.Background()
+	if err := db.ExecuteSchema(ctx, `define
+fun double_it($x: integer) -> integer: match let $y = $x * 2; return first $y;`); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	for name, tc := range map[string]struct {
+		fq   *gotype.FunctionQuery
+		want float64
+	}{
+		"schema function":     {gotype.NewFunctionQuery(db, "double_it").Arg(21), 42},
+		"namespaced built-in": {gotype.NewFunctionQuery(db, "std::math::log10").Arg(100), 2},
+	} {
+		rows, err := tc.fq.Execute(ctx)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("%s: got %d rows", name, len(rows))
+		}
+		if got := fmt.Sprint(rows[0]["result"]); got != fmt.Sprint(tc.want) {
+			t.Fatalf("%s: result = %v, want %v", name, rows[0]["result"], tc.want)
+		}
 	}
 }

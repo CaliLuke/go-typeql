@@ -78,15 +78,16 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql/v3@v3.0.0
+go get github.com/CaliLuke/go-typeql/v3@v3.1.0
 ```
 
 Version 3 uses the `/v3` import path, a sealed `Filter` interface, and typed `Computed` expressions.
 See [Upgrading to v3](docs/UPGRADING_V3.md) for the migration steps. For v1 to v2, see [Upgrading to v2](docs/UPGRADING_V2.md).
 
 The `ast/`, `given/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database.
-The `driver/` package targets TypeDB `3.13.0`.
-It uses the `typedb-driver` `3.12.3` and `typeql` `3.13.0` Rust crates.
+The `driver/` package targets TypeDB `3.13.6`.
+It uses the `typedb-driver` `3.13.6` and `typeql` `3.13.4` Rust crates.
+The built-in function expressions (`Abs`, `Length`, and the others) emit fully qualified names such as `std::math::abs`. These names need TypeDB server `3.13.6` or later.
 If you use TypeDB `3.10.x`, use go-typeql `v1.10.x`.
 
 The `driver/` package requires the static library for the Rust FFI. `go get` downloads only the source tree. It does not build or install `libtypedb_go_ffi.a`.
@@ -109,7 +110,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 platform="$(go env GOOS)-$(go env GOARCH)"
 
 # Download for your platform
-gh release download v3.0.0 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
+gh release download v3.1.0 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 libdir=/usr/local/lib
@@ -134,7 +135,7 @@ The [Getting Started walkthrough](docs/GETTING_STARTED.md) is a complete runnabl
 ## Running tests
 
 ```bash
-# Unit tests (707 tests, no database needed)
+# Unit tests (738 tests, no database needed)
 go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Integration tests (with the repo compose file, TypeDB is exposed on host port 1730)
@@ -159,7 +160,7 @@ See the dedicated guide: [Debugging Hangs](docs/DEBUGGING_HANGS.md).
 ## Requirements
 
 - The project requires Go 1.27 or later. Darwin also requires macOS 13 or later.
-- Only the edition 2024 driver requires Rust 1.97+. The repository pins version 1.97.1.
+- Building the driver from source needs Rust 1.97 or later. The repository pins Rust 1.98.1.
 - Integration tests require TypeDB 3.x.
 
 ## License

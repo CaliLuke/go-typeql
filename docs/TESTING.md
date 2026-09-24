@@ -10,7 +10,7 @@ go-typeql uses a two-tier testing approach:
 ## Running Tests
 
 ```bash
-# Unit tests (707 tests, no DB required)
+# Unit tests (738 tests, no DB required)
 make test-unit
 # Or directly:
 go test ./ast/... ./given/... ./gotype/... ./tqlgen/...

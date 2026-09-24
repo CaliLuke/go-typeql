@@ -7,6 +7,8 @@ description: Use the go-typeql Go ORM for TypeDB 3.x. Covers defining entities, 
 
 go-typeql is a struct-tag driven ORM for TypeDB that provides type-safe abstractions over TypeQL. It wraps the Rust TypeDB driver via CGo FFI, but the ORM packages (`gotype/`, `ast/`, `tqlgen/`) compile and test without CGo.
 
+The driver targets TypeDB server 3.13.6 (`typedb-driver` 3.13.6, `typeql` 3.13.4).
+
 Version 3 uses `github.com/CaliLuke/go-typeql/v3`. See [the v3 migration guide](UPGRADING_V3.md) for the import, filter, and `Computed` changes.
 
 ## Quick Start
@@ -219,7 +221,7 @@ err := persons.Insert(ctx, alice)
 // alice.GetIID() is now set
 
 // Insert multiple in a single transaction
-err := persons.InsertMany(ctx, []*Person{
+err = persons.InsertMany(ctx, []*Person{
     {Name: "Bob", Email: "bob@example.com"},
     {Name: "Carol", Email: "carol@example.com"},
 })
@@ -253,7 +255,7 @@ alice.Age = intPtr(31)
 err := persons.Update(ctx, alice)
 
 // Update multiple instances
-err := persons.UpdateMany(ctx, []*Person{alice, bob})
+err = persons.UpdateMany(ctx, []*Person{alice, bob})
 ```
 
 ### Delete
@@ -263,10 +265,10 @@ err := persons.UpdateMany(ctx, []*Person{alice, bob})
 err := persons.Delete(ctx, alice)
 
 // Strict delete (errors if instance doesn't exist)
-err := persons.Delete(ctx, alice, gotype.WithStrict())
+err = persons.Delete(ctx, alice, gotype.WithStrict())
 
 // Delete multiple
-err := persons.DeleteMany(ctx, []*Person{alice, bob})
+err = persons.DeleteMany(ctx, []*Person{alice, bob})
 ```
 
 ### Put (Upsert)
@@ -354,6 +356,8 @@ Computed filters take typed expressions:
 q.Filter(gotype.Computed(gotype.Mul(gotype.Attr("price"), gotype.Attr("quantity")), ">", 100))
 ```
 
+The expression constructors are `Attr`, `Literal`, `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow`, and the built-in functions `Abs`, `Ceil`, `Floor`, `Round`, `Log10`, `Length`, `Max`, and `Min`. The built-ins emit fully qualified names (`std::math::abs`, `std::string::len`). They need TypeDB server 3.13.6 or later.
+
 ### Role Player Filters
 
 Filter relations by properties of their role players:
@@ -413,8 +417,8 @@ q := persons.Query()
 // Single aggregation
 avg, err := q.Avg("age").Execute(ctx)
 sum, err := q.Sum("score").Execute(ctx)
-min, err := q.Min("age").Execute(ctx)
-max, err := q.Max("age").Execute(ctx)
+minAge, err := q.Min("age").Execute(ctx)
+maxAge, err := q.Max("age").Execute(ctx)
 med, err := q.Median("age").Execute(ctx)
 std, err := q.Std("score").Execute(ctx)
 v, err := q.Variance("score").Execute(ctx)
@@ -489,6 +493,16 @@ err := db.ExecuteSchema(ctx, `
     entity person, owns nickname;
 `)
 ```
+
+### Function Queries
+
+```go
+rows, err := gotype.NewFunctionQuery(db, "get_user_score").Arg("Alice").Arg(42).Execute(ctx)
+// Query: match let $result = get_user_score("Alice", 42); select $result;
+// rows[0]["result"] holds the value.
+```
+
+`FunctionQuery` calls a schema function or a fully qualified built-in function (`"std::math::log10"`). It supports only functions that return a single value. `ArgRaw` takes a constant TypeQL expression such as `"2 + 3"`. A variable such as `$x` is not bound, and the server rejects the query. For a function that returns a stream or a tuple, write the query and use `db.ExecuteRead`.
 
 ---
 
@@ -671,7 +685,7 @@ if dog, ok := instance.(*Dog); ok {
 
 ---
 
-## Code Generator (tqlgen v0.3.0)
+## Code Generator (tqlgen)
 
 Generate Go structs or a schema registry from existing TypeQL schema files.
 
@@ -980,4 +994,4 @@ func TestSomething(t *testing.T) {
 
 8. **Result unwrapping**: TypeDB wraps values as `{"value": X}`. The ORM unwraps these automatically via `unwrapResult`/`unwrapValue`.
 
-9. **Reserved words**: TypeQL has 111 reserved keywords. The registry validates type names, attribute names, and role names against these and returns `ReservedWordError` if a conflict is found.
+9. **Reserved words**: TypeQL reserves 42 lowercase keywords, for example `match`, `entity`, `has`, and `in`. The registry checks type names, attribute names, and role names against `TypeQLReservedWords` and returns `ReservedWordError` for a reserved word. The check matches case, like the server, so `Match` is valid. Other TypeQL words, such as `label`, `count`, and `string`, are valid names.

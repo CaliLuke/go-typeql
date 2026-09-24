@@ -268,7 +268,7 @@ The `gotype` package defines structured error types for common failure modes:
 - **HydrationError** -- failed to populate struct from query results (supports `Unwrap`)
 - **NotFoundError** -- no matching entity/relation found (returned by `GetOne`)
 - **NotUniqueError** -- multiple matches when one expected (returned by `GetOne`)
-- **ReservedWordError** -- attribute/type name is a TypeQL reserved word
+- **ReservedWordError** -- a type, attribute, or role name is a reserved TypeQL keyword
 - **SchemaValidationError** -- schema definition is invalid
 - **SchemaConflictError** -- conflicting schema definitions
 - **MigrationError** -- migration execution failed (supports `Unwrap`)

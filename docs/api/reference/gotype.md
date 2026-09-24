@@ -159,6 +159,7 @@ Package gotype provides parsing and representation of 'typedb' struct tags.
   - [func Floor\(a Expr\) Expr](<#Floor>)
   - [func Length\(a Expr\) Expr](<#Length>)
   - [func Literal\(v any\) Expr](<#Literal>)
+  - [func Log10\(a Expr\) Expr](<#Log10>)
   - [func Max\(a, b Expr\) Expr](<#Max>)
   - [func Min\(a, b Expr\) Expr](<#Min>)
   - [func Mod\(a, b Expr\) Expr](<#Mod>)
@@ -461,46 +462,25 @@ var (
 var ErrStopIteration = errors.New("gotype: stop iteration")
 ```
 
-<a name="TypeQLReservedWords"></a>TypeQLReservedWords is the set of TypeQL reserved keywords that cannot be used as type names, attribute names, or role names.
+<a name="TypeQLReservedWords"></a>TypeQLReservedWords is the set of TypeQL reserved keywords that cannot be used as type names, attribute names, or role names. It is the keyword list of typeql::is\_reserved\_keyword \(typeql 3.13.4\), which is the \`reserved\` rule of typeql\-reference/typeql.pest. The server rejects these words only in lowercase, so "Match" and "MATCH" are valid names. Other TypeQL words, such as "label", "count", "string", and "abs", are valid names too.
 
 ```go
 var TypeQLReservedWords = map[string]bool{
 
-    "define": true, "undefine": true, "redefine": true,
-
-    "given": true, "match": true, "fetch": true, "insert": true, "delete": true, "update": true, "put": true,
-
-    "select": true, "require": true, "sort": true, "limit": true, "offset": true, "reduce": true,
-
-    "with": true, "end": true,
-
-    "or": true, "not": true, "try": true,
+    "with": true, "given": true, "match": true, "fetch": true, "update": true,
+    "define": true, "undefine": true, "redefine": true, "insert": true, "put": true,
+    "delete": true, "end": true, "return": true, "asc": true, "desc": true,
 
     "entity": true, "relation": true, "attribute": true, "role": true, "struct": true, "fun": true,
 
-    "sub": true, "relates": true, "plays": true, "value": true, "owns": true, "alias": true,
+    "alias": true, "sub": true, "owns": true, "as": true, "plays": true, "relates": true,
+    "iid": true, "isa": true, "links": true, "has": true, "is": true,
 
-    "isa": true, "links": true, "has": true, "is": true, "let": true, "contains": true, "like": true,
-
-    "label": true, "iid": true,
-
-    "card": true, "cascade": true, "independent": true, "abstract": true,
-    "key": true, "subkey": true, "unique": true, "values": true,
-    "range": true, "regex": true, "distinct": true, "doc": true, "meta": true,
-
-    "check": true, "first": true, "last": true, "count": true, "max": true, "min": true,
-    "mean": true, "median": true, "std": true, "sum": true, "list": true,
-
-    "boolean": true, "integer": true, "double": true, "decimal": true,
-    "datetime-tz": true, "datetime_tz": true, "datetime": true,
-    "date": true, "duration": true, "string": true,
-
-    "round": true, "ceil": true, "floor": true, "abs": true, "length": true,
+    "or": true, "not": true, "try": true, "in": true,
 
     "true": true, "false": true,
 
-    "asc": true, "desc": true, "return": true, "of": true,
-    "from": true, "in": true, "as": true,
+    "of": true, "from": true, "first": true, "last": true,
 }
 ```
 
@@ -615,13 +595,13 @@ func IntrospectSchemaFromString(schemaStr string) (*tqlgen.ParsedSchema, error)
 IntrospectSchemaFromString parses a TypeQL schema string into a ParsedSchema structure.
 
 <a name="IsReservedWord"></a>
-## func [IsReservedWord](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L52>)
+## func [IsReservedWord](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L35>)
 
 ```go
 func IsReservedWord(name string) bool
 ```
 
-IsReservedWord returns true if the given name is a TypeQL reserved keyword. The check is case\-insensitive.
+IsReservedWord returns true if the given name is a TypeQL reserved keyword. The check is case\-sensitive, like the TypeDB server: "match" is reserved, and "Match" is not.
 
 <a name="LeakedTransactionContexts"></a>
 ## func [LeakedTransactionContexts](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/session.go#L115>)
@@ -737,7 +717,7 @@ func ToMatchQuery[T any](instance *T) (string, error)
 ToMatchQuery generates a TypeQL match clause for the given instance \(by key fields\).
 
 <a name="ValidateIdentifier"></a>
-## func [ValidateIdentifier](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L60>)
+## func [ValidateIdentifier](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L43>)
 
 ```go
 func ValidateIdentifier(name, context string) error
@@ -1258,7 +1238,7 @@ func (f *ComparisonFilter) Validate() error
 Validate reports construction errors: an invalid attribute name, an unsupported operator, or a non\-scalar comparison value \(use In for set membership\). Query execution calls this before building query text.
 
 <a name="ComputedFilter"></a>
-## type [ComputedFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L716-L723>)
+## type [ComputedFilter](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L723-L730>)
 
 ComputedFilter computes an expression into its own variable and compares it: let $\<result\> = \<expr\>; $\<result\> \<op\> \<value\>. The compiler allocates the result variable \(R6\).
 
@@ -1274,7 +1254,7 @@ type ComputedFilter struct {
 ```
 
 <a name="ComputedFilter.Validate"></a>
-### func \(\*ComputedFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L728>)
+### func \(\*ComputedFilter\) [Validate](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L735>)
 
 ```go
 func (f *ComputedFilter) Validate() error
@@ -1631,13 +1611,13 @@ type Expr interface {
 ```
 
 <a name="Abs"></a>
-### func [Abs](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L646>)
+### func [Abs](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L650>)
 
 ```go
 func Abs(a Expr) Expr
 ```
 
-Abs is the TypeQL built\-in abs\(a\).
+Abs is the absolute value: std::math::abs\(a\).
 
 <a name="Add"></a>
 ### func [Add](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L628>)
@@ -1658,13 +1638,13 @@ func Attr(label string) Expr
 Attr is the value of attribute label of the current owner: the queried instance, or the role player inside a RolePlayer filter. The compiler binds the attribute if no filter in the same scope binds it.
 
 <a name="Ceil"></a>
-### func [Ceil](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L649>)
+### func [Ceil](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L653>)
 
 ```go
 func Ceil(a Expr) Expr
 ```
 
-Ceil is the TypeQL built\-in ceil\(a\).
+Ceil rounds up: std::math::ceil\(a\).
 
 <a name="Div"></a>
 ### func [Div](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L637>)
@@ -1676,22 +1656,22 @@ func Div(a, b Expr) Expr
 Div is a / b.
 
 <a name="Floor"></a>
-### func [Floor](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L652>)
+### func [Floor](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L656>)
 
 ```go
 func Floor(a Expr) Expr
 ```
 
-Floor is the TypeQL built\-in floor\(a\).
+Floor rounds down: std::math::floor\(a\).
 
 <a name="Length"></a>
-### func [Length](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L658>)
+### func [Length](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L665>)
 
 ```go
 func Length(a Expr) Expr
 ```
 
-Length is the length of a string: the TypeQL built\-in len\(a\).
+Length is the length of a string: std::string::len\(a\).
 
 <a name="Literal"></a>
 ### func [Literal](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L625>)
@@ -1702,23 +1682,32 @@ func Literal(v any) Expr
 
 Literal is a scalar value \(string, bool, number, or time.Time\).
 
+<a name="Log10"></a>
+### func [Log10](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L662>)
+
+```go
+func Log10(a Expr) Expr
+```
+
+Log10 is the base\-10 logarithm: std::math::log10\(a\).
+
 <a name="Max"></a>
-### func [Max](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L661>)
+### func [Max](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L668>)
 
 ```go
 func Max(a, b Expr) Expr
 ```
 
-Max is the TypeQL built\-in max\(a, b\).
+Max is the larger of a and b: std::math::max\(a, b\).
 
 <a name="Min"></a>
-### func [Min](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L664>)
+### func [Min](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L671>)
 
 ```go
 func Min(a, b Expr) Expr
 ```
 
-Min is the TypeQL built\-in min\(a, b\).
+Min is the smaller of a and b: std::math::min\(a, b\).
 
 <a name="Mod"></a>
 ### func [Mod](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L640>)
@@ -1748,13 +1737,13 @@ func Pow(a, b Expr) Expr
 Pow is a ^ b.
 
 <a name="Round"></a>
-### func [Round](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L655>)
+### func [Round](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L659>)
 
 ```go
 func Round(a Expr) Expr
 ```
 
-Round is the TypeQL built\-in round\(a\).
+Round rounds to the nearest integer: std::math::round\(a\).
 
 <a name="Sub"></a>
 ### func [Sub](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L631>)
@@ -1895,7 +1884,7 @@ func ByIID(iid string) Filter
 ByIID creates a filter matching a specific internal ID. The IID must match 0x\[0\-9a\-fA\-F\]\+; anything else is rejected when the query is executed \(see Validate\).
 
 <a name="Computed"></a>
-### func [Computed](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L768>)
+### func [Computed](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/filter.go#L775>)
 
 ```go
 func Computed(expr Expr, op string, value any) Filter
@@ -2079,9 +2068,9 @@ func Startswith(attr string, prefix string) Filter
 Startswith creates a filter that checks if a string attribute starts with a literal prefix. The prefix is treated as data: regex metacharacters are escaped before it is compiled into the underlying TypeQL "like" pattern. Use Like or Regex for raw regex matching.
 
 <a name="FunctionQuery"></a>
-## type [FunctionQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L12-L16>)
+## type [FunctionQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L13-L17>)
 
-FunctionQuery builds and executes a TypeDB schema function call. TypeDB functions are defined with \`fun\` in the schema and called via match/return patterns.
+FunctionQuery builds and executes a call of one function that returns a single value: a schema function \(defined with \`fun\`\) or a fully qualified built\-in function. The query is "match let $result = f\(args\); select $result;". Functions that return a stream or a tuple are not supported.
 
 ```go
 type FunctionQuery struct {
@@ -2090,16 +2079,16 @@ type FunctionQuery struct {
 ```
 
 <a name="NewFunctionQuery"></a>
-### func [NewFunctionQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L20>)
+### func [NewFunctionQuery](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L22>)
 
 ```go
 func NewFunctionQuery(db *Database, funcName string) *FunctionQuery
 ```
 
-NewFunctionQuery creates a query for a TypeDB schema function. funcName is the function name as defined in the schema.
+NewFunctionQuery creates a query for a TypeDB schema function. funcName is the function name as defined in the schema, or a fully qualified built\-in name such as "std::math::abs".
 
 <a name="FunctionQuery.Arg"></a>
-### func \(\*FunctionQuery\) [Arg](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L26>)
+### func \(\*FunctionQuery\) [Arg](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L28>)
 
 ```go
 func (fq *FunctionQuery) Arg(value any) *FunctionQuery
@@ -2108,25 +2097,25 @@ func (fq *FunctionQuery) Arg(value any) *FunctionQuery
 Arg adds an argument to the function call. The value is formatted using FormatValue.
 
 <a name="FunctionQuery.ArgRaw"></a>
-### func \(\*FunctionQuery\) [ArgRaw](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L32>)
+### func \(\*FunctionQuery\) [ArgRaw](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L36>)
 
 ```go
 func (fq *FunctionQuery) ArgRaw(expr string) *FunctionQuery
 ```
 
-ArgRaw adds a pre\-formatted argument string \(e.g., a variable reference\).
+ArgRaw adds a pre\-formatted TypeQL argument, for example an expression of constants such as "2 \+ 3". The query has no match patterns, so a variable reference is not bound and the server rejects the query.
 
 <a name="FunctionQuery.Build"></a>
-### func \(\*FunctionQuery\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L38>)
+### func \(\*FunctionQuery\) [Build](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L45>)
 
 ```go
 func (fq *FunctionQuery) Build() string
 ```
 
-Build returns the TypeQL query string for calling the function.
+Build returns the TypeQL query string for calling the function. The query binds the function result to $result, so each result row has the key "result". funcName can be a schema function or a fully qualified built\-in function \(TypeQL 3.13.4\), for example "std::math::log10".
 
 <a name="FunctionQuery.Execute"></a>
-### func \(\*FunctionQuery\) [Execute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L44>)
+### func \(\*FunctionQuery\) [Execute](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/function_query.go#L51>)
 
 ```go
 func (fq *FunctionQuery) Execute(ctx context.Context) ([]map[string]any, error)
@@ -2262,7 +2251,7 @@ type InsertBuilder interface {
 ```
 
 <a name="InvalidIdentifierError"></a>
-## type [InvalidIdentifierError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L100-L104>)
+## type [InvalidIdentifierError](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L83-L87>)
 
 InvalidIdentifierError is returned when a name contains characters not allowed in TypeQL identifiers.
 
@@ -2275,7 +2264,7 @@ type InvalidIdentifierError struct {
 ```
 
 <a name="InvalidIdentifierError.Error"></a>
-### func \(\*InvalidIdentifierError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L106>)
+### func \(\*InvalidIdentifierError\) [Error](<https://github.com/CaliLuke/go-typeql/blob/main/gotype/reserved.go#L89>)
 
 ```go
 func (e *InvalidIdentifierError) Error() string

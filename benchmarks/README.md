@@ -22,7 +22,7 @@ See [the role-resolution report](ROLE_RESOLUTION.md) for workload and results.
 ## Reproducible groups
 
 Run `go run ./cmd/benchdb -group=decode` for the in-memory decoder. The live
-groups require a disposable TypeDB **3.13.0** server, the built Rust FFI
+groups require a disposable TypeDB **3.13.6** server, the built Rust FFI
 library, and the repo compose address mapping:
 
 ```bash

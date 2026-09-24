@@ -225,14 +225,14 @@ Supported operators: `+`, `-`, `*`, `/`, `%`, `^`.
 ### Function Calls
 
 ```go
-// Build: abs($balance)
+// Build: std::math::abs($balance)
 funcCall := ast.FunctionCallValue{
-    Function: "abs",
+    Function: "std::math::abs",
     Args:     []any{"$balance"},
 }
 
-// Build: round($score, 2)
-round := ast.FuncCall("round", "$score", ast.Long(2))
+// Build: std::math::max($score, 2)
+maxCall := ast.FuncCall("std::math::max", "$score", ast.Long(2))
 ```
 
 ### Let Assignments

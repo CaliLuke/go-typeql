@@ -4,10 +4,12 @@ Version 3 changes the Go module path and the filter API. The filter compiler now
 
 ## Required changes
 
+If you use the built-in expressions (`Abs`, `Length`, and the others) or call a built-in function with `FunctionQuery`, first upgrade the TypeDB server to 3.13.6 or later. From v3.1.0, these emit fully qualified names such as `std::math::abs`, and TypeDB 3.13.0 rejects them.
+
 1. Update the dependency.
 
    ```bash
-   go get github.com/CaliLuke/go-typeql/v3@v3.0.0
+   go get github.com/CaliLuke/go-typeql/v3@v3.1.0
    ```
 
 2. Replace `/v2` with `/v3` in every import.
@@ -32,7 +34,7 @@ Version 3 changes the Go module path and the filter API. The filter compiler now
    |---|---|
    | `Computed("total", ArithmeticExpr("e", "price", "*", "quantity"), ">", 100)` | `Computed(Mul(Attr("price"), Attr("quantity")), ">", 100)` |
    | `Computed("abs_bal", BuiltinFuncExpr("abs", "$e__balance"), ">", 1000)` | `Computed(Abs(Attr("balance")), ">", 1000)` |
-   | `BuiltinFuncExpr("length", ...)` | `Length(...)` (TypeQL `len`) |
+   | `BuiltinFuncExpr("length", ...)` | `Length(...)` (TypeQL `len` in v3.0.0, `std::string::len` from v3.1.0) |
 
    `Attr` names an attribute, not a variable. The compiler binds the attribute, so a separate filter on it is not necessary.
 

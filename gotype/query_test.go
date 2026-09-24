@@ -851,8 +851,11 @@ func TestFunctionQuery_Build(t *testing.T) {
 		Arg(42)
 
 	built := q.Build()
-	assertContains(t, built, `let $result = get_user_score("Alice", 42)`)
-	assertContains(t, built, "return $result;")
+	// A read query needs a match stage; "let ...; return ...;" alone is not a
+	// valid TypeQL query.
+	assertEqual(t, "match\nlet $result = get_user_score(\"Alice\", 42);\nselect $result;", built)
+	assertTypeQL(t, "function query", built, "")
+	assertTypeQL(t, "namespaced function query", NewFunctionQuery(db, "std::math::log10").Arg(100).Build(), "")
 }
 
 func TestFunctionQuery_ArgRaw(t *testing.T) {
@@ -870,7 +873,7 @@ func TestFunctionQuery_ArgRaw(t *testing.T) {
 func TestFunctionQuery_Execute(t *testing.T) {
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"result0": float64(99)}},
+			{{"result": float64(99)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}

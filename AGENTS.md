@@ -88,11 +88,12 @@ checker, not by consulting documentation.
 
 ## Architecture
 
-Four packages with deliberate CGo isolation:
+Five packages with deliberate CGo isolation:
 
 - **`ast/`** — TypeQL AST nodes + compiler. Pure Go, zero dependencies. Type-switch dispatch.
 - **`gotype/`** — ORM core. Models, CRUD, queries, filters, migration. **No CGo.** Decoupled from driver via `Conn`/`Tx` interfaces.
 - **`tqlgen/`** — Code generator. TypeQL schema → Go structs. Participle-based parser handles `define` blocks (attributes, entities, relations, structs, functions) directly via grammar; function bodies are captured as flat token lists for signature extraction and end at the next top-level definition keyword.
+- **`given/`** — Typed TypeQL input rows. Pure Go, no driver or CGo dependency.
 - **`driver/`** — Rust FFI bindings. **All files gated with `//go:build cgo && typedb`**. Integration tests additionally gated with `integration`.
 
 The key decoupling: `gotype/session.go` defines `Conn` and `Tx` interfaces that the driver satisfies. This means `gotype/` compiles, tests, and works without CGo — unit tests use `mockTx`/`mockConn`.
@@ -118,6 +119,8 @@ The key decoupling: `gotype/session.go` defines `Conn` and `Tx` interfaces that 
 - Uses `mean` not `avg` for average aggregation
 - Result values wrapped as `{"value": X}` — unwrapped automatically by `unwrapResult`/`unwrapValue`
 - `isa!` for exact type match (no subtypes), `isa` for polymorphic
+- Built-in functions use qualified names (`std::math::abs`, `std::string::len`) and need server 3.13.6+
+- Only 42 lowercase keywords are reserved (`typeql::is_reserved_keyword`); `label`, `count`, `Match` are valid names
 
 ## Documentation
 
@@ -129,17 +132,26 @@ docs/
 ├── DEVELOPMENT.md          # Building, architecture, contributing
 ├── TESTING.md              # Test strategy, mocks, integration infra
 ├── SKILL.md                # AI agent skill file for go-typeql
+├── UPGRADING_V2.md         # Migration guide: v1 → v2
+├── UPGRADING_V3.md         # Migration guide: v2 → v3
+├── DEBUGGING_HANGS.md      # Diagnosing stuck queries and transactions
+├── PERFORMANCE_REVIEW.md   # Performance measurements
+├── benchmarks/             # Benchmark reports
 └── api/
     ├── README.md           # Index of guides + reference links
     ├── models.md           # Guide: defining models, tags, registry
     ├── crud.md             # Guide: CRUD patterns, transactions
-    ├── queries.md          # Guide: filters, aggregations, gotchas
+    ├── queries.md          # Guide: filters, aggregations, function queries, gotchas
+    ├── projections.md      # Guide: reading selected fields
+    ├── iteration.md        # Guide: typed iteration with callbacks
     ├── schema.md           # Guide: migration workflows
     ├── generator.md        # Guide: tqlgen usage
     ├── ast.md              # Guide: AST query building
     ├── driver.md           # Guide: FFI driver setup
     └── reference/          # Auto-generated from godoc (DO NOT hand-edit)
         ├── ast.md
+        ├── driver.md
+        ├── given.md
         ├── gotype.md
         └── tqlgen.md
 ```
@@ -152,6 +164,8 @@ docs/
 ~/go/bin/gomarkdoc ./ast/ > docs/api/reference/ast.md
 ~/go/bin/gomarkdoc ./gotype/ > docs/api/reference/gotype.md
 ~/go/bin/gomarkdoc ./tqlgen/ > docs/api/reference/tqlgen.md
+~/go/bin/gomarkdoc ./given/ > docs/api/reference/given.md
+~/go/bin/gomarkdoc --tags "cgo,typedb" ./driver/ > docs/api/reference/driver.md
 ```
 
 When adding exported symbols, always add a godoc comment. The reference docs and pkg.go.dev render directly from these comments.

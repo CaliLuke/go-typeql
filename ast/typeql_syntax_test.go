@@ -203,6 +203,16 @@ func TestTypeQLSyntax_Compiler(t *testing.T) {
 			)},
 		},
 		{
+			// TypeQL 3.13.4: built-in functions have fully qualified names.
+			name: "namespaced built-in function call",
+			nodes: []QueryNode{
+				MatchLetClause{
+					Patterns:    []Pattern{Entity("$p", "person", Has("age", "$a"))},
+					Assignments: []LetAssignment{{Variables: []string{"$r"}, Expression: FuncCall("std::math::log10", "$a")}},
+				},
+			},
+		},
+		{
 			name: "match delete has",
 			nodes: []QueryNode{
 				Match(

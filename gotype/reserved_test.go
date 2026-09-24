@@ -4,15 +4,14 @@ import (
 	"errors"
 	"os"
 	"regexp"
-	"strings"
 	"testing"
 )
 
 func TestIsReservedWord(t *testing.T) {
 	reserved := []string{
-		"label", "entity", "relation", "attribute", "given", "match", "fetch",
-		"insert", "delete", "iid", "isa", "has", "sub", "owns", "doc", "meta",
-		"true", "false", "string", "boolean", "integer", "double", "role", "end", "last",
+		"entity", "relation", "attribute", "given", "match", "fetch",
+		"insert", "delete", "iid", "isa", "has", "sub", "owns",
+		"true", "false", "role", "end", "last",
 	}
 	for _, w := range reserved {
 		if !IsReservedWord(w) {
@@ -21,7 +20,9 @@ func TestIsReservedWord(t *testing.T) {
 	}
 }
 
-func TestTypeQLReservedWords_CoversGrammarReservedRule(t *testing.T) {
+// The set is exactly the reserved rule of the grammar: every grammar keyword
+// is in the set, and the set has no other word.
+func TestTypeQLReservedWords_MatchesGrammarReservedRule(t *testing.T) {
 	grammar, err := os.ReadFile("../typeql-reference/typeql.pest")
 	if err != nil {
 		t.Fatalf("read TypeQL grammar: %v", err)
@@ -36,24 +37,31 @@ func TestTypeQLReservedWords_CoversGrammarReservedRule(t *testing.T) {
 		t.Fatal("reserved rule contains no tokens")
 	}
 
+	grammarWords := map[string]bool{}
 	for _, token := range tokens {
 		definition := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(token) + `\s*=.*?"([^"]+)"`).FindSubmatch(grammar)
 		if len(definition) != 2 {
 			t.Fatalf("reserved token %s has no literal definition", token)
 		}
-		word := strings.ToLower(string(definition[1]))
+		word := string(definition[1])
+		grammarWords[word] = true
 		if !TypeQLReservedWords[word] {
 			t.Errorf("TypeQLReservedWords does not contain grammar keyword %q", word)
 		}
 	}
+	for word := range TypeQLReservedWords {
+		if !grammarWords[word] {
+			t.Errorf("TypeQLReservedWords contains %q, which is not in the grammar reserved rule", word)
+		}
+	}
 }
 
-func TestIsReservedWord_CaseInsensitive(t *testing.T) {
-	if !IsReservedWord("Label") {
-		t.Error("expected 'Label' (uppercase) to be reserved")
-	}
-	if !IsReservedWord("ENTITY") {
-		t.Error("expected 'ENTITY' (all caps) to be reserved")
+// The server rejects reserved keywords only in lowercase.
+func TestIsReservedWord_CaseSensitive(t *testing.T) {
+	for _, w := range []string{"Match", "ENTITY", "Label"} {
+		if IsReservedWord(w) {
+			t.Errorf("expected %q to NOT be reserved", w)
+		}
 	}
 }
 
@@ -61,6 +69,8 @@ func TestIsReservedWord_NotReserved(t *testing.T) {
 	notReserved := []string{
 		"person", "company", "name", "email", "age", "score",
 		"employment", "friendship", "username",
+		// TypeQL words that the server accepts as names (TypeDB 3.13.6).
+		"label", "count", "string", "value", "key", "abs", "len", "length", "let", "select", "std",
 	}
 	for _, w := range notReserved {
 		if IsReservedWord(w) {
@@ -69,24 +79,24 @@ func TestIsReservedWord_NotReserved(t *testing.T) {
 	}
 }
 
-// BadEntity uses "label" as attribute name — should be rejected.
+// reservedAttrEntity uses "match" as attribute name, which must be rejected.
 type reservedAttrEntity struct {
 	BaseEntity
-	Label string `typedb:"label,key"`
+	Match string `typedb:"match,key"`
 }
 
 func TestRegister_RejectsReservedAttributeName(t *testing.T) {
 	ClearRegistry()
 	err := Register[reservedAttrEntity]()
 	if err == nil {
-		t.Fatal("expected error for reserved attribute name 'label'")
+		t.Fatal("expected error for reserved attribute name 'match'")
 	}
 	rwe, ok := errors.AsType[*ReservedWordError](err)
 	if !ok {
 		t.Fatalf("expected ReservedWordError, got %T: %v", err, err)
 	}
-	if rwe.Word != "label" {
-		t.Errorf("expected word 'label', got %q", rwe.Word)
+	if rwe.Word != "match" {
+		t.Errorf("expected word 'match', got %q", rwe.Word)
 	}
 	if rwe.Context != "attribute" {
 		t.Errorf("expected context 'attribute', got %q", rwe.Context)
@@ -135,9 +145,9 @@ func TestValidateIdentifier_Invalid(t *testing.T) {
 }
 
 func TestReservedWordError_Message(t *testing.T) {
-	err := &ReservedWordError{Word: "label", Context: "attribute"}
+	err := &ReservedWordError{Word: "match", Context: "attribute"}
 	msg := err.Error()
-	assertContains(t, msg, "label")
+	assertContains(t, msg, "match")
 	assertContains(t, msg, "reserved keyword")
 	assertContains(t, msg, "attribute")
 }

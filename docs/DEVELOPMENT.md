@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Go 1.27+** (release checks use Go 1.27.1; macOS 13+ on Darwin)
-- **Rust 1.97+** (1.97.1 is pinned for the edition 2024 FFI driver) — install via [rustup](https://rustup.rs/)
+- **Rust 1.97+** (1.98.1 is pinned for the edition 2024 FFI driver) — install via [rustup](https://rustup.rs/)
 - **TypeDB 3.x server** (for integration tests) — run via Docker Compose or install directly
 - **Colima with Docker Compose** (optional, for running TypeDB in tests on this machine)
 
@@ -63,7 +63,7 @@ gotype/
 
 ## Building the Rust FFI Library
 
-The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface. The repo tracks TypeDB `3.13.0`, `typedb-driver` `3.12.3`, and `typeql` `3.13.0`.
+The `driver/` package requires a compiled Rust static library. The Rust crate in `driver/rust/` wraps the official `typedb-driver` crate and exposes a C FFI interface. The repo tracks TypeDB `3.13.6`, `typedb-driver` `3.13.6`, and `typeql` `3.13.4`.
 
 ```bash
 # Build the static library (driver/rust/target/release/libtypedb_go_ffi.a)
@@ -128,7 +128,7 @@ The project uses build tags to isolate CGo-dependent code:
 The `ast/`, `given/`, `gotype/`, and `tqlgen/` packages compile and test without build tags. Only the `driver/` package requires `cgo && typedb`.
 
 ```bash
-# Unit tests (default, no tags needed) — 707 tests
+# Unit tests (default, no tags needed) — 738 tests
 go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Driver + integration tests
@@ -161,7 +161,7 @@ Go has full feature parity with the Python type-bridge for core ORM functionalit
 - Transactions: explicit TransactionContext, NewManagerWithTx
 - Serialization: ToDict, FromDict, ToInsertQuery, ToMatchQuery
 - Code generation: TypeQL schema to Go structs (tqlgen)
-- Reserved word validation: 111 TypeQL keywords
+- Reserved word validation: the 42 reserved TypeQL keywords (case-sensitive)
 
 ### Not Yet Ported
 
@@ -169,10 +169,6 @@ These Python features are not yet implemented in Go:
 
 | Feature                   | Description                                                   |
 | ------------------------- | ------------------------------------------------------------- |
-| Multi-value attributes    | Slice fields for `@card(0..)` attributes with CRUD support    |
-| Multi-role players        | Multiple entities playing the same role in a relation         |
-| Date/DateTimeTZ/Duration  | Go supports 5 of 9 TypeDB value types (missing date variants) |
-| Decimal type              | TypeDB decimal mapped to Go type                              |
 | Relations-as-role-players | Relations playing roles in other relations                    |
 | Constraint enforcement    | Runtime validation of @key, @unique, @regex, @range, @values  |
 

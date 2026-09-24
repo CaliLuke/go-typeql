@@ -642,26 +642,33 @@ func Mod(a, b Expr) Expr { return binaryExpr{op: "%", a: a, b: b} }
 // Pow is a ^ b.
 func Pow(a, b Expr) Expr { return binaryExpr{op: "^", a: a, b: b} }
 
-// Abs is the TypeQL built-in abs(a).
-func Abs(a Expr) Expr { return funcExpr{fn: "abs", args: []Expr{a}} }
+// The built-in functions use their fully qualified TypeQL names (TypeQL
+// 3.13.4 and TypeDB 3.13.6). The global names are aliases on the server, and
+// new built-ins exist only under their qualified names.
 
-// Ceil is the TypeQL built-in ceil(a).
-func Ceil(a Expr) Expr { return funcExpr{fn: "ceil", args: []Expr{a}} }
+// Abs is the absolute value: std::math::abs(a).
+func Abs(a Expr) Expr { return funcExpr{fn: "std::math::abs", args: []Expr{a}} }
 
-// Floor is the TypeQL built-in floor(a).
-func Floor(a Expr) Expr { return funcExpr{fn: "floor", args: []Expr{a}} }
+// Ceil rounds up: std::math::ceil(a).
+func Ceil(a Expr) Expr { return funcExpr{fn: "std::math::ceil", args: []Expr{a}} }
 
-// Round is the TypeQL built-in round(a).
-func Round(a Expr) Expr { return funcExpr{fn: "round", args: []Expr{a}} }
+// Floor rounds down: std::math::floor(a).
+func Floor(a Expr) Expr { return funcExpr{fn: "std::math::floor", args: []Expr{a}} }
 
-// Length is the length of a string: the TypeQL built-in len(a).
-func Length(a Expr) Expr { return funcExpr{fn: "len", args: []Expr{a}} }
+// Round rounds to the nearest integer: std::math::round(a).
+func Round(a Expr) Expr { return funcExpr{fn: "std::math::round", args: []Expr{a}} }
 
-// Max is the TypeQL built-in max(a, b).
-func Max(a, b Expr) Expr { return funcExpr{fn: "max", args: []Expr{a, b}} }
+// Log10 is the base-10 logarithm: std::math::log10(a).
+func Log10(a Expr) Expr { return funcExpr{fn: "std::math::log10", args: []Expr{a}} }
 
-// Min is the TypeQL built-in min(a, b).
-func Min(a, b Expr) Expr { return funcExpr{fn: "min", args: []Expr{a, b}} }
+// Length is the length of a string: std::string::len(a).
+func Length(a Expr) Expr { return funcExpr{fn: "std::string::len", args: []Expr{a}} }
+
+// Max is the larger of a and b: std::math::max(a, b).
+func Max(a, b Expr) Expr { return funcExpr{fn: "std::math::max", args: []Expr{a, b}} }
+
+// Min is the smaller of a and b: std::math::min(a, b).
+func Min(a, b Expr) Expr { return funcExpr{fn: "std::math::min", args: []Expr{a, b}} }
 
 func (e attrExpr) compileExpr(c *compileCtx) (any, []ast.Pattern, error) {
 	if err := validateAttrName(e.label); err != nil {

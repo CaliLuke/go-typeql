@@ -1,6 +1,7 @@
 package tqlgen
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/CaliLuke/go-typeql/v3/internal/typeqlcheck"
@@ -20,6 +21,9 @@ func TestTypeQLSyntax_ParserConformance(t *testing.T) {
 		name       string
 		schema     string
 		knownIssue string
+		// wantEntity and wantFunction, when set, must be in the parsed schema.
+		wantEntity   string
+		wantFunction string
 	}{
 		{
 			name: "flat entities and relation",
@@ -57,6 +61,20 @@ $p isa person;
 return count($p);
 entity person, owns name;
 `,
+		},
+		{
+			// TypeQL 3.13.4 added namespaced function names in expressions.
+			name: "namespaced function call in a function body",
+			schema: `define
+attribute age, value integer;
+entity person, owns age;
+fun abs_age($p: person) -> integer:
+  match $p has age $a; let $d = std::math::abs($a);
+  return first $d;
+entity team, owns age;
+`,
+			wantEntity:   "team",
+			wantFunction: "abs_age",
 		},
 		{
 			name: "ordered list ownership and roles",
@@ -114,6 +132,12 @@ entity person, owns score, owns initial, owns joined, owns born, owns level;
 			// error (a fun block once silently swallowed trailing definitions).
 			if len(parsed.Entities) == 0 {
 				t.Errorf("no entities parsed from schema:\n%s", tc.schema)
+			}
+			if tc.wantEntity != "" && !slices.ContainsFunc(parsed.Entities, func(e EntitySpec) bool { return e.Name == tc.wantEntity }) {
+				t.Errorf("entity %q not parsed from schema:\n%s", tc.wantEntity, tc.schema)
+			}
+			if tc.wantFunction != "" && !slices.ContainsFunc(parsed.Functions, func(f FunctionSpec) bool { return f.Name == tc.wantFunction }) {
+				t.Errorf("function %q not parsed from schema:\n%s", tc.wantFunction, tc.schema)
 			}
 		})
 	}

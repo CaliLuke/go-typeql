@@ -158,7 +158,8 @@ expression_list_index = { var ~ list_index }
 list_index = { SQ_BRACKET_OPEN ~ expression_value ~ SQ_BRACKET_CLOSE }
 
 expression_function = { expression_function_name ~ PAREN_OPEN ~ expression_arguments? ~ PAREN_CLOSE }
-expression_function_name = { builtin_func_name | identifier }
+expression_function_name = { namespaced_identifier | builtin_func_name | identifier }
+namespaced_identifier = { identifier ~ (NAMESPACE_SEP ~ identifier)+ } // Plain identifiers could be namespaced
 expression_arguments = { expression ~ ( COMMA ~ expression )* ~ COMMA? }
 
 expression_list = { expression_list_subrange | expression_list_new }
@@ -535,6 +536,8 @@ CEIL = @{ "ceil" ~ WB }
 FLOOR = @{ "floor" ~ WB }
 LEN = @{ "len" ~ WB }
 ROUND = @{ "round" ~ WB }
+
+NAMESPACE_SEP = @{ "::" }
 
 // GROUP AND AGGREGATE QUERY KEYWORDS
 
