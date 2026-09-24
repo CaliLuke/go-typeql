@@ -1152,4 +1152,398 @@ example :
       [bytes "result0", bytes "result1_2"] := by
   decide
 
+/-! ## R8: the design candidates are valid
+
+The candidates of the R8 table, as a function of the key. The key records the
+scope id, not the kind of scope, so a child scope uses one prefix form,
+`<owner>_s<i>`. -/
+
+def scopedOwner (owner : Name) (s : Nat) : Name :=
+  if s = 0 then owner else owner ++ VarLabel.us :: 115 :: digits s
+
+def designCand (k : Key) : Name :=
+  match k.fam with
+  | .root => bytes "e"
+  | .attr => attrName (scopedOwner k.owner k.scope) k.label
+  | .player => rootSpelling k.label
+  | .result => bytes "result" ++ k.label
+  | .reduce => bytes "result" ++ k.label
+  | .old => bytes "old" ++ k.label
+
+/-- Every name in the table is a valid TypeQL variable. -/
+def TableValid (t : List (Key × Name)) : Prop := ∀ p ∈ t, ValidVar p.2
+
+/-- The labels of a filter tree are valid: attribute labels are bytes, and
+role labels pass `identifierPattern` (R7). -/
+def Bytes (l : Name) : Prop := ∀ x ∈ l, x < 256
+
+def WFExpr : Expr → Prop
+  | .attr l => Bytes l
+  | .lit => True
+  | .bin a b => WFExpr a ∧ WFExpr b
+
+def WFTree : F → Prop
+  | .cmp l => Bytes l
+  | .computed e => WFExpr e
+  | .role r f => ValidLabel r ∧ WFTree f
+  | .and a b => WFTree a ∧ WFTree b
+  | .or a b => WFTree a ∧ WFTree b
+  | .not f => WFTree f
+
+theorem scopedOwner_valid (o : Name) (s : Nat) (h : ValidVar o) : ValidVar (scopedOwner o s) := by
+  unfold scopedOwner
+  split
+  · exact h
+  · obtain ⟨⟨c, r, rfl, hc⟩, hall⟩ := h
+    refine ⟨⟨c, r ++ VarLabel.us :: 115 :: digits s, by simp, hc⟩, ?_⟩
+    intro x hx
+    simp only [List.mem_append, List.mem_cons] at hx
+    rcases hx with hx | rfl | rfl | hx
+    · exact hall x (List.mem_cons.mpr hx)
+    · decide
+    · decide
+    · simp [isVarChar, digits_alnum s x hx]
+
+theorem prefix_digits_valid (p : Name) (hp : ValidVar p) (n : Nat) : ValidVar (p ++ digits n) := by
+  obtain ⟨⟨c, r, rfl, hc⟩, hall⟩ := hp
+  refine ⟨⟨c, r ++ digits n, by simp, hc⟩, ?_⟩
+  intro x hx
+  simp only [List.mem_append] at hx
+  rcases hx with hx | hx
+  · exact hall x hx
+  · simp [isVarChar, digits_alnum n x hx]
+
+theorem result_valid : ValidVar (bytes "result") := ⟨⟨114, bytes "esult", by decide, by decide⟩, by decide⟩
+theorem old_valid : ValidVar (bytes "old") := ⟨⟨111, bytes "ld", by decide, by decide⟩, by decide⟩
+theorem e_valid : ValidVar (bytes "e") := ⟨⟨101, [], by decide, by decide⟩, by decide⟩
+
+theorem nm_valid (cs : CS) (k : Key) (ht : TableValid cs.tbl.table) (hk : ValidVar (designCand k)) :
+    TableValid (nm designCand cs k).2.tbl.table := by
+  unfold nm alloc
+  cases hl : cs.tbl.table.lookup k with
+  | some n => simpa [hl] using ht
+  | none =>
+    intro p hp
+    simp only [List.mem_cons] at hp
+    rcases hp with rfl | hp
+    · exact pick_valid _ _ hk
+    · exact ht p hp
+
+theorem owner_valid (t : List (Key × Name)) (ctx : Ctx) (hob : OwnerBacked t ctx) (ht : TableValid t) :
+    ValidVar ctx.owner := by
+  obtain ⟨k, hk, _⟩ := hob
+  exact ht _ hk
+
+theorem attrKey_valid (ctx : Ctx) (l : Name) (ho : ValidVar ctx.owner) (hl : Bytes l) :
+    ValidVar (designCand (attrKey ctx l)) :=
+  attrName_valid _ _ (scopedOwner_valid _ _ ho) hl
+
+theorem expr_valid (ctx : Ctx) : ∀ (e : Expr) (cs : CS), WFExpr e → ValidVar ctx.owner →
+    TableValid cs.tbl.table → TableValid (compileExpr designCand ctx e cs).2.tbl.table
+  | .attr l, cs, he, ho, ht => nm_valid cs _ ht (attrKey_valid ctx l ho he)
+  | .lit, _, _, _, ht => ht
+  | .bin a b, cs, he, ho, ht => expr_valid ctx b _ he.2 ho (expr_valid ctx a cs he.1 ho ht)
+
+theorem compile_valid : ∀ (ctx : Ctx) (f : F) (cs : CS), WFTree f → OwnerBacked cs.tbl.table ctx →
+    TableValid cs.tbl.table → TableValid (compile designCand ctx f cs).2.tbl.table
+  | ctx, .cmp l, cs, hf, hob, ht => nm_valid cs _ ht (attrKey_valid ctx l (owner_valid _ ctx hob ht) hf)
+  | ctx, .computed e, cs, hf, hob, ht => by
+    simp only [compile]
+    have h1 := expr_valid ctx e cs hf (owner_valid _ ctx hob ht) ht
+    exact nm_valid _ _ h1 (prefix_digits_valid _ result_valid _)
+  | ctx, .role rl f, cs, hf, hob, ht => by
+    simp only [compile]
+    have h1 := nm_valid cs ⟨.player, ctx.owner, rl, ctx.scope⟩ ht (rootSpelling_valid rl hf.1)
+    exact compile_valid _ f _ hf.2 ⟨_, nm_mem designCand _ _, rfl⟩ h1
+  | ctx, .and a b, cs, hf, hob, ht => by
+    simp only [compile]
+    have g1 := compile_grows designCand ctx a cs
+    exact compile_valid ctx b _ hf.2 (hob.mono g1) (compile_valid ctx a cs hf.1 hob ht)
+  | ctx, .or a b, cs, hf, hob, ht => by
+    simp only [compile]
+    have g1 := compile_grows designCand (childCtx ctx cs.next) a { cs with next := cs.next + 2 }
+    have h1 := compile_valid (childCtx ctx cs.next) a { cs with next := cs.next + 2 } hf.1 hob ht
+    exact compile_valid (childCtx ctx (cs.next + 1)) b _ hf.2
+      ((show OwnerBacked ({ cs with next := cs.next + 2 } : CS).tbl.table (childCtx ctx (cs.next + 1))
+        from hob).mono g1) h1
+  | ctx, .not a, cs, hf, hob, ht => by
+    simp only [compile]
+    exact compile_valid (childCtx ctx cs.next) a { cs with next := cs.next + 1 } hf hob ht
+
+/-- R8: with the design candidates, every variable of a query is a valid TypeQL
+variable, for every filter tree with valid labels. -/
+theorem query_names_valid (f : F) (hf : WFTree f) :
+    ∀ o ∈ (compileQuery designCand f).1, ValidVar o.n := by
+  have ht0 : TableValid (nm designCand cs0 rootKey).2.tbl.table :=
+    nm_valid cs0 rootKey (by simp [TableValid, cs0]) e_valid
+  have hob : OwnerBacked (nm designCand cs0 rootKey).2.tbl.table (rootCtx designCand) :=
+    ⟨rootKey, nm_mem designCand cs0 rootKey, rfl⟩
+  have ht := compile_valid (rootCtx designCand) f _ hf hob ht0
+  intro o ho
+  obtain ⟨k, hk, _⟩ := query_backed designCand f o ho
+  rw [query_eq] at hk
+  exact ht _ hk
+
+theorem attrStage_valid (ctx : Ctx) : ∀ (ls : List Name) (cs : CS), (∀ l ∈ ls, Bytes l) →
+    OwnerBacked cs.tbl.table ctx → TableValid cs.tbl.table →
+    TableValid (attrStage designCand ctx ls cs).2.tbl.table
+  | [], _, _, _, ht => ht
+  | l :: ls, cs, hl, hob, ht => by
+    simp only [attrStage]
+    have h1 := nm_valid cs (attrKey ctx l) ht
+      (attrKey_valid ctx l (owner_valid _ ctx hob ht) (hl l (by simp)))
+    exact attrStage_valid ctx ls _ (fun x hx => hl x (List.mem_cons_of_mem _ hx))
+      (hob.mono (nm_grows designCand cs _)) h1
+
+theorem outStage_valid (ctx : Ctx) (fam : Fam) (hfam : fam = .reduce ∨ fam = .old) :
+    ∀ (i k : Nat) (cs : CS), TableValid cs.tbl.table →
+    TableValid (outStage designCand ctx fam i k cs).2.tbl.table
+  | _, 0, _, ht => ht
+  | i, k + 1, cs, ht => by
+    simp only [outStage]
+    have hk : ValidVar (designCand (outKey fam i ctx.scope)) := by
+      rcases hfam with rfl | rfl
+      · exact prefix_digits_valid _ result_valid i
+      · exact prefix_digits_valid _ old_valid i
+    exact outStage_valid ctx fam hfam (i + 1) k _ (nm_valid cs _ ht hk)
+
+/-- R8 for built queries: every variable is a valid TypeQL variable, for every
+filter tree and builder spec with valid labels. -/
+theorem build_names_valid (q : Spec) (hf : WFTree q.filter) (hl : ∀ l ∈ q.sorts ++ q.reduces, Bytes l) :
+    ∀ o ∈ (build designCand q).1, ValidVar o.n := by
+  have ht0 : TableValid (nm designCand cs0 rootKey).2.tbl.table :=
+    nm_valid cs0 rootKey (by simp [TableValid, cs0]) e_valid
+  have hq : TableValid (compileQuery designCand q.filter).2.tbl.table := by
+    rw [query_eq]
+    exact compile_valid (rootCtx designCand) q.filter _ hf ⟨rootKey, nm_mem designCand cs0 rootKey, rfl⟩ ht0
+  have h1 := attrStage_valid (rootCtx designCand) (q.sorts ++ q.reduces) _ hl
+    (query_owner_backed designCand q.filter) hq
+  have h2 := outStage_valid (rootCtx designCand) .reduce (Or.inl rfl) 0 q.reduces.length _ h1
+  have h3 := outStage_valid (rootCtx designCand) .old (Or.inr rfl) 0 q.olds _ h2
+  intro o ho
+  obtain ⟨k, hk, _⟩ := build_backed designCand q o ho
+  exact h3 _ hk
+
+/-! ## R5: one binding per variable and scope
+
+`build` emits a binding for each use of an attribute. The compiler of R5 keeps
+the first binding of each (variable, scope) pair and drops the repeats. The
+pass below does this. All properties of `build` hold for its result, and the
+result has exactly one binding per variable and scope. -/
+
+theorem attrStage_uses_bound (ctx : Ctx) : ∀ (ls : List Name) (cs : CS),
+    UsesBound (attrStage cand ctx ls cs).1
+  | [], cs => by intro o ho; simp [attrStage] at ho
+  | l :: ls, cs => by
+    simp only [attrStage]
+    exact (attr_triple_bound ctx _).append (attrStage_uses_bound ctx ls _)
+
+theorem outStage_uses_bound (ctx : Ctx) (fam : Fam) : ∀ (i k : Nat) (cs : CS),
+    UsesBound (outStage cand ctx fam i k cs).1
+  | _, 0, cs => by intro o ho; simp [outStage] at ho
+  | i, k + 1, cs => by
+    simp only [outStage]
+    apply UsesBound.append _ (outStage_uses_bound ctx fam (i + 1) k _)
+    intro o ho hk
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ho
+    rcases ho with rfl | rfl
+    · simp [occ] at hk
+    · exact ⟨occ ctx _ fam .bind, by simp, rfl, rfl, rfl⟩
+
+theorem build_uses_bound (q : Spec) : UsesBound (build cand q).1 := by
+  simp only [build, buildWith]
+  exact (((uses_bound cand q.filter).append (attrStage_uses_bound cand _ _ _)).append
+    (outStage_uses_bound cand _ _ _ _ _)).append (outStage_uses_bound cand _ _ _ _ _)
+
+theorem attrStage_owner (ctx : Ctx) : ∀ (ls : List Name) (cs : CS),
+    ∀ o ∈ (attrStage cand ctx ls cs).1, o.kind = .ownerUse → o.n = ctx.owner ∧ o.path = ctx.path
+  | [], cs, o, ho, _ => by simp [attrStage] at ho
+  | l :: ls, cs, o, ho, hk => by
+    simp only [attrStage, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at ho
+    rcases ho with (rfl | rfl | rfl) | h
+    · exact ⟨rfl, rfl⟩
+    · simp [occ] at hk
+    · simp [occ] at hk
+    · exact attrStage_owner ctx ls _ o h hk
+
+theorem outStage_no_owner (ctx : Ctx) (fam : Fam) : ∀ (i k : Nat) (cs : CS),
+    ∀ o ∈ (outStage cand ctx fam i k cs).1, o.kind ≠ .ownerUse
+  | _, 0, cs, o, ho => by simp [outStage] at ho
+  | i, k + 1, cs, o, ho => by
+    simp only [outStage, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at ho
+    rcases ho with (rfl | rfl) | h
+    · simp [occ]
+    · simp [occ]
+    · exact outStage_no_owner ctx fam (i + 1) k _ o h
+
+theorem build_owners_bound (q : Spec) :
+    ∀ o ∈ (build cand q).1, o.kind = .ownerUse →
+      ∃ b ∈ (build cand q).1, b.kind = .bind ∧ b.n = o.n ∧ b.scope ∈ o.path := by
+  intro o ho hk
+  have hsub : ∀ x ∈ (compileQuery cand q.filter).1, x ∈ (build cand q).1 := by
+    intro x hx; simp only [build, buildWith, List.mem_append]; exact Or.inl (Or.inl (Or.inl hx))
+  have hrootmem : occ (rootCtx cand) (nm cand cs0 rootKey).1 .root .bind ∈ (compileQuery cand q.filter).1 := by
+    rw [query_eq]; exact List.mem_cons_self
+  simp only [build, buildWith, List.mem_append] at ho
+  rcases ho with ((h | h) | h) | h
+  · obtain ⟨b, hb, hh⟩ := owners_bound cand q.filter o h hk
+    exact ⟨b, hsub b hb, hh⟩
+  · obtain ⟨hn, hp⟩ := attrStage_owner cand (rootCtx cand) _ _ o h hk
+    refine ⟨_, hsub _ hrootmem, rfl, hn.symm, ?_⟩
+    rw [hp]; simp [occ, rootCtx]
+  · exact absurd hk (outStage_no_owner cand _ _ _ _ _ o h)
+  · exact absurd hk (outStage_no_owner cand _ _ _ _ _ o h)
+
+/-- Keep the first binding of each (variable, scope) pair. -/
+def dedupAux : List (Name × Nat) → List Occ → List Occ
+  | _, [] => []
+  | seen, o :: os =>
+    if o.kind = .bind then
+      if (o.n, o.scope) ∈ seen then dedupAux seen os
+      else o :: dedupAux ((o.n, o.scope) :: seen) os
+    else o :: dedupAux seen os
+
+def dedup (out : List Occ) : List Occ := dedupAux [] out
+
+def bindPairs (out : List Occ) : List (Name × Nat) :=
+  (out.filter (fun o => o.kind == .bind)).map (fun o => (o.n, o.scope))
+
+theorem dedupAux_sublist : ∀ (seen : List (Name × Nat)) (l : List Occ), (dedupAux seen l).Sublist l
+  | _, [] => List.Sublist.slnil
+  | seen, o :: os => by
+    unfold dedupAux
+    split
+    · split
+      · exact (dedupAux_sublist seen os).cons o
+      · exact (dedupAux_sublist _ os).cons_cons o
+    · exact (dedupAux_sublist seen os).cons_cons o
+
+theorem dedupAux_keeps : ∀ (seen : List (Name × Nat)) (l : List Occ), ∀ o ∈ l,
+    (o.kind ≠ .bind → o ∈ dedupAux seen l) ∧
+    (o.kind = .bind → (o.n, o.scope) ∈ seen ∨
+      ∃ b ∈ dedupAux seen l, b.kind = .bind ∧ b.n = o.n ∧ b.scope = o.scope)
+  | _, [], o, ho => by simp at ho
+  | seen, x :: os, o, ho => by
+    simp only [List.mem_cons] at ho
+    unfold dedupAux
+    rcases ho with rfl | ho
+    · by_cases hk : o.kind = .bind
+      · rw [ite_eq_left hk]
+        refine ⟨fun h => absurd hk h, fun _ => ?_⟩
+        by_cases hs : (o.n, o.scope) ∈ seen
+        · exact Or.inl hs
+        · rw [ite_eq_right hs]
+          exact Or.inr ⟨o, List.mem_cons_self, hk, rfl, rfl⟩
+      · rw [ite_eq_right hk]
+        exact ⟨fun _ => List.mem_cons_self, fun h => absurd h hk⟩
+    · have ih := dedupAux_keeps seen os o ho
+      by_cases hk : x.kind = .bind
+      · rw [ite_eq_left hk]
+        by_cases hs : (x.n, x.scope) ∈ seen
+        · rw [ite_eq_left hs]; exact ih
+        · rw [ite_eq_right hs]
+          have ih2 := dedupAux_keeps ((x.n, x.scope) :: seen) os o ho
+          refine ⟨fun h => List.mem_cons_of_mem _ (ih2.1 h), fun h => ?_⟩
+          rcases ih2.2 h with hm | ⟨b, hb, hh⟩
+          · simp only [List.mem_cons] at hm
+            rcases hm with e | hm
+            · exact Or.inr ⟨x, List.mem_cons_self, hk, (Prod.mk.inj e).1.symm, (Prod.mk.inj e).2.symm⟩
+            · exact Or.inl hm
+          · exact Or.inr ⟨b, List.mem_cons_of_mem _ hb, hh⟩
+      · rw [ite_eq_right hk]
+        refine ⟨fun h => List.mem_cons_of_mem _ (ih.1 h), fun h => ?_⟩
+        rcases ih.2 h with hm | ⟨b, hb, hh⟩
+        · exact Or.inl hm
+        · exact Or.inr ⟨b, List.mem_cons_of_mem _ hb, hh⟩
+
+theorem dedupAux_unique : ∀ (seen : List (Name × Nat)) (l : List Occ),
+    (bindPairs (dedupAux seen l)).Nodup ∧ ∀ p ∈ bindPairs (dedupAux seen l), p ∉ seen
+  | _, [] => by simp [dedupAux, bindPairs]
+  | seen, o :: os => by
+    unfold dedupAux
+    by_cases hk : o.kind = .bind
+    · rw [ite_eq_left hk]
+      by_cases hs : (o.n, o.scope) ∈ seen
+      · rw [ite_eq_left hs]; exact dedupAux_unique seen os
+      · rw [ite_eq_right hs]
+        have ih := dedupAux_unique ((o.n, o.scope) :: seen) os
+        have hpairs : bindPairs (o :: dedupAux ((o.n, o.scope) :: seen) os) =
+            (o.n, o.scope) :: bindPairs (dedupAux ((o.n, o.scope) :: seen) os) := by
+          simp [bindPairs, hk]
+        rw [hpairs]
+        refine ⟨List.nodup_cons.mpr ⟨fun hm => ih.2 _ hm List.mem_cons_self, ih.1⟩, ?_⟩
+        intro p hp
+        simp only [List.mem_cons] at hp
+        rcases hp with rfl | hp
+        · exact hs
+        · exact fun hm => ih.2 p hp (List.mem_cons_of_mem _ hm)
+    · rw [ite_eq_right hk]
+      have ih := dedupAux_unique seen os
+      have hpairs : bindPairs (o :: dedupAux seen os) = bindPairs (dedupAux seen os) := by
+        simp [bindPairs, hk]
+      rw [hpairs]; exact ih
+
+/-- The compiler output of R5: `build`, with one binding per variable and scope. -/
+def emit (q : Spec) : List Occ := dedup (build cand q).1
+
+theorem emit_sub (q : Spec) : ∀ o ∈ emit cand q, o ∈ (build cand q).1 :=
+  fun _ ho => (dedupAux_sublist [] _).subset ho
+
+theorem emit_bind (q : Spec) (b : Occ) (hb : b ∈ (build cand q).1) (hk : b.kind = .bind) :
+    ∃ b' ∈ emit cand q, b'.kind = .bind ∧ b'.n = b.n ∧ b'.scope = b.scope := by
+  rcases (dedupAux_keeps [] _ b hb).2 hk with h | h
+  · simp at h
+  · exact h
+
+/-- R5: each variable has exactly one binding in each scope. -/
+theorem emit_one_binding (q : Spec) : (bindPairs (emit cand q)).Nodup :=
+  (dedupAux_unique [] _).1
+
+/-- Every use is still bound in its own scope. -/
+theorem emit_uses_bound (q : Spec) : UsesBound (emit cand q) := by
+  intro o ho hk
+  obtain ⟨b, hb, hbk, hn, hs⟩ := build_uses_bound cand q o (emit_sub cand q o ho) hk
+  obtain ⟨b', hb', hk', hn', hs'⟩ := emit_bind cand q b hb hbk
+  exact ⟨b', hb', hk', hn'.trans hn, hs'.trans hs⟩
+
+/-- Every owner use is still bound in the same or an enclosing scope. -/
+theorem emit_owners_bound (q : Spec) :
+    ∀ o ∈ emit cand q, o.kind = .ownerUse →
+      ∃ b ∈ emit cand q, b.kind = .bind ∧ b.n = o.n ∧ b.scope ∈ o.path := by
+  intro o ho hk
+  obtain ⟨b, hb, hbk, hn, hs⟩ := build_owners_bound cand q o (emit_sub cand q o ho) hk
+  obtain ⟨b', hb', hk', hn', hs'⟩ := emit_bind cand q b hb hbk
+  exact ⟨b', hb', hk', hn'.trans hn, hs' ▸ hs⟩
+
+theorem emit_same_name_same_family (q : Spec) :
+    ∀ o₁ ∈ emit cand q, ∀ o₂ ∈ emit cand q, o₁.n = o₂.n → o₁.fam = o₂.fam :=
+  fun o₁ h₁ o₂ h₂ he => build_same_name_same_family cand q o₁ (emit_sub cand q _ h₁) o₂ (emit_sub cand q _ h₂) he
+
+theorem emit_outputs_unique (q : Spec) :
+    (famBindNames .result (emit cand q)).Nodup ∧
+    (famBindNames .reduce (emit cand q)).Nodup ∧
+    (famBindNames .old (emit cand q)).Nodup := by
+  have hs := dedupAux_sublist [] (build cand q).1
+  have h := build_outputs_unique cand q
+  have sub : ∀ fam, (famBindNames fam (emit cand q)).Sublist (famBindNames fam (build cand q).1) :=
+    fun fam => (hs.filter _).map _
+  exact ⟨(sub _).nodup h.1, (sub _).nodup h.2.1, (sub _).nodup h.2.2⟩
+
+theorem emit_names_valid (q : Spec) (hf : WFTree q.filter) (hl : ∀ l ∈ q.sorts ++ q.reduces, Bytes l) :
+    ∀ o ∈ emit designCand q, ValidVar o.n :=
+  fun o ho => build_names_valid q hf hl o (emit_sub designCand q o ho)
+
+/-- R5 on the R2 example: `And(Gt("age", 1), Lt("age", 5))` binds `age` once. -/
+example :
+    (bindPairs (emit designCand ⟨.and (.cmp ageL) (.cmp ageL), [], [], 0⟩)).length = 2 := by
+  decide
+
+/-- Deduplication does not merge scopes: the R2 example still binds `age` in
+scope 0 and in the `not` body (scope 1). -/
+example :
+    ((emit designCand ⟨.and (.cmp ageL) (.not (.cmp ageL)), [], [], 0⟩).filter
+      (fun o => o.fam == .attr && o.kind == .bind)).map (fun o => (o.n, o.scope)) =
+    [(bytes "e__age", 0), (bytes "e_s1__age", 1)] := by
+  decide
+
 end Scopes
