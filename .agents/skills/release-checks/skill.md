@@ -103,7 +103,7 @@ Count tests with:
 go test ./ast/... ./given/... ./gotype/... ./tqlgen/... -v 2>&1 | grep -c "^--- PASS"
 ```
 
-Update the number in the comment at the top of the Commands section in `AGENTS.md`. `CLAUDE.md` is a symlink to `AGENTS.md`. If the comment is no longer at that location, grep for the prior count to find it.
+Update the number in the comment at the top of the Commands section in `AGENTS.md`. If the comment is no longer at that location, grep for the prior count to find it.
 
 ## 8. Verify upstream dependency versions
 
