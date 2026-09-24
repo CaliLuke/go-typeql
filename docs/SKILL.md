@@ -343,12 +343,16 @@ q.Filter(gotype.Or(
 q.Filter(gotype.Not(gotype.Eq("status", "inactive")))
 ```
 
-Variables introduced inside `or {}` / `not {}` blocks are renamed with scope suffixes
-(`$e_o1__name`, `$e_n1__x`) to satisfy TypeDB 3.x local-scoping rules. Suffix numbering
-is deterministic and restarts per built query, so the same logical query always produces
-byte-identical TypeQL. Caveat: a user-defined composite `Filter` that wraps an
-`OrFilter` internally falls back to a fresh scope and could collide with a sibling
-block binding the same attribute — compose with the built-in `And`/`Or`/`Not` instead.
+Each `or {}` branch and `not {}` body is a child scope: it binds its own variables, and
+only the queried instance (or an enclosing role player) crosses into it. The compiler
+allocates every variable, so filters never collide, and the same filter tree always gives
+the same TypeQL text. The `Filter` interface is sealed; compose the built-in filters.
+
+Computed filters take typed expressions:
+
+```go
+q.Filter(gotype.Computed(gotype.Mul(gotype.Attr("price"), gotype.Attr("quantity")), ">", 100))
+```
 
 ### Role Player Filters
 

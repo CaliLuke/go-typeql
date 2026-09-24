@@ -66,3 +66,19 @@ func TestVarLabelInjective(t *testing.T) {
 	}
 	walk(nil)
 }
+
+// The examples of formal/lean/Allocator.lean (rootSpelling).
+func TestRootSpelling(t *testing.T) {
+	for in, want := range map[string]string{
+		"author":       "author",
+		"first-author": "first_author",
+		"first_author": "0first_uauthor",
+		"a--b":         "0a_h_hb",
+		"e__age":       "0e_u_uage",
+		"a-":           "0a_h",
+	} {
+		if got := RootSpelling(in); got != want {
+			t.Errorf("RootSpelling(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

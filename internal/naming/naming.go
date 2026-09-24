@@ -56,24 +56,7 @@ func VarLabel(label string) string {
 	if isPlainLabel(label) {
 		return strings.ReplaceAll(label, "-", "_")
 	}
-	var b strings.Builder
-	b.Grow(len(label) + 8)
-	b.WriteByte('_')
-	for i := range len(label) {
-		switch c := label[i]; {
-		case c == '_':
-			b.WriteString("_u")
-		case c == '-':
-			b.WriteString("_h")
-		case isAlnum(c):
-			b.WriteByte(c)
-		default:
-			b.WriteString("_x")
-			b.WriteByte(hexDigits[c>>4])
-			b.WriteByte(hexDigits[c&0xf])
-		}
-	}
-	return b.String()
+	return "_" + escapeLabel(label)
 }
 
 const hexDigits = "0123456789abcdef"
@@ -92,4 +75,41 @@ func isPlainLabel(label string) bool {
 		}
 	}
 	return true
+}
+
+// RootSpelling returns the readable variable candidate for the player of a
+// role (issue #138, R8). It is VarLabel(role) when that result starts with a
+// letter or digit, contains no "__", and does not end with "_". Otherwise it
+// is "0" followed by the role with the VarLabel escapes ("_" → "_u",
+// "-" → "_h"), so the result is always a valid TypeQL variable name:
+// "author" → "author", "first-author" → "first_author",
+// "first_author" → "0first_uauthor". formal/lean/Allocator.lean proves these
+// properties (rootSpelling_valid, rootSpelling_injective).
+func RootSpelling(role string) string {
+	v := VarLabel(role)
+	if v != "" && isAlnum(v[0]) && !strings.Contains(v, "__") && !strings.HasSuffix(v, "_") {
+		return v
+	}
+	return "0" + escapeLabel(role)
+}
+
+// escapeLabel applies the VarLabel escapes to every byte of label.
+func escapeLabel(label string) string {
+	var b strings.Builder
+	b.Grow(len(label) + 8)
+	for i := range len(label) {
+		switch c := label[i]; {
+		case c == '_':
+			b.WriteString("_u")
+		case c == '-':
+			b.WriteString("_h")
+		case isAlnum(c):
+			b.WriteByte(c)
+		default:
+			b.WriteString("_x")
+			b.WriteByte(hexDigits[c>>4])
+			b.WriteByte(hexDigits[c&0xf])
+		}
+	}
+	return b.String()
 }

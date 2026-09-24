@@ -46,7 +46,7 @@ func TestQuery_Execute(t *testing.T) {
 
 func TestQuery_Exists_BoundsDistinctMatchesWithoutChangingPagination(t *testing.T) {
 	registerTestTypes(t)
-	readTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}}}
+	readTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(1)}}}}
 	mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{readTx}}, "test_db"))
 
 	exists, err := mgr.Query().Filter(Or(Eq("name", "Alice"), Eq("name", "Bob"))).Limit(2).Offset(50).Exists(context.Background())
@@ -57,7 +57,7 @@ func TestQuery_Exists_BoundsDistinctMatchesWithoutChangingPagination(t *testing.
 		t.Fatalf("queries = %d; want 1", len(readTx.queries))
 	}
 	query := readTx.queries[0]
-	assertContains(t, query, "select $e;\ndistinct;\nlimit 1;\nreduce $count = count($e);")
+	assertContains(t, query, "select $e;\ndistinct;\nlimit 1;\nreduce $result0 = count($e);")
 	if strings.Contains(query, "offset 50;") || strings.Contains(query, "limit 2;") {
 		t.Fatalf("Exists unexpectedly applied pagination: %s", query)
 	}
@@ -221,7 +221,7 @@ func TestQuery_Count(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"count": float64(42)}},
+			{{"result0": float64(42)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -235,7 +235,7 @@ func TestQuery_Count(t *testing.T) {
 	if count != 42 {
 		t.Errorf("expected 42, got %d", count)
 	}
-	assertContains(t, readTx.queries[0], "reduce $count = count($e);")
+	assertContains(t, readTx.queries[0], "reduce $result0 = count($e);")
 }
 
 func TestParseValueString(t *testing.T) {
@@ -276,7 +276,7 @@ func TestQuery_Count_WithFilter(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"count": float64(5)}},
+			{{"result0": float64(5)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -296,14 +296,14 @@ func TestQuery_Count_WithFilter(t *testing.T) {
 	q := readTx.queries[0]
 	assertContains(t, q, "$e has age $e__age;")
 	assertContains(t, q, "$e__age > 25;")
-	assertContains(t, q, "reduce $count = count($e);")
+	assertContains(t, q, "reduce $result0 = count($e);")
 }
 
 func TestQuery_Delete(t *testing.T) {
 	registerTestTypes(t)
 
 	writeTx := &mockTx{responses: [][]map[string]any{
-		{{"count": float64(1)}},
+		{{"result0": float64(1)}},
 		nil,
 	}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
@@ -324,7 +324,7 @@ func TestQuery_Delete(t *testing.T) {
 		t.Fatalf("expected count query and delete query, got %d", len(writeTx.queries))
 	}
 
-	assertContains(t, writeTx.queries[0], "reduce $count = count($e);")
+	assertContains(t, writeTx.queries[0], "reduce $result0 = count($e);")
 	q := writeTx.queries[1]
 	assertContains(t, q, "match")
 	assertContains(t, q, `"Alice"`)
@@ -336,7 +336,7 @@ func TestQuery_Sum(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"result": float64(150)}},
+			{{"result0": float64(150)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -350,7 +350,7 @@ func TestQuery_Sum(t *testing.T) {
 	if sum != 150 {
 		t.Errorf("expected 150, got %f", sum)
 	}
-	assertContains(t, readTx.queries[0], "reduce $result = sum($e__age);")
+	assertContains(t, readTx.queries[0], "reduce $result0 = sum($e__age);")
 }
 
 func TestQuery_Avg(t *testing.T) {
@@ -358,7 +358,7 @@ func TestQuery_Avg(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"result": float64(30.5)}},
+			{{"result0": float64(30.5)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -372,14 +372,14 @@ func TestQuery_Avg(t *testing.T) {
 	if avg != 30.5 {
 		t.Errorf("expected 30.5, got %f", avg)
 	}
-	assertContains(t, readTx.queries[0], "reduce $result = mean($e__age);")
+	assertContains(t, readTx.queries[0], "reduce $result0 = mean($e__age);")
 }
 
 func TestQuery_MinMax(t *testing.T) {
 	registerTestTypes(t)
 
-	minTx := &mockTx{responses: [][]map[string]any{{{"result": float64(20)}}}}
-	maxTx := &mockTx{responses: [][]map[string]any{{{"result": float64(50)}}}}
+	minTx := &mockTx{responses: [][]map[string]any{{{"result0": float64(20)}}}}
+	maxTx := &mockTx{responses: [][]map[string]any{{{"result0": float64(50)}}}}
 	conn := &mockConn{txs: []*mockTx{minTx, maxTx}}
 	db := NewDatabase(conn, "test_db")
 	mgr := MustNewManager[testPerson](db)
@@ -471,7 +471,7 @@ func TestQuery_Update_BulkMap(t *testing.T) {
 	registerTestTypes(t)
 
 	writeTx := &mockTx{responses: [][]map[string]any{
-		{{"count": float64(2)}},
+		{{"result0": float64(2)}},
 		nil,
 	}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
@@ -494,7 +494,7 @@ func TestQuery_Update_BulkMap(t *testing.T) {
 			len(writeTx.queries), strings.Join(writeTx.queries, "\n---\n"))
 	}
 
-	assertContains(t, writeTx.queries[0], "reduce $count = count($e);")
+	assertContains(t, writeTx.queries[0], "reduce $result0 = count($e);")
 	q := writeTx.queries[1]
 	assertContains(t, q, "delete")
 	assertContains(t, q, "try")
@@ -527,7 +527,7 @@ func TestQuery_Update_ReturnsMatchedCount(t *testing.T) {
 
 	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"count": float64(2)}},
+			{{"result0": float64(2)}},
 			nil,
 		},
 	}
@@ -547,7 +547,7 @@ func TestQuery_Update_ReturnsMatchedCount(t *testing.T) {
 	if len(writeTx.queries) != 2 {
 		t.Fatalf("expected count query and update query, got %d", len(writeTx.queries))
 	}
-	assertContains(t, writeTx.queries[0], "reduce $count = count($e);")
+	assertContains(t, writeTx.queries[0], "reduce $result0 = count($e);")
 }
 
 func TestQuery_Delete_ReturnsMatchedCount(t *testing.T) {
@@ -555,7 +555,7 @@ func TestQuery_Delete_ReturnsMatchedCount(t *testing.T) {
 
 	writeTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"count": float64(3)}},
+			{{"result0": float64(3)}},
 			nil,
 		},
 	}
@@ -573,7 +573,7 @@ func TestQuery_Delete_ReturnsMatchedCount(t *testing.T) {
 	if len(writeTx.queries) != 2 {
 		t.Fatalf("expected count query and delete query, got %d", len(writeTx.queries))
 	}
-	assertContains(t, writeTx.queries[0], "reduce $count = count($e);")
+	assertContains(t, writeTx.queries[0], "reduce $result0 = count($e);")
 	assertContains(t, writeTx.queries[1], "delete $e;")
 }
 
@@ -582,7 +582,7 @@ func TestQuery_Exists_True(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"count": float64(3)}},
+			{{"result0": float64(3)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -603,7 +603,7 @@ func TestQuery_Exists_False(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"count": float64(0)}},
+			{{"result0": float64(0)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -648,7 +648,7 @@ func TestQuery_Median(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"result": float64(30)}},
+			{{"result0": float64(30)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -662,7 +662,7 @@ func TestQuery_Median(t *testing.T) {
 	if val != 30 {
 		t.Errorf("expected 30, got %f", val)
 	}
-	assertContains(t, readTx.queries[0], "reduce $result = median($e__age);")
+	assertContains(t, readTx.queries[0], "reduce $result0 = median($e__age);")
 }
 
 func TestQuery_Std(t *testing.T) {
@@ -670,7 +670,7 @@ func TestQuery_Std(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"result": float64(5.5)}},
+			{{"result0": float64(5.5)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -684,7 +684,7 @@ func TestQuery_Std(t *testing.T) {
 	if val != 5.5 {
 		t.Errorf("expected 5.5, got %f", val)
 	}
-	assertContains(t, readTx.queries[0], "reduce $result = std($e__age);")
+	assertContains(t, readTx.queries[0], "reduce $result0 = std($e__age);")
 }
 
 func TestQuery_Variance(t *testing.T) {
@@ -692,7 +692,7 @@ func TestQuery_Variance(t *testing.T) {
 
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"result": float64(5.5)}},
+			{{"result0": float64(5.5)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}
@@ -707,7 +707,7 @@ func TestQuery_Variance(t *testing.T) {
 	if val != 30.25 {
 		t.Errorf("expected 30.25, got %f", val)
 	}
-	assertContains(t, readTx.queries[0], "reduce $result = std($e__age);")
+	assertContains(t, readTx.queries[0], "reduce $result0 = std($e__age);")
 }
 
 func TestQuery_Aggregate_Multi(t *testing.T) {
@@ -870,7 +870,7 @@ func TestFunctionQuery_ArgRaw(t *testing.T) {
 func TestFunctionQuery_Execute(t *testing.T) {
 	readTx := &mockTx{
 		responses: [][]map[string]any{
-			{{"result": float64(99)}},
+			{{"result0": float64(99)}},
 		},
 	}
 	conn := &mockConn{txs: []*mockTx{readTx}}

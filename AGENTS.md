@@ -107,7 +107,7 @@ The key decoupling: `gotype/session.go` defines `Conn` and `Tx` interfaces that 
 
 **Strategy pattern** in `gotype/strategy.go`: `entityStrategy` and `relationStrategy` implement `ModelStrategy` to build TypeQL strings for different type kinds.
 
-**Filter interface**: `ToPatterns(varName string) []string`. Variable names use double-underscore separator (`$e__attr_name`) to avoid TypeQL implicit equality. Hyphens sanitized to underscores.
+**Filter compiler**: `Filter` is sealed (`compile(*compileCtx) ([]ast.Pattern, error)`, `gotype/compile.go`). One `varAlloc` per query build keys every variable by meaning (family, owner, label, scope), so variables never collide; callers never write variable names. `Or` branches and `Not` bodies are child scopes. Issue #138 is the specification, and `formal/lean/Scopes.lean` models it: change the model first when a rule changes, and keep `gotype/compile_diff_test.go` passing (`cd formal/lean && lake build diffmodel`).
 
 **Manager[T]** is the generic CRUD entry point. Insert fetches IID in the same write transaction via key match. Update uses per-attribute delete-old/insert-new.
 

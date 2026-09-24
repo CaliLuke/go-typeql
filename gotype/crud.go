@@ -469,7 +469,7 @@ func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...Del
 }
 
 func (m *Manager[T]) deleteManyMatch(iids []string) string {
-	return fmt.Sprintf("match\n$e isa %s;\n%s\n", m.info.TypeName, IIDIn(iids...).ToPatterns("e")[0])
+	return fmt.Sprintf("match\n$e isa %s;\n%s\n", m.info.TypeName, iidInText("e", iids))
 }
 
 // UpdateMany updates multiple instances in a single transaction. Compatible

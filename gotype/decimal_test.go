@@ -284,7 +284,7 @@ func TestQueryBulkUpdate_DecimalLiteral(t *testing.T) {
 	ClearRegistry()
 	MustRegister[decimalProduct]()
 
-	writeTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}, nil}}
+	writeTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(1)}}, nil}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	mgr := MustNewManager[decimalProduct](NewDatabase(conn, "test_db"))
 

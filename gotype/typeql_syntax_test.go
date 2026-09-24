@@ -237,7 +237,7 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 	})
 
 	t.Run("count", func(t *testing.T) {
-		readTx := &mockTx{responses: [][]map[string]any{{{"count": int64(2)}}}}
+		readTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(2)}}}}
 		conn := &mockConn{txs: []*mockTx{readTx}}
 		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
@@ -253,11 +253,11 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 		assertTypeQL(t, "typed membership", membershipGivenQuery, "")
 		values, _ := membershipInputs(8)
 		assertTypeQL(t, "expanded membership", membershipExpandedQuery(values), "")
-		assertTypeQL(t, "iid membership", "match $e isa live-bench-person;\n"+strings.Join(IIDIn("0x1", "0x2").ToPatterns("e"), "\n")+"\nfetch { \"iid\": iid($e) };", "")
+		assertTypeQL(t, "iid membership", "match $e isa live-bench-person;\n"+strings.Join(compilePatterns(IIDIn("0x1", "0x2")), "\n")+"\nfetch { \"iid\": iid($e) };", "")
 	})
 
 	t.Run("exists with bounded distinct matches", func(t *testing.T) {
-		readTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}}}
+		readTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(1)}}}}
 		mgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{readTx}}, "test_db"))
 		if _, err := mgr.Query().Filter(Or(Eq("name", "Alice"), Eq("name", "Bob"))).Exists(context.Background()); err != nil {
 			t.Fatalf("exists failed: %v", err)
@@ -266,7 +266,7 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 	})
 
 	t.Run("filtered delete with distinct pipeline", func(t *testing.T) {
-		writeTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}, nil}}
+		writeTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(1)}}, nil}}
 		conn := &mockConn{txs: []*mockTx{writeTx}}
 		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
@@ -279,7 +279,7 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 	})
 
 	t.Run("bulk update", func(t *testing.T) {
-		writeTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}, nil}}
+		writeTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(1)}}, nil}}
 		conn := &mockConn{txs: []*mockTx{writeTx}}
 		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
@@ -394,8 +394,8 @@ func TestTypeQLSyntax_FilterEmissions(t *testing.T) {
 	t.Run("or of computed filters", func(t *testing.T) {
 		runFiltered(t, "or-computed query",
 			Or(
-				And(Gt("age", 0), Computed("doubled", ArithmeticExpr("e", "age", "*", "age"), ">", 100)),
-				And(Gt("age", 0), Computed("doubled", ArithmeticExpr("e", "age", "*", "age"), "<", 10)),
+				And(Gt("age", 0), Computed(Mul(Attr("age"), Attr("age")), ">", 100)),
+				And(Gt("age", 0), Computed(Mul(Attr("age"), Attr("age")), "<", 10)),
 			))
 	})
 

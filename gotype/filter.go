@@ -4,24 +4,25 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"strings"
+	"strconv"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/internal/naming"
+	"github.com/CaliLuke/go-typeql/v2/ast"
 )
 
-// Filter represents a query filter expression that generates TypeQL patterns.
-// Filters compose via And, Or, and Not to build complex match clauses.
+// Filter is a query filter. Filters compose via And, Or, and Not.
+//
+// The interface is sealed: only this package implements it. Query builders
+// compile filters through one variable allocator per query (see compile.go),
+// so variables never collide and callers never write variable names.
 //
 // All filter types in this package also implement Validate() error, which
-// reports construction problems (invalid attribute names, malformed IIDs,
-// non-scalar comparison values). Query execution validates filters before
-// building query text, so misuse surfaces as an error from Execute/Count/...
-// instead of injected or malformed TypeQL reaching the server.
+// reports construction problems (invalid attribute or role names, malformed
+// IIDs, non-scalar values, unknown operators). Query builders validate
+// filters before they compile them, so misuse surfaces as an error from
+// Execute/Count/... instead of malformed TypeQL reaching the server.
 type Filter interface {
-	// ToPatterns generates TypeQL pattern strings for this filter.
-	// varName is the entity/relation variable name (e.g., "e").
-	ToPatterns(varName string) []string
+	compile(c *compileCtx) ([]ast.Pattern, error)
 }
 
 // --- Identifier and filter validation ---
@@ -107,31 +108,11 @@ func (f *ComparisonFilter) Validate() error {
 	return nil
 }
 
-// ToPatterns generates TypeQL patterns for a comparison filter.
-// It panics on a non-scalar value when called directly; query execution
-// paths validate first (see Validate) and return an error instead.
-func (f *ComparisonFilter) ToPatterns(varName string) []string {
-	if !isScalarFilterValue(f.Value) {
-		panic(fmt.Sprintf("gotype: comparison filter %q requires a scalar value, got %T", f.Attr, f.Value))
-	}
-	attrVar := attrVarName(varName, f.Attr)
-	hasPattern := fmt.Sprintf("$%s has %s $%s", varName, f.Attr, attrVar)
-
-	if f.Op == "==" {
-		constraint := fmt.Sprintf("$%s == %s", attrVar, FormatValue(f.Value))
-		patterns := []string{hasPattern + ";", constraint + ";"}
-		if f.Negated {
-			return wrapNot(patterns)
-		}
-		return patterns
-	}
-
-	constraint := fmt.Sprintf("$%s %s %s", attrVar, f.Op, FormatValue(f.Value))
-	patterns := []string{hasPattern + ";", constraint + ";"}
+func (f *ComparisonFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
 	if f.Negated {
-		return wrapNot(patterns)
+		return compileNot(c, &ComparisonFilter{Attr: f.Attr, Op: f.Op, Value: f.Value})
 	}
-	return patterns
+	return attrConstraints(c, f.Attr, [2]string{f.Op, FormatValue(f.Value)}), nil
 }
 
 func isScalarFilterValue(value any) bool {
@@ -218,17 +199,11 @@ func (f *StringFilter) Validate() error {
 	return fmt.Errorf("gotype: invalid string filter operator %q (want \"contains\" or \"like\")", f.Op)
 }
 
-// ToPatterns generates TypeQL patterns for a string filter.
-func (f *StringFilter) ToPatterns(varName string) []string {
-	attrVar := attrVarName(varName, f.Attr)
-	hasPattern := fmt.Sprintf("$%s has %s $%s;", varName, f.Attr, attrVar)
-	constraint := fmt.Sprintf("$%s %s %s;", attrVar, f.Op, FormatValue(f.Pattern))
-
-	patterns := []string{hasPattern, constraint}
+func (f *StringFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
 	if f.Negated {
-		return wrapNot(patterns)
+		return compileNot(c, &StringFilter{Attr: f.Attr, Op: f.Op, Pattern: f.Pattern})
 	}
-	return patterns
+	return attrConstraints(c, f.Attr, [2]string{f.Op, FormatValue(f.Pattern)}), nil
 }
 
 // Contains creates a string contains filter. The pattern is a literal
@@ -267,32 +242,24 @@ func (f *InFilter) Validate() error {
 	return nil
 }
 
-// ToPatterns generates TypeQL patterns for a set membership filter.
-func (f *InFilter) ToPatterns(varName string) []string {
-	if len(f.Values) == 0 {
-		// Empty set: nothing matches. Use a contradiction pattern.
-		if f.Negated {
-			// NOT IN empty set → always true, no extra patterns needed.
-			return nil
-		}
-		// IN empty set → never true.
-		return []string{matchNothingPattern(varName)}
-	}
-
-	attrVar := attrVarName(varName, f.Attr)
-	hasPattern := fmt.Sprintf("$%s has %s $%s;", varName, f.Attr, attrVar)
-
-	var branches []string
-	for _, val := range f.Values {
-		branches = append(branches, fmt.Sprintf("{ $%s == %s; }", attrVar, FormatValue(val)))
-	}
-	orPattern := strings.Join(branches, " or ") + ";"
-	patterns := []string{hasPattern, orPattern}
-
+func (f *InFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
 	if f.Negated {
-		return wrapNot(patterns)
+		// NOT IN the empty set always holds; otherwise negate IN in a child scope.
+		if len(f.Values) == 0 {
+			return nil, nil
+		}
+		return compileNot(c, &InFilter{Attr: f.Attr, Values: f.Values})
 	}
-	return patterns
+	if len(f.Values) == 0 {
+		// IN the empty set never holds.
+		return []ast.Pattern{matchNothing(c.owner)}, nil
+	}
+	v, ps := c.attr(f.Attr)
+	alternatives := make([][]ast.Pattern, 0, len(f.Values))
+	for _, val := range f.Values {
+		alternatives = append(alternatives, []ast.Pattern{constraint(v, "==", FormatValue(val))})
+	}
+	return append(ps, ast.OrPattern{Alternatives: alternatives}), nil
 }
 
 // In creates a filter that checks if an attribute value is in a set.
@@ -330,18 +297,11 @@ func (f *RangeFilter) Validate() error {
 	return nil
 }
 
-// ToPatterns generates TypeQL patterns for a range filter.
-func (f *RangeFilter) ToPatterns(varName string) []string {
-	attrVar := attrVarName(varName, f.Attr)
-	hasPattern := fmt.Sprintf("$%s has %s $%s;", varName, f.Attr, attrVar)
-	minConstraint := fmt.Sprintf("$%s >= %s;", attrVar, FormatValue(f.Min))
-	maxConstraint := fmt.Sprintf("$%s <= %s;", attrVar, FormatValue(f.Max))
-
-	patterns := []string{hasPattern, minConstraint, maxConstraint}
+func (f *RangeFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
 	if f.Negated {
-		return wrapNot(patterns)
+		return compileNot(c, &RangeFilter{Attr: f.Attr, Min: f.Min, Max: f.Max})
 	}
-	return patterns
+	return attrConstraints(c, f.Attr, [2]string{">=", FormatValue(f.Min)}, [2]string{"<=", FormatValue(f.Max)}), nil
 }
 
 // Range creates a filter that checks if an attribute value is between min and max (inclusive).
@@ -363,17 +323,11 @@ func (f *RegexFilter) Validate() error {
 	return validateAttrName(f.Attr)
 }
 
-// ToPatterns generates TypeQL patterns for a regex filter.
-func (f *RegexFilter) ToPatterns(varName string) []string {
-	attrVar := attrVarName(varName, f.Attr)
-	hasPattern := fmt.Sprintf("$%s has %s $%s;", varName, f.Attr, attrVar)
-	constraint := fmt.Sprintf("$%s like %s;", attrVar, FormatValue(f.Pattern))
-
-	patterns := []string{hasPattern, constraint}
+func (f *RegexFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
 	if f.Negated {
-		return wrapNot(patterns)
+		return compileNot(c, &RegexFilter{Attr: f.Attr, Pattern: f.Pattern})
 	}
-	return patterns
+	return attrConstraints(c, f.Attr, [2]string{"like", FormatValue(f.Pattern)}), nil
 }
 
 // Regex creates a filter that matches an attribute value against a regex pattern.
@@ -405,15 +359,13 @@ func (f *ExistsFilter) Validate() error {
 	return validateAttrName(f.Attr)
 }
 
-// ToPatterns generates TypeQL patterns for an existence filter.
-func (f *ExistsFilter) ToPatterns(varName string) []string {
-	// The anonymous $_ keeps existence independent of every other filter on
-	// the same attribute and cannot collide with a generated variable.
-	pattern := fmt.Sprintf("$%s has %s $_;", varName, f.Attr)
+func (f *ExistsFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
 	if f.Negated {
-		return wrapNot([]string{pattern})
+		return compileNot(c, &ExistsFilter{Attr: f.Attr})
 	}
-	return []string{pattern}
+	// The anonymous $_ keeps existence independent of every other filter on
+	// the same attribute.
+	return []ast.Pattern{ast.HasPattern{ThingVar: "$" + c.owner, AttrType: f.Attr, AttrVar: "$_"}}, nil
 }
 
 // HasAttr creates an attribute existence filter.
@@ -438,9 +390,8 @@ func (f *IIDFilter) Validate() error {
 	return validateIID(f.IID)
 }
 
-// ToPatterns generates TypeQL patterns for an IID filter.
-func (f *IIDFilter) ToPatterns(varName string) []string {
-	return []string{fmt.Sprintf("$%s iid %s;", varName, f.IID)}
+func (f *IIDFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
+	return []ast.Pattern{ast.IidPattern{Variable: "$" + c.owner, IID: f.IID}}, nil
 }
 
 // ByIID creates a filter matching a specific internal ID.
@@ -465,20 +416,32 @@ func (f *IIDInFilter) Validate() error {
 	return nil
 }
 
-// ToPatterns generates TypeQL patterns for matching multiple IIDs.
-func (f *IIDInFilter) ToPatterns(varName string) []string {
-	if len(f.IIDs) == 0 {
-		// Empty set: nothing matches.
-		return []string{matchNothingPattern(varName)}
+func (f *IIDInFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
+	return []ast.Pattern{iidInPattern(c.owner, f.IIDs)}, nil
+}
+
+// iidInPattern matches varName against any of iids (nothing for no IIDs).
+func iidInPattern(varName string, iids []string) ast.Pattern {
+	switch len(iids) {
+	case 0:
+		return matchNothing(varName)
+	case 1:
+		return ast.IidPattern{Variable: "$" + varName, IID: iids[0]}
 	}
-	if len(f.IIDs) == 1 {
-		return []string{fmt.Sprintf("$%s iid %s;", varName, f.IIDs[0])}
+	alternatives := make([][]ast.Pattern, 0, len(iids))
+	for _, iid := range iids {
+		alternatives = append(alternatives, []ast.Pattern{ast.IidPattern{Variable: "$" + varName, IID: iid}})
 	}
-	var branches []string
-	for _, iid := range f.IIDs {
-		branches = append(branches, fmt.Sprintf("{ $%s iid %s; }", varName, iid))
+	return ast.OrPattern{Alternatives: alternatives}
+}
+
+// iidInText renders iidInPattern as one pattern line ending in ";".
+func iidInText(varName string, iids []string) string {
+	s, err := patternCompiler.Compile(iidInPattern(varName, iids))
+	if err != nil {
+		panic(fmt.Sprintf("gotype: iid pattern: %v", err)) // the patterns above always compile
 	}
-	return []string{strings.Join(branches, " or ") + ";"}
+	return s + ";"
 }
 
 // IIDIn creates a filter matching any of the specified internal IDs.
@@ -500,17 +463,8 @@ func (f *AndFilter) Validate() error {
 	return validateFilters(f.Filters...)
 }
 
-// ToPatterns generates TypeQL patterns by concatenating all child filter patterns.
-func (f *AndFilter) ToPatterns(varName string) []string {
-	return f.toPatternsScoped(varName, &varScope{})
-}
-
-func (f *AndFilter) toPatternsScoped(varName string, scope *varScope) []string {
-	var patterns []string
-	for _, child := range f.Filters {
-		patterns = append(patterns, filterPatterns(child, varName, scope)...)
-	}
-	return patterns
+func (f *AndFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
+	return compileFilters(c, f.Filters)
 }
 
 // And combines filters with logical AND.
@@ -537,74 +491,34 @@ func (f *OrFilter) Validate() error {
 	return validateFilters(f.Filters...)
 }
 
-// ToPatterns generates TypeQL or-branch patterns with scoped variables.
-// Branch suffixes (_o1, _o2, ...) are allocated from a fresh per-call scope,
-// so the output is deterministic. Query builders instead thread one shared
-// scope through all filters of a query via filterPatterns, so sibling or/not
-// blocks never reuse a suffix within the same query.
-func (f *OrFilter) ToPatterns(varName string) []string {
-	return f.toPatternsScoped(varName, &varScope{})
-}
-
-func (f *OrFilter) toPatternsScoped(varName string, scope *varScope) []string {
-	var alternatives []string
-	for _, child := range f.Filters {
-		// Each Or branch gets a unique scope to avoid locally-scoped
-		// variable collisions (TypeDB 3.x constraint).
-		scopedVarName := fmt.Sprintf("%s_o%d", varName, scope.next())
-		patterns := filterPatterns(child, varName, scope)
-		var scoped []string
-		for _, p := range patterns {
-			scoped = append(scoped, scopeLocalVars(p, varName, scopedVarName))
-		}
-		alternatives = append(alternatives, "{ "+strings.Join(scoped, " ")+" }")
+// compile gives each branch its own child scope (R2): sibling branches never
+// share a variable, and only the owner crosses into a branch.
+func (f *OrFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
+	if len(f.Filters) == 0 {
+		// An empty disjunction never holds.
+		return []ast.Pattern{matchNothing(c.owner)}, nil
 	}
-	return []string{strings.Join(alternatives, " or ") + ";"}
+	alternatives := make([][]ast.Pattern, 0, len(f.Filters))
+	for _, child := range f.Filters {
+		if child == nil {
+			return nil, fmt.Errorf("gotype: filter must not be nil")
+		}
+		ps, err := child.compile(c.child())
+		if err != nil {
+			return nil, err
+		}
+		if len(ps) == 0 {
+			// A branch without constraints always holds, so the disjunction does.
+			return nil, nil
+		}
+		alternatives = append(alternatives, ps)
+	}
+	return []ast.Pattern{ast.OrPattern{Alternatives: alternatives}}, nil
 }
 
 // Or combines filters with logical OR.
 func Or(filters ...Filter) Filter {
 	return &OrFilter{Filters: filters}
-}
-
-// varScope allocates unique suffixes for locally-scoped variables in or {}
-// and not {} blocks. TypeDB 3.x scopes variables locally to or/not branches,
-// but a name reused across two different blocks in the same conjunction
-// becomes a shared variable of the enclosing scope — so suffixes must be
-// unique across ALL or/not blocks of one query. Query builders create one
-// varScope per built query and thread it through filterPatterns; suffix
-// numbering therefore restarts at 1 for every query, making the generated
-// text deterministic.
-type varScope struct {
-	n int
-}
-
-// next returns the next unique suffix number within this scope.
-func (s *varScope) next() int {
-	s.n++
-	return s.n
-}
-
-// scopedPatternFilter is implemented by this package's composite filters so
-// that a single varScope can be threaded through an entire filter tree.
-//
-// Known limitation: a user-defined composite Filter that internally wraps an
-// OrFilter breaks the scope chain — filterPatterns falls back to its public
-// ToPatterns, so the inner Or numbers its branches from a fresh scope and
-// could collide with a sibling or/not block of the same query when both bind
-// the same attribute or variable name.
-type scopedPatternFilter interface {
-	toPatternsScoped(varName string, scope *varScope) []string
-}
-
-// filterPatterns generates the TypeQL patterns for f, threading scope through
-// filters that support per-query scoping (see scopedPatternFilter). External
-// Filter implementations fall back to f.ToPatterns(varName).
-func filterPatterns(f Filter, varName string, scope *varScope) []string {
-	if sf, ok := f.(scopedPatternFilter); ok {
-		return sf.toPatternsScoped(varName, scope)
-	}
-	return f.ToPatterns(varName)
 }
 
 // NotFilter negates a filter expression.
@@ -617,86 +531,24 @@ func (f *NotFilter) Validate() error {
 	return validateFilters(f.Inner)
 }
 
-// ToPatterns generates TypeQL patterns wrapped in a not {} block.
-// The scope suffix (_n1, _n2, ...) is allocated from a fresh per-call scope,
-// so the output is deterministic; query builders thread one shared scope
-// through all filters of a query via filterPatterns (see varScope).
-func (f *NotFilter) ToPatterns(varName string) []string {
-	return f.toPatternsScoped(varName, &varScope{})
+func (f *NotFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
+	return compileNot(c, f.Inner)
 }
 
-func (f *NotFilter) toPatternsScoped(varName string, scope *varScope) []string {
-	// Generate patterns with a scoped variable name to avoid collisions
-	// with locally-scoped variables in sibling or {} branches.
-	scopedVarName := fmt.Sprintf("%s_n%d", varName, scope.next())
-	inner := filterPatterns(f.Inner, varName, scope)
-	// Rename locally-introduced variables (e.g., $e__name → $e_n1__name)
-	// while keeping the entity variable ($e) unchanged.
-	var scoped []string
-	for _, p := range inner {
-		scoped = append(scoped, scopeLocalVars(p, varName, scopedVarName))
+// compileNot compiles inner in a child scope (R2) and negates it.
+func compileNot(c *compileCtx, inner Filter) ([]ast.Pattern, error) {
+	if inner == nil {
+		return nil, fmt.Errorf("gotype: filter must not be nil")
 	}
-	return wrapNot(scoped)
-}
-
-// scopeLocalVars renames every variable a child pattern introduces so that
-// sibling or {} / not {} branches never share locally-scoped variables
-// (TypeDB 3.x constraint). The entity variable ($varName) is kept unchanged;
-// attribute variables keep their suffix ($varName__X → $scopedName__X); any
-// other variable — role players from RolePlayer, computed variables from
-// Computed, nested scopes — is prefixed ($author → $scopedName_v_author). The
-// two forms differ right after scopedName, so a role and an attribute with
-// the same label never share a variable. The anonymous $_ is left as is.
-// Variables inside quoted string literals are left untouched.
-func scopeLocalVars(pattern, varName, scopedName string) string {
-	var b strings.Builder
-	b.Grow(len(pattern) + 16)
-	inString := false
-	for i := 0; i < len(pattern); i++ {
-		c := pattern[i]
-		if inString {
-			b.WriteByte(c)
-			if c == '\\' && i+1 < len(pattern) {
-				i++
-				b.WriteByte(pattern[i])
-			} else if c == '"' {
-				inString = false
-			}
-			continue
-		}
-		switch c {
-		case '"':
-			inString = true
-			b.WriteByte(c)
-		case '$':
-			j := i + 1
-			for j < len(pattern) && isVarNameChar(pattern[j]) {
-				j++
-			}
-			b.WriteString(scopedVarToken(pattern[i+1:j], varName, scopedName))
-			i = j - 1
-		default:
-			b.WriteByte(c)
-		}
+	ps, err := inner.compile(c.child())
+	if err != nil {
+		return nil, err
 	}
-	return b.String()
-}
-
-// isVarNameChar reports whether c can appear in a generated TypeQL variable
-// name (generated variables are sanitized to letters, digits, underscores).
-func isVarNameChar(c byte) bool {
-	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-}
-
-// scopedVarToken renames a single variable name per the scopeLocalVars rules.
-func scopedVarToken(name, varName, scopedName string) string {
-	if name == "" || name == "_" || name == varName { // $_ stays anonymous
-		return "$" + name
+	if len(ps) == 0 {
+		// The negation of a filter that always holds never holds.
+		return []ast.Pattern{matchNothing(c.owner)}, nil
 	}
-	if rest, ok := strings.CutPrefix(name, varName+"__"); ok {
-		return "$" + scopedName + "__" + rest
-	}
-	return "$" + scopedName + "_v_" + name
+	return []ast.Pattern{ast.NotPattern{Patterns: ps}}, nil
 }
 
 // Not negates a filter.
@@ -720,24 +572,18 @@ func (f *RolePlayerFilter) Validate() error {
 	return validateFilters(f.Inner)
 }
 
-// ToPatterns generates TypeQL patterns linking a role player and applying inner filters.
-func (f *RolePlayerFilter) ToPatterns(varName string) []string {
-	return f.toPatternsScoped(varName, &varScope{})
-}
-
-func (f *RolePlayerFilter) toPatternsScoped(varName string, scope *varScope) []string {
-	// Injective in the role label, like attribute variables: roles such as
-	// first-author and first_author must not share a player variable.
-	roleVar := naming.VarLabel(f.RoleName)
-	// Link the role player variable to the relation
-	linkPattern := fmt.Sprintf("$%s links (%s: $%s);", varName, f.RoleName, roleVar)
-
-	// Generate inner filter patterns using the role player variable
-	innerPatterns := filterPatterns(f.Inner, roleVar, scope)
-
-	patterns := []string{linkPattern}
-	patterns = append(patterns, innerPatterns...)
-	return patterns
+// compile links the player of the role (one player per role, owner, and
+// scope, R4) and compiles the inner filter with the player as owner.
+func (f *RolePlayerFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
+	p, ps := c.player(f.RoleName)
+	if f.Inner == nil {
+		return nil, fmt.Errorf("gotype: filter must not be nil")
+	}
+	inner, err := f.Inner.compile(&compileCtx{alloc: c.alloc, owner: p, ownerFam: famPlayer, scope: c.scope})
+	if err != nil {
+		return nil, err
+	}
+	return append(ps, inner...), nil
 }
 
 // RolePlayer creates a filter that matches relations where the given role player
@@ -748,102 +594,200 @@ func RolePlayer(roleName string, inner Filter) Filter {
 
 // --- Computed expression filters ---
 
-// ComputedFilter uses a let-assignment to compute a value and compare it.
-// Generates: let $computed = <expr>; $computed <op> <value>;
+// Expr is a typed expression for Computed filters. Build it with Attr,
+// Literal, the arithmetic operators, and the built-in functions. The
+// interface is sealed: expressions name attributes, not variables, and the
+// compiler allocates every variable.
+type Expr interface {
+	compileExpr(c *compileCtx) (any, []ast.Pattern, error)
+}
+
+type attrExpr struct{ label string }
+
+type literalExpr struct{ value any }
+
+type binaryExpr struct {
+	op   string
+	a, b Expr
+}
+
+type funcExpr struct {
+	fn   string
+	args []Expr
+}
+
+// Attr is the value of attribute label of the current owner: the queried
+// instance, or the role player inside a RolePlayer filter. The compiler binds
+// the attribute if no filter in the same scope binds it.
+func Attr(label string) Expr { return attrExpr{label: label} }
+
+// Literal is a scalar value (string, bool, number, or time.Time).
+func Literal(v any) Expr { return literalExpr{value: v} }
+
+// Add is a + b.
+func Add(a, b Expr) Expr { return binaryExpr{op: "+", a: a, b: b} }
+
+// Sub is a - b.
+func Sub(a, b Expr) Expr { return binaryExpr{op: "-", a: a, b: b} }
+
+// Mul is a * b.
+func Mul(a, b Expr) Expr { return binaryExpr{op: "*", a: a, b: b} }
+
+// Div is a / b.
+func Div(a, b Expr) Expr { return binaryExpr{op: "/", a: a, b: b} }
+
+// Mod is a % b.
+func Mod(a, b Expr) Expr { return binaryExpr{op: "%", a: a, b: b} }
+
+// Pow is a ^ b.
+func Pow(a, b Expr) Expr { return binaryExpr{op: "^", a: a, b: b} }
+
+// Abs is the TypeQL built-in abs(a).
+func Abs(a Expr) Expr { return funcExpr{fn: "abs", args: []Expr{a}} }
+
+// Ceil is the TypeQL built-in ceil(a).
+func Ceil(a Expr) Expr { return funcExpr{fn: "ceil", args: []Expr{a}} }
+
+// Floor is the TypeQL built-in floor(a).
+func Floor(a Expr) Expr { return funcExpr{fn: "floor", args: []Expr{a}} }
+
+// Round is the TypeQL built-in round(a).
+func Round(a Expr) Expr { return funcExpr{fn: "round", args: []Expr{a}} }
+
+// Length is the length of a string: the TypeQL built-in len(a).
+func Length(a Expr) Expr { return funcExpr{fn: "len", args: []Expr{a}} }
+
+// Max is the TypeQL built-in max(a, b).
+func Max(a, b Expr) Expr { return funcExpr{fn: "max", args: []Expr{a, b}} }
+
+// Min is the TypeQL built-in min(a, b).
+func Min(a, b Expr) Expr { return funcExpr{fn: "min", args: []Expr{a, b}} }
+
+func (e attrExpr) compileExpr(c *compileCtx) (any, []ast.Pattern, error) {
+	if err := validateAttrName(e.label); err != nil {
+		return nil, nil, err
+	}
+	v, ps := c.attr(e.label)
+	return "$" + v, ps, nil
+}
+
+func (e literalExpr) compileExpr(*compileCtx) (any, []ast.Pattern, error) {
+	if e.value == nil || !isScalarFilterValue(e.value) {
+		return nil, nil, fmt.Errorf("gotype: Literal requires a non-nil scalar value, got %T", e.value)
+	}
+	return ast.ValueFromGo(e.value), nil, nil
+}
+
+func (e binaryExpr) compileExpr(c *compileCtx) (any, []ast.Pattern, error) {
+	if e.a == nil || e.b == nil {
+		return nil, nil, fmt.Errorf("gotype: operator %s requires two expressions", e.op)
+	}
+	a, pa, err := e.a.compileExpr(c)
+	if err != nil {
+		return nil, nil, err
+	}
+	b, pb, err := e.b.compileExpr(c)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ast.ArithmeticValue{Left: a, Operator: e.op, Right: b}, append(pa, pb...), nil
+}
+
+func (e funcExpr) compileExpr(c *compileCtx) (any, []ast.Pattern, error) {
+	args := make([]any, 0, len(e.args))
+	var ps []ast.Pattern
+	for _, arg := range e.args {
+		if arg == nil {
+			return nil, nil, fmt.Errorf("gotype: %s requires an expression argument", e.fn)
+		}
+		v, p, err := arg.compileExpr(c)
+		if err != nil {
+			return nil, nil, err
+		}
+		args = append(args, v)
+		ps = append(ps, p...)
+	}
+	return ast.FunctionCallValue{Function: e.fn, Args: args}, ps, nil
+}
+
+// ComputedFilter computes an expression into its own variable and compares
+// it: let $<result> = <expr>; $<result> <op> <value>. The compiler allocates
+// the result variable (R6).
 type ComputedFilter struct {
-	// VarName is the name for the computed variable (without $).
-	VarName string
-	// Expr is the TypeQL expression to compute (e.g., "$e__price * $e__quantity").
-	Expr string
+	// Expr is the expression to compute.
+	Expr Expr
 	// Op is the comparison operator (==, !=, >, <, >=, <=).
 	Op string
 	// Value is the comparison target.
 	Value any
 }
 
-// Validate reports construction errors: an invalid computed variable name,
-// an unsupported operator, or a non-scalar comparison value. Expr is a raw
-// TypeQL expression and is intentionally not validated.
+// Validate reports construction errors: a nil expression, an unsupported
+// operator, or a non-scalar comparison value. Errors inside the expression
+// are reported when the query is compiled.
 func (f *ComputedFilter) Validate() error {
-	if !identifierPattern.MatchString(f.VarName) {
-		return fmt.Errorf("gotype: invalid computed variable name %q: must match [a-zA-Z][a-zA-Z0-9_-]*", f.VarName)
+	if f.Expr == nil {
+		return fmt.Errorf("gotype: computed filter requires an expression")
 	}
 	if err := validateComparisonOp(f.Op); err != nil {
 		return err
 	}
 	if !isScalarFilterValue(f.Value) {
-		return fmt.Errorf("gotype: computed filter %q requires a scalar value, got %T", f.VarName, f.Value)
+		return fmt.Errorf("gotype: computed filter requires a scalar value, got %T", f.Value)
 	}
 	return nil
 }
 
-// ToPatterns generates TypeQL let-assignment and comparison patterns.
-func (f *ComputedFilter) ToPatterns(varName string) []string {
-	computedVar := sanitizeVar(f.VarName)
-	return []string{
-		fmt.Sprintf("let $%s = %s;", computedVar, f.Expr),
-		fmt.Sprintf("$%s %s %s;", computedVar, f.Op, FormatValue(f.Value)),
+func (f *ComputedFilter) compile(c *compileCtx) ([]ast.Pattern, error) {
+	val, ps, err := f.Expr.compileExpr(c)
+	if err != nil {
+		return nil, err
 	}
+	var expr string
+	switch v := val.(type) {
+	case string:
+		expr = v
+	case ast.Value:
+		if expr, err = patternCompiler.Compile(v); err != nil {
+			return nil, err
+		}
+	}
+	r, _ := c.alloc.name(varKey{family: famComputed, label: strconv.Itoa(c.alloc.fresh()), scope: c.scope})
+	c.alloc.record(r, famComputed, c.scope, "bind")
+	c.alloc.record(r, famComputed, c.scope, "use")
+	return append(ps,
+		ast.RawPattern{Content: "let $" + r + " = " + expr},
+		constraint(r, f.Op, FormatValue(f.Value)),
+	), nil
 }
 
-// Computed creates a filter that assigns a computed expression to a variable
-// and compares it using the given operator.
-func Computed(varName, expr, op string, value any) Filter {
-	return &ComputedFilter{VarName: varName, Expr: expr, Op: op, Value: value}
-}
-
-// ArithmeticExpr builds a TypeQL arithmetic expression string from two attribute
-// references and an operator. Useful with Computed filter.
-func ArithmeticExpr(varName, leftAttr, op, rightAttr string) string {
-	left := attrVarName(varName, leftAttr)
-	right := attrVarName(varName, rightAttr)
-	return fmt.Sprintf("$%s %s $%s", left, op, right)
-}
-
-// AttrVar returns the TypeQL variable, with its "$", that filters bind for
-// attribute attr of the thing variable varName (the entity or relation is
-// "e"). Use it to reference attributes in hand-written Computed or
-// BuiltinFuncExpr expressions:
+// Computed creates a filter that computes expr and compares the result with
+// value using op:
 //
-//	gotype.BuiltinFuncExpr("abs", gotype.AttrVar("e", "balance_due"))
-//
-// Names are "$e__balance" for labels without underscores; labels with
-// underscores use an escaped form so that distinct labels never share a
-// variable, so build names with AttrVar rather than by hand.
-func AttrVar(varName, attr string) string {
-	return "$" + attrVarName(varName, attr)
-}
-
-// BuiltinFuncExpr builds a TypeQL function call expression string.
-// Useful with Computed filter.
-func BuiltinFuncExpr(funcName string, args ...string) string {
-	return fmt.Sprintf("%s(%s)", funcName, strings.Join(args, ", "))
+//	gotype.Computed(gotype.Mul(gotype.Attr("price"), gotype.Attr("quantity")), ">", 100)
+func Computed(expr Expr, op string, value any) Filter {
+	return &ComputedFilter{Expr: expr, Op: op, Value: value}
 }
 
 // --- Helpers ---
 
-// sanitizeVar replaces hyphens with underscores for TypeQL variable names.
-func sanitizeVar(name string) string {
-	return strings.ReplaceAll(name, "-", "_")
+// attrConstraints binds attribute attr of the owner (once per scope, R5) and
+// constrains its variable with each (operator, literal) pair.
+func attrConstraints(c *compileCtx, attr string, constraints ...[2]string) []ast.Pattern {
+	v, ps := c.attr(attr)
+	for _, oc := range constraints {
+		ps = append(ps, constraint(v, oc[0], oc[1]))
+	}
+	return ps
 }
 
-// attrVarName returns the variable name (without "$") bound to attribute attr
-// of varName. naming.VarLabel keeps it injective in attr: "first-name" and
-// "first_name" get distinct variables, which TypeQL would otherwise treat as
-// an implicit equality between the two attribute values.
-func attrVarName(varName, attr string) string {
-	return sanitizeVar(varName) + "__" + naming.VarLabel(attr)
+// constraint is the pattern "$v <op> <literal>".
+func constraint(v, op, literal string) ast.Pattern {
+	return ast.RawPattern{Content: "$" + v + " " + op + " " + literal}
 }
 
-// wrapNot wraps patterns in a TypeQL not {} block.
-func wrapNot(patterns []string) []string {
-	return []string{"not { " + strings.Join(patterns, " ") + " };"}
-}
-
-// matchNothingPattern returns a self-contradiction that matches no instance
-// ($x is always $x, so the negation never holds). Unlike a fabricated IID
-// literal, it is structurally valid TypeQL on every server version and
-// introduces no new variables (issue #85).
-func matchNothingPattern(varName string) string {
-	return fmt.Sprintf("not { $%s is $%s; };", varName, varName)
+// matchNothing is a self-contradiction that matches no instance ($x is always
+// $x, so the negation never holds). It introduces no variables (issue #85).
+func matchNothing(varName string) ast.Pattern {
+	return ast.RawPattern{Content: fmt.Sprintf("not { $%s is $%s; }", varName, varName)}
 }

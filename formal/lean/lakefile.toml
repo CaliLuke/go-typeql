@@ -4,3 +4,9 @@ defaultTargets = ["Formal"]
 [[lean_lib]]
 name = "Formal"
 roots = ["Naming", "Allocator", "Scopes"]
+
+# The differential test of issue #138 runs the model through this executable
+# (gotype/compile_diff_test.go). Build it with: lake build diffmodel
+[[lean_exe]]
+name = "diffmodel"
+root = "DiffMain"

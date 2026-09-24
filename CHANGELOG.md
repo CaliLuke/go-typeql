@@ -2,11 +2,21 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Sealed the `gotype.Filter` interface. Filters now compile through one variable allocator for each query (issue #138). Removed `Filter.ToPatterns`. Custom filter types are no longer supported. Compose the built-in filters instead.
+- Replaced the string form of `Computed(varName, expr, op, value)` with typed expressions: `Computed(expr, op, value)`, with `Attr`, `Literal`, `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow`, `Abs`, `Ceil`, `Floor`, `Round`, `Length`, `Max`, and `Min`. For example, write `Computed(Mul(Attr("price"), Attr("quantity")), ">", 100)`. Removed `ArithmeticExpr` and `BuiltinFuncExpr`.
+- Changed generated variable names. Variable names are now an internal detail. In `or` and `not` blocks, attribute variables use `_s<i>` (for example `$e_s1__name`), not `_o<i>` or `_n<i>`. Count and aggregate queries use `$result0` for their output, not `$count` or `$result`.
+
 ### Fixes
 
 - Fixed generated models that registered under the wrong TypeDB name. `tqlgen` now adds a `type:` tag when the Go name does not convert back to the schema label, for example `user_account`, `tag-2fa`, or `api-url`.
 - Fixed role players with a `type:` tag. Relations now use the player's tag, not the kebab-case Go name, for hydration, projections, schema generation, and migrations.
-- Fixed filters that used one TypeQL variable for two different attributes, for example `first-name` and `first_name`. TypeQL treated the variable as an equality between the two values, so the query failed or matched nothing. Attribute variables now use an injective encoding. Existence filters now bind the anonymous `$_`. Inside `or` and `not` blocks, role and attribute variables with the same label now get different names. `ast` `Set` calls on such attributes also get different variables, and so do `RolePlayer` filters on roles such as `first-author` and `first_author`. For labels with underscores, the variable name changes (`first_name` now binds `$e___first_uname`). If you write attribute variables by hand in `Computed` or `BuiltinFuncExpr` expressions, use the new `gotype.AttrVar` helper.
+- Fixed filters that used one TypeQL variable for two different meanings. TypeQL treats a shared variable as an equality, so these queries failed, matched nothing, or matched the wrong data. Examples: filters on `first-name` and `first_name`, a role named `e` (the relation had to play itself), and a `Computed` result that took the name of an attribute or of an aggregate output. Every variable now comes from the allocator, keyed by meaning.
+- Fixed `not` and `or` scopes. A filter inside `Not` or `Or` now binds its own variables, and so do `NotIn` and `NotHasAttr`. For example, `And(Gt("age", 1), Not(Eq("age", 5)))` means "no age value is 5". Before, a variable of an outer filter could reach into a `not` body, and a `Computed` variable of an outer scope was renamed inside a branch.
+- Fixed `Computed` filters that failed with "variable must be bound" unless another filter bound the same attribute. The compiler now binds each attribute of an expression.
+- Fixed `RolePlayer` filters on role labels with `_`. They emitted a variable that started with `_`, which is not valid TypeQL.
+- Fixed duplicate `has` bindings. A query now binds each attribute once in each scope. TypeDB evaluates each identical binding, so the duplicates made queries slower.
 - Fixed `GroupBy(...).Aggregate`. It emitted `group`, which is not valid TypeQL (the keyword is `groupby`), and it read the group value from the wrong result key.
 - Fixed `Variance`. It emitted a `variance` reducer, which TypeQL does not have. It now squares `std`, which gives the sample variance.
 - Fixed aggregate function names that went into the query without validation. `Aggregate` and `GroupBy` now reject unknown names, and `GroupBy` now maps `avg` to `mean`.

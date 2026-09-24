@@ -60,11 +60,11 @@ func (q *Query[T]) Offset(n int) *Query[T] {
 // Exists returns true if the query matches at least one instance in the database.
 // Like Count, it considers all matching instances regardless of Limit and Offset.
 func (q *Query[T]) Exists(ctx context.Context) (bool, error) {
-	query, err := q.buildCountQueryWithLimit(1)
+	query, key, err := q.buildCountQueryWithLimit(1)
 	if err != nil {
 		return false, fmt.Errorf("exists %s: build: %w", q.mgr.info.TypeName, err)
 	}
-	count, err := q.readCount(ctx, query, "exists")
+	count, err := q.readCount(ctx, query, key, "exists")
 	if err != nil {
 		return false, err
 	}
@@ -111,14 +111,15 @@ func (q *Query[T]) First(ctx context.Context) (*T, error) {
 // multi-valued attribute) are counted once. Limit and Offset do not affect
 // the count; only the query filters do.
 func (q *Query[T]) Count(ctx context.Context) (int64, error) {
-	query, err := q.buildCountQuery()
+	query, key, err := q.buildCountQuery()
 	if err != nil {
 		return 0, fmt.Errorf("count %s: build: %w", q.mgr.info.TypeName, err)
 	}
-	return q.readCount(ctx, query, "count")
+	return q.readCount(ctx, query, key, "count")
 }
 
-func (q *Query[T]) readCount(ctx context.Context, query, op string) (int64, error) {
+// readCount runs a count query and reads the count from the variable key.
+func (q *Query[T]) readCount(ctx context.Context, query, key, op string) (int64, error) {
 	results, err := q.mgr.readQuery(ctx, query)
 	if err != nil {
 		return 0, fmt.Errorf("%s %s: %w", op, q.mgr.info.TypeName, err)
@@ -126,7 +127,7 @@ func (q *Query[T]) readCount(ctx context.Context, query, op string) (int64, erro
 	if len(results) == 0 {
 		return 0, nil
 	}
-	count, err := countFromResult(results[0])
+	count, err := countFromKey(results[0], key)
 	if err != nil {
 		return 0, fmt.Errorf("%s %s: %w", op, q.mgr.info.TypeName, err)
 	}
@@ -137,7 +138,7 @@ func (q *Query[T]) readCount(ctx context.Context, query, op string) (int64, erro
 // returns how many there were. When the Manager is bound to a transaction,
 // the delete runs inside it and is committed by the transaction owner.
 func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
-	countQuery, err := q.buildCountQuery()
+	countQuery, countKey, err := q.buildCountQuery()
 	if err != nil {
 		return 0, fmt.Errorf("delete %s: build count: %w", q.mgr.info.TypeName, err)
 	}
@@ -146,7 +147,7 @@ func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("delete %s: build delete: %w", q.mgr.info.TypeName, err)
 	}
 
-	return q.countThenWrite(ctx, "delete", countQuery, deleteQuery)
+	return q.countThenWrite(ctx, "delete", countQuery, countKey, deleteQuery)
 }
 
 // DeleteNoCount removes matching instances without querying the affected-row
@@ -173,7 +174,7 @@ func (q *Query[T]) writeWithoutCount(ctx context.Context, op, query string) erro
 
 // countThenWrite executes a distinct-count query followed by a write query
 // inside a (possibly bound) write transaction and returns the count.
-func (q *Query[T]) countThenWrite(ctx context.Context, op, countQuery, writeQuery string) (int64, error) {
+func (q *Query[T]) countThenWrite(ctx context.Context, op, countQuery, countKey, writeQuery string) (int64, error) {
 	var count int64
 	err := q.mgr.withWriteTx(ctx, op, q.mgr.writeTx, func(tx Tx) error {
 		countResults, err := tx.QueryWithContext(ctx, countQuery)
@@ -181,7 +182,7 @@ func (q *Query[T]) countThenWrite(ctx context.Context, op, countQuery, writeQuer
 			return fmt.Errorf("%s %s: count: %w", op, q.mgr.info.TypeName, err)
 		}
 		if len(countResults) > 0 {
-			if count, err = countFromResult(countResults[0]); err != nil {
+			if count, err = countFromKey(countResults[0], countKey); err != nil {
 				return fmt.Errorf("%s %s: count: %w", op, q.mgr.info.TypeName, err)
 			}
 		}
@@ -199,32 +200,16 @@ func (q *Query[T]) countThenWrite(ctx context.Context, op, countQuery, writeQuer
 
 // --- Query building ---
 
-func (q *Query[T]) buildMatchClause() (string, error) {
+// newMatch compiles the query filters through one variable allocator
+// (issue #138). reserved names are names that the caller writes itself.
+func (q *Query[T]) newMatch(reserved ...string) (*matchBuilder, error) {
 	// Surface filter construction errors (invalid attribute names, malformed
 	// IIDs, non-scalar comparison values) as build errors instead of injected
 	// query text or execution-time panics (issues #45, #50).
 	if err := validateFilters(q.filters...); err != nil {
-		return "", err
+		return nil, err
 	}
-	varName := "e"
-	var b strings.Builder
-	b.WriteString("match\n$")
-	b.WriteString(varName)
-	b.WriteString(" isa ")
-	b.WriteString(q.mgr.info.TypeName)
-	b.WriteString(";")
-
-	// One varScope per built query: sibling or/not blocks — including ones in
-	// separate top-level filters — get unique, deterministic variable suffixes.
-	scope := &varScope{}
-	for _, f := range q.filters {
-		for _, pattern := range filterPatterns(f, varName, scope) {
-			b.WriteByte('\n')
-			b.WriteString(pattern)
-		}
-	}
-
-	return b.String(), nil
+	return newMatchBuilder(q.mgr.info.TypeName, q.filters, reserved...)
 }
 
 func (q *Query[T]) buildQuery() (string, error) {
@@ -235,12 +220,29 @@ func (q *Query[T]) buildQuery() (string, error) {
 	return q.buildQueryWithFetch("", fetch)
 }
 
-func (q *Query[T]) buildQueryWithFetch(matchAdditions, fetch string) (string, error) {
-	match, err := q.buildMatchClause()
+// buildQueryWithFetch builds the fetch query. matchAdditions are match
+// patterns that the caller writes itself; reserved lists their variables.
+func (q *Query[T]) buildQueryWithFetch(matchAdditions, fetch string, reserved ...string) (string, error) {
+	m, err := q.newMatch(reserved...)
 	if err != nil {
 		return "", err
 	}
 
+	// Sort variables are query-scope attribute variables: a sort on a
+	// filtered attribute shares the filter's variable (R3, R5).
+	sortVars := make([]string, len(q.orderBy))
+	for i, o := range q.orderBy {
+		// Order-by attribute names are interpolated raw (issue #45).
+		if err := validateAttrName(o.Attr); err != nil {
+			return "", err
+		}
+		sortVars[i] = m.attr(o.Attr)
+	}
+
+	match, err := m.match()
+	if err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	b.WriteString(match)
 	if matchAdditions != "" {
@@ -248,29 +250,14 @@ func (q *Query[T]) buildQueryWithFetch(matchAdditions, fetch string) (string, er
 		b.WriteString(matchAdditions)
 	}
 
-	// Sort
 	if len(q.orderBy) > 0 {
-		for _, o := range q.orderBy {
-			// Order-by attribute names are interpolated raw (issue #45).
-			if err := validateAttrName(o.Attr); err != nil {
-				return "", err
-			}
-			attrVar := attrVarName("e", o.Attr)
-			// Ensure we have a has pattern for the sort attribute
-			b.WriteString("\n$e has ")
-			b.WriteString(o.Attr)
-			b.WriteString(" $")
-			b.WriteString(attrVar)
-			b.WriteString(";")
-		}
-
 		b.WriteString("\nsort ")
 		for i, o := range q.orderBy {
 			if i > 0 {
 				b.WriteString(", ")
 			}
 			b.WriteByte('$')
-			b.WriteString(attrVarName("e", o.Attr))
+			b.WriteString(sortVars[i])
 			if o.Desc {
 				b.WriteString(" desc")
 			} else {
@@ -297,44 +284,50 @@ func (q *Query[T]) buildQueryWithFetch(matchAdditions, fetch string) (string, er
 	return b.String(), nil
 }
 
-func (q *Query[T]) buildCountQuery() (string, error) {
+// buildCountQuery returns the count query and the variable of its result.
+func (q *Query[T]) buildCountQuery() (string, string, error) {
 	return q.buildCountQueryWithLimit(0)
 }
 
-func (q *Query[T]) buildCountQueryWithLimit(maxMatches int) (string, error) {
-	match, err := q.buildMatchClause()
+func (q *Query[T]) buildCountQueryWithLimit(maxMatches int) (string, string, error) {
+	m, err := q.newMatch()
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	out := m.output(famReduce, 0)
+	match, err := m.match()
+	if err != nil {
+		return "", "", err
 	}
 	var b strings.Builder
 	b.WriteString(match)
 	// Filters bind attribute variables, so an instance can appear in several
 	// answer rows (one per matching attribute value). Deduplicate on the
 	// instance variable before counting so the result is a distinct-entity count.
-	b.WriteString("\nselect $e;")
-	b.WriteString("\ndistinct;")
+	b.WriteString("\nselect $")
+	b.WriteString(m.root())
+	b.WriteString(";\ndistinct;")
 	if maxMatches > 0 {
 		b.WriteString("\nlimit ")
 		b.WriteString(strconv.Itoa(maxMatches))
 		b.WriteString(";")
 	}
-	b.WriteString("\nreduce $count = count($e);")
-	return b.String(), nil
+	fmt.Fprintf(&b, "\nreduce $%s = count($%s);", out, m.root())
+	return b.String(), out, nil
 }
 
 func (q *Query[T]) buildDeleteQuery() (string, error) {
-	match, err := q.buildMatchClause()
+	m, err := q.newMatch()
 	if err != nil {
 		return "", err
 	}
-	var b strings.Builder
-	b.WriteString(match)
+	match, err := m.match()
+	if err != nil {
+		return "", err
+	}
 	// Deduplicate answer rows (see buildCountQuery) so each matching
 	// instance is deleted exactly once.
-	b.WriteString("\nselect $e;")
-	b.WriteString("\ndistinct;")
-	b.WriteString("\ndelete $e;")
-	return b.String(), nil
+	return match + "\nselect $" + m.root() + ";\ndistinct;\ndelete $" + m.root() + ";", nil
 }
 
 // UpdateWith fetches all matching instances, applies fn to each in fetch order,
@@ -392,11 +385,11 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 	if err != nil {
 		return 0, fmt.Errorf("bulk_update %s: build: %w", q.mgr.info.TypeName, err)
 	}
-	countQuery, err := q.buildCountQuery()
+	countQuery, countKey, err := q.buildCountQuery()
 	if err != nil {
 		return 0, fmt.Errorf("bulk_update %s: build count: %w", q.mgr.info.TypeName, err)
 	}
-	return q.countThenWrite(ctx, "bulk_update", countQuery, query)
+	return q.countThenWrite(ctx, "bulk_update", countQuery, countKey, query)
 }
 
 // UpdateNoCount applies the same bulk attribute mutation as Update but does
@@ -413,10 +406,11 @@ func (q *Query[T]) UpdateNoCount(ctx context.Context, updates map[string]any) er
 }
 
 func (q *Query[T]) buildBulkUpdateQuery(updates map[string]any) (string, error) {
-	match, err := q.buildMatchClause()
+	m, err := q.newMatch()
 	if err != nil {
 		return "", err
 	}
+	root := m.root()
 
 	// Build a single match-delete-insert query for all attributes.
 	// Attribute names are sorted so identical updates always produce
@@ -429,17 +423,22 @@ func (q *Query[T]) buildBulkUpdateQuery(updates map[string]any) (string, error) 
 		if err := validateAttrName(attr); err != nil {
 			return "", err
 		}
-		tryMatches = append(tryMatches, fmt.Sprintf("try { $e has %s $old%d; };", attr, i))
-		tryDeletes = append(tryDeletes, fmt.Sprintf("try { $old%d of $e; };", i))
+		old := m.output(famOld, i)
+		tryMatches = append(tryMatches, fmt.Sprintf("try { $%s has %s $%s; };", root, attr, old))
+		tryDeletes = append(tryDeletes, fmt.Sprintf("try { $%s of $%s; };", old, root))
 		lit, err := q.mgr.formatAttrValue(attr, updates[attr])
 		if err != nil {
 			return "", err
 		}
 		insHas = append(insHas, fmt.Sprintf("has %s %s", attr, lit))
 	}
+	match, err := m.match()
+	if err != nil {
+		return "", err
+	}
 	return match + "\n" + strings.Join(tryMatches, "\n") +
 		"\ndelete\n" + strings.Join(tryDeletes, "\n") +
-		fmt.Sprintf("\ninsert $e %s;", strings.Join(insHas, ", ")), nil
+		fmt.Sprintf("\ninsert $%s %s;", root, strings.Join(insHas, ", ")), nil
 }
 
 // --- Aggregate queries ---
@@ -499,19 +498,17 @@ func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%s %s.%s: %w", aq.fn, aq.mgr.info.TypeName, aq.attr, err)
 	}
-	varName := "e"
-	var patterns []string
-	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, aq.mgr.info.TypeName))
-	scope := &varScope{} // one scope per built query (see buildMatchClause)
-	for _, f := range aq.filters {
-		patterns = append(patterns, filterPatterns(f, varName, scope)...)
+	m, err := newMatchBuilder(aq.mgr.info.TypeName, aq.filters)
+	if err != nil {
+		return 0, fmt.Errorf("%s %s.%s: %w", aq.fn, aq.mgr.info.TypeName, aq.attr, err)
 	}
-
-	attrVar := attrVarName(varName, aq.attr)
-	patterns = append(patterns, fmt.Sprintf("$%s has %s $%s;", varName, aq.attr, attrVar))
-
-	match := "match\n" + strings.Join(patterns, "\n")
-	query := match + fmt.Sprintf("\nreduce $result = %s($%s);", red.typeql, attrVar)
+	attrVar := m.attr(aq.attr)
+	out := m.output(famReduce, 0)
+	match, err := m.match()
+	if err != nil {
+		return 0, fmt.Errorf("%s %s.%s: %w", aq.fn, aq.mgr.info.TypeName, aq.attr, err)
+	}
+	query := match + fmt.Sprintf("\nreduce $%s = %s($%s);", out, red.typeql, attrVar)
 
 	results, err := aq.mgr.readQuery(ctx, query)
 	if err != nil {
@@ -520,7 +517,7 @@ func (aq *AggregateQuery[T]) Execute(ctx context.Context) (float64, error) {
 	if len(results) == 0 {
 		return 0, nil
 	}
-	val, err := floatFromResult(results[0], "result")
+	val, err := floatFromResult(results[0], out)
 	if err != nil {
 		return 0, fmt.Errorf("%s %s.%s: %w", aq.fn, aq.mgr.info.TypeName, aq.attr, err)
 	}
@@ -587,32 +584,26 @@ func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[s
 		reducers[i] = red
 	}
 
-	// Build match patterns
-	varName := "e"
-	var patterns []string
-	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, q.mgr.info.TypeName))
-	scope := &varScope{} // one scope per built query (see buildMatchClause)
-	for _, f := range q.filters {
-		patterns = append(patterns, filterPatterns(f, varName, scope)...)
+	m, err := q.newMatch()
+	if err != nil {
+		return nil, fmt.Errorf("aggregate %s: %w", q.mgr.info.TypeName, err)
 	}
-
-	// Build reduce assignments - one per spec
-	var assignments []string
+	// One reduce assignment per spec. Attribute variables are query-scope
+	// variables (shared with filters, R3); outputs are reduce outputs (R8).
+	assignments := make([]string, len(specs))
+	outs := make([]string, len(specs))
 	resultKeys := make([]string, len(specs))
 	for i, spec := range specs {
-		attrVar := attrVarName(varName, spec.Attr)
-		resultVar := fmt.Sprintf("result%d", i)
+		attrVar := m.attr(spec.Attr)
+		outs[i] = m.output(famReduce, i)
 		resultKeys[i] = spec.Fn + "_" + spec.Attr
-
-		patterns = append(patterns, fmt.Sprintf("$%s has %s $%s;", varName, spec.Attr, attrVar))
-
-		assignments = append(assignments, fmt.Sprintf("$%s = %s($%s)", resultVar, reducers[i].typeql, attrVar))
+		assignments[i] = fmt.Sprintf("$%s = %s($%s)", outs[i], reducers[i].typeql, attrVar)
 	}
-
-	// Build complete query: match ... reduce ...
-	matchClause := "match\n" + strings.Join(patterns, "\n")
-	reduceClause := "reduce " + strings.Join(assignments, ", ") + ";"
-	query := matchClause + "\n" + reduceClause
+	match, err := m.match()
+	if err != nil {
+		return nil, fmt.Errorf("aggregate %s: %w", q.mgr.info.TypeName, err)
+	}
+	query := match + "\nreduce " + strings.Join(assignments, ", ") + ";"
 
 	// Execute query
 	rawResults, err := q.mgr.readQuery(ctx, query)
@@ -627,8 +618,8 @@ func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[s
 	flat := unwrapResult(rawResults[0])
 	results := make(map[string]float64, len(specs))
 	for i, key := range resultKeys {
-		resultVar := fmt.Sprintf("result%d", i)
-		val, err := floatFromResult(flat, resultVar)
+		// Read each output by its allocated name, which can carry a suffix.
+		val, err := floatFromResult(flat, outs[i])
 		if err != nil {
 			return nil, fmt.Errorf("aggregate %s (%s): %w", q.mgr.info.TypeName, key, err)
 		}
@@ -676,41 +667,24 @@ func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec
 		reducers[i] = red
 	}
 
-	varName := "e"
-	var patterns []string
-	patterns = append(patterns, fmt.Sprintf("$%s isa %s;", varName, gq.mgr.info.TypeName))
-	scope := &varScope{} // one scope per built query (see buildMatchClause)
-	for _, f := range gq.filters {
-		patterns = append(patterns, filterPatterns(f, varName, scope)...)
+	m, err := newMatchBuilder(gq.mgr.info.TypeName, gq.filters)
+	if err != nil {
+		return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
 	}
-
-	// Add has clause for the group-by attribute
-	groupVar := attrVarName(varName, gq.groupBy)
-	patterns = append(patterns, fmt.Sprintf("$%s has %s $%s;", varName, gq.groupBy, groupVar))
-
-	// Add has clauses for each aggregate attribute (if not already the group-by attr)
-	attrVars := make(map[string]string)
-	for _, spec := range specs {
-		if spec.Attr == gq.groupBy {
-			attrVars[spec.Attr] = groupVar
-			continue
-		}
-		if _, exists := attrVars[spec.Attr]; !exists {
-			av := attrVarName(varName, spec.Attr)
-			patterns = append(patterns, fmt.Sprintf("$%s has %s $%s;", varName, spec.Attr, av))
-			attrVars[spec.Attr] = av
-		}
-	}
-
-	match := "match\n" + strings.Join(patterns, "\n")
-
-	// Build reduce clauses. Result variables are positional, like Aggregate,
-	// so they cannot collide with each other or with attribute variables.
-	var reduces []string
+	// The group variable and the aggregated attributes are query-scope
+	// attribute variables (shared with filters and with each other, R3).
+	groupVar := m.attr(gq.groupBy)
+	reduces := make([]string, len(specs))
+	outs := make([]string, len(specs))
 	for i, spec := range specs {
-		reduces = append(reduces, fmt.Sprintf("$result%d = %s($%s)", i, reducers[i].typeql, attrVars[spec.Attr]))
+		av := m.attr(spec.Attr)
+		outs[i] = m.output(famReduce, i)
+		reduces[i] = fmt.Sprintf("$%s = %s($%s)", outs[i], reducers[i].typeql, av)
 	}
-
+	match, err := m.match()
+	if err != nil {
+		return nil, fmt.Errorf("groupby %s: %w", gq.mgr.info.TypeName, err)
+	}
 	query := match + fmt.Sprintf("\nreduce %s groupby $%s;", strings.Join(reduces, ", "), groupVar)
 
 	rawResults, err := gq.mgr.readQuery(ctx, query)
@@ -730,7 +704,7 @@ func (gq *GroupByQuery[T]) Aggregate(ctx context.Context, specs ...AggregateSpec
 		aggs := make(map[string]float64)
 		for i, spec := range specs {
 			key := spec.Fn + "_" + spec.Attr
-			val, err := floatFromResult(flat, fmt.Sprintf("result%d", i))
+			val, err := floatFromResult(flat, outs[i])
 			if err != nil {
 				return nil, fmt.Errorf("groupby %s (%s): %w", gq.mgr.info.TypeName, key, err)
 			}
@@ -759,12 +733,16 @@ func extractCount(result map[string]any) int64 {
 }
 
 // countFromResult reads the "count" key of a reduce result row. A missing key
-// or an unrecognized value shape is an error rather than a silent zero, so
-// driver/protocol drift cannot masquerade as an empty result.
+// or an unrecognized value shape is an error rather than a silent zero.
 func countFromResult(result map[string]any) (int64, error) {
-	raw, ok := result["count"]
+	return countFromKey(result, "count")
+}
+
+// countFromKey reads the count in variable key of a reduce result row.
+func countFromKey(result map[string]any, key string) (int64, error) {
+	raw, ok := result[key]
 	if !ok {
-		return 0, fmt.Errorf("count result has no %q key (keys: %s)", "count", strings.Join(slices.Sorted(maps.Keys(result)), ", "))
+		return 0, fmt.Errorf("count result has no %q key (keys: %s)", key, strings.Join(slices.Sorted(maps.Keys(result)), ", "))
 	}
 	return toInt64(unwrapValue(raw))
 }

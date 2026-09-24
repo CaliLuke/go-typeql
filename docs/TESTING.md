@@ -161,6 +161,22 @@ When adding a new query generator or changing emitted TypeQL, add the output to 
 syntax battery — a `typeql-check` failure at unit-test time beats a `[TQL03]` server error at
 integration time.
 
+## Filter Compiler Tests
+
+The filter compiler and its variable allocator (issue #138) have three kinds of tests in `gotype`:
+
+- `compile_test.go` has one test for each fault and rule of the issue.
+- `compile_property_test.go` compiles random filter trees. It checks that each variable is a valid TypeQL variable, that each variable is bound once, that the text is deterministic, and that `typeql-check` accepts the query.
+- `compile_diff_test.go` compares the Go compiler with the Lean model of the design (`formal/lean/Scopes.lean`). It compares which occurrences share a variable, the scope of each variable, and the bindings, after it normalizes both outputs. The variable names can differ.
+
+The differential test needs the model binary. It is a soft dependency: when the binary is not built, the test skips. To build it, install Lean with [elan](https://github.com/leanprover/elan), then run:
+
+```bash
+cd formal/lean && lake build diffmodel
+```
+
+When you change the compiler, run the differential test. If you change a rule of the design, change the Lean model first, then the Go code.
+
 ## Test Fixtures
 
 Common test types used across the test suite:

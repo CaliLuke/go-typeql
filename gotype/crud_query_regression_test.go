@@ -188,10 +188,10 @@ func boundTxFixture(t *testing.T, responses [][]map[string]any) (*Manager[testPe
 func TestQuery_BoundTx_ReadPathsUseBoundTx(t *testing.T) {
 	registerTestTypes(t)
 	mgr, tx, conn := boundTxFixture(t, [][]map[string]any{
-		nil,                       // Execute
-		{{"count": int64(1)}},     // Count
-		{{"result": float64(10)}}, // Sum
-		{{"result0": float64(5)}}, // Aggregate
+		nil,                        // Execute
+		{{"result0": int64(1)}},    // Count
+		{{"result0": float64(10)}}, // Sum
+		{{"result0": float64(5)}},  // Aggregate
 		{{"e__name": "x", "result0": float64(3)}}, // GroupBy
 	})
 	ctx := context.Background()
@@ -223,10 +223,10 @@ func TestQuery_BoundTx_ReadPathsUseBoundTx(t *testing.T) {
 func TestQuery_BoundTx_WritePathsUseBoundTxWithoutCommit(t *testing.T) {
 	registerTestTypes(t)
 	mgr, tx, conn := boundTxFixture(t, [][]map[string]any{
-		{{"count": int64(1)}}, // Delete: count
-		nil,                   // Delete: delete
-		{{"count": int64(1)}}, // Update: count
-		nil,                   // Update: batched update
+		{{"result0": int64(1)}}, // Delete: count
+		nil,                     // Delete: delete
+		{{"result0": int64(1)}}, // Update: count
+		nil,                     // Update: batched update
 		{{"_iid": "0x1", "name": "Alice", "email": "a@example.com"}}, // UpdateWith: fetch
 		nil, // UpdateWith: per-instance update
 	})
@@ -257,26 +257,26 @@ func TestQuery_BoundTx_WritePathsUseBoundTxWithoutCommit(t *testing.T) {
 
 func TestQuery_Count_DeduplicatesInstances(t *testing.T) {
 	registerTestTypes(t)
-	readTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}}}
+	readTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(1)}}}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
 	if _, err := mgr.Query().Filter(Gt("age", 20)).Count(context.Background()); err != nil {
 		t.Fatalf("Count: %v", err)
 	}
-	assertContains(t, readTx.queries[0], "select $e;\ndistinct;\nreduce $count = count($e);")
+	assertContains(t, readTx.queries[0], "select $e;\ndistinct;\nreduce $result0 = count($e);")
 }
 
 func TestQuery_Delete_DeduplicatesInstances(t *testing.T) {
 	registerTestTypes(t)
-	writeTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}, nil}}
+	writeTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(1)}}, nil}}
 	conn := &mockConn{txs: []*mockTx{writeTx}}
 	mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
 	if _, err := mgr.Query().Filter(Gt("age", 20)).Delete(context.Background()); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	assertContains(t, writeTx.queries[0], "select $e;\ndistinct;\nreduce $count = count($e);")
+	assertContains(t, writeTx.queries[0], "select $e;\ndistinct;\nreduce $result0 = count($e);")
 	assertContains(t, writeTx.queries[1], "select $e;\ndistinct;\ndelete $e;")
 }
 
@@ -356,7 +356,7 @@ func TestQuery_Count_UnrecognizedShapeErrors(t *testing.T) {
 	registerTestTypes(t)
 
 	t.Run("unknown value string", func(t *testing.T) {
-		readTx := &mockTx{responses: [][]map[string]any{{{"count": "Value(decimal: 5)"}}}}
+		readTx := &mockTx{responses: [][]map[string]any{{{"result0": "Value(decimal: 5)"}}}}
 		conn := &mockConn{txs: []*mockTx{readTx}}
 		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
@@ -376,7 +376,7 @@ func TestQuery_Count_UnrecognizedShapeErrors(t *testing.T) {
 	})
 
 	t.Run("exists propagates parse error", func(t *testing.T) {
-		readTx := &mockTx{responses: [][]map[string]any{{{"count": "garbage"}}}}
+		readTx := &mockTx{responses: [][]map[string]any{{{"result0": "garbage"}}}}
 		conn := &mockConn{txs: []*mockTx{readTx}}
 		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
@@ -390,7 +390,7 @@ func TestQuery_Aggregate_UnrecognizedShapeErrors(t *testing.T) {
 	registerTestTypes(t)
 
 	t.Run("sum with garbage value", func(t *testing.T) {
-		readTx := &mockTx{responses: [][]map[string]any{{{"result": "Value(decimal: 1.5)"}}}}
+		readTx := &mockTx{responses: [][]map[string]any{{{"result0": "Value(decimal: 1.5)"}}}}
 		conn := &mockConn{txs: []*mockTx{readTx}}
 		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
@@ -413,7 +413,7 @@ func TestQuery_Aggregate_UnrecognizedShapeErrors(t *testing.T) {
 func TestQuery_Aggregate_NilValueIsZero(t *testing.T) {
 	registerTestTypes(t)
 	// Aggregates over an empty set may come back as an explicit null.
-	readTx := &mockTx{responses: [][]map[string]any{{{"result": nil}}}}
+	readTx := &mockTx{responses: [][]map[string]any{{{"result0": nil}}}}
 	conn := &mockConn{txs: []*mockTx{readTx}}
 	mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 
@@ -596,7 +596,7 @@ func TestQuery_Update_DeterministicAttrOrder(t *testing.T) {
 	registerTestTypes(t)
 
 	build := func() string {
-		writeTx := &mockTx{responses: [][]map[string]any{{{"count": int64(1)}}, nil}}
+		writeTx := &mockTx{responses: [][]map[string]any{{{"result0": int64(1)}}, nil}}
 		conn := &mockConn{txs: []*mockTx{writeTx}}
 		mgr := MustNewManager[testPerson](NewDatabase(conn, "test_db"))
 		if _, err := mgr.Query().Update(context.Background(), map[string]any{

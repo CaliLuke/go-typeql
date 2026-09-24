@@ -21,7 +21,7 @@ func (tx *cancelMutationTx) QueryWithContext(ctx context.Context, query string) 
 func TestQueryNoCountUsesSameMutationWithoutCountQuery(t *testing.T) {
 	registerTestTypes(t)
 	t.Run("update", func(t *testing.T) {
-		counted := &mockTx{responses: [][]map[string]any{{{"count": float64(2)}}, nil}}
+		counted := &mockTx{responses: [][]map[string]any{{{"result0": float64(2)}}, nil}}
 		countedMgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{counted}}, "test_db"))
 		updates := map[string]any{"email": "new@example.test", "age": 40}
 		if _, err := countedMgr.Query().Filter(Eq("name", "Alice")).Update(context.Background(), updates); err != nil {
@@ -37,7 +37,7 @@ func TestQueryNoCountUsesSameMutationWithoutCountQuery(t *testing.T) {
 		}
 	})
 	t.Run("delete", func(t *testing.T) {
-		counted := &mockTx{responses: [][]map[string]any{{{"count": float64(2)}}, nil}}
+		counted := &mockTx{responses: [][]map[string]any{{{"result0": float64(2)}}, nil}}
 		countedMgr := MustNewManager[testPerson](NewDatabase(&mockConn{txs: []*mockTx{counted}}, "test_db"))
 		if _, err := countedMgr.Query().Filter(Contains("email", "example")).Delete(context.Background()); err != nil {
 			t.Fatal(err)

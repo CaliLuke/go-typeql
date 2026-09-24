@@ -25,7 +25,7 @@ func membershipInputs(size int) ([]any, *given.TypedRows) {
 }
 
 func membershipExpandedQuery(values []any) string {
-	return "match\n$e isa live-bench-person;\n" + strings.Join(In("name", values).ToPatterns("e"), "\n") + "\nfetch { \"name\": $e__name };"
+	return "match\n$e isa live-bench-person;\n" + strings.Join(compilePatterns(In("name", values)), "\n") + "\nfetch { \"name\": $e__name };"
 }
 
 const membershipGivenQuery = `given $n: string;
@@ -82,7 +82,7 @@ func BenchmarkIIDMembershipConstruction(b *testing.B) {
 			b.ReportAllocs()
 			var query string
 			for range b.N {
-				query = "match $e isa live-bench-person;\n" + strings.Join(IIDIn(iids...).ToPatterns("e"), "\n") + "\nfetch { \"iid\": iid($e) };"
+				query = "match $e isa live-bench-person;\n" + strings.Join(compilePatterns(IIDIn(iids...)), "\n") + "\nfetch { \"iid\": iid($e) };"
 			}
 			b.ReportMetric(float64(len(query)), "query-bytes")
 			b.ReportMetric(float64(size), "values")

@@ -101,6 +101,17 @@ func selectProjectionFields(info *ModelInfo, names []string) ([]FieldInfo, error
 	return fields, nil
 }
 
+// reservedVars lists the variables that clauses writes, so the filter
+// compiler never allocates them (issue #138).
+func (p projectionPlan) reservedVars() []string {
+	vars := make([]string, 0, 1+2*len(p.roles))
+	vars = append(vars, "projection_type")
+	for i := range p.roles {
+		vars = append(vars, fmt.Sprintf("projection_role_%d", i), fmt.Sprintf("projection_role_type_%d", i))
+	}
+	return vars
+}
+
 func (p projectionPlan) clauses() (string, string) {
 	match := []string{"$e isa! $projection_type;"}
 	items := []string{`"_iid": iid($e)`, `"_type": label($projection_type)`}
@@ -212,7 +223,7 @@ func (q *Query[T]) ExecuteProjected(ctx context.Context, spec Projection) ([]Pro
 		return nil, err
 	}
 	additions, fetch := plan.clauses()
-	query, err := q.buildQueryWithFetch(additions, fetch)
+	query, err := q.buildQueryWithFetch(additions, fetch, plan.reservedVars()...)
 	if err != nil {
 		return nil, err
 	}

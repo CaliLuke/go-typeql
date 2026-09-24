@@ -167,7 +167,7 @@ func TestValidateIID_AcceptsHexIIDs(t *testing.T) {
 
 func TestStartswith_EscapesRegexMetacharacters(t *testing.T) {
 	f := Startswith("email", "j.smith@corp.com")
-	joined := strings.Join(f.ToPatterns("e"), " ")
+	joined := strings.Join(compilePatterns(f), " ")
 	// The dot must be escaped so "jasmith@corpXcom" prefixes cannot match.
 	assertContains(t, joined, `like "j\\.smith@corp\\.com.*";`)
 }
@@ -175,7 +175,7 @@ func TestStartswith_EscapesRegexMetacharacters(t *testing.T) {
 func TestStartswith_UnbalancedMetacharactersStayLiteral(t *testing.T) {
 	// An unescaped "(" would be a server-side regex compile error.
 	f := Startswith("name", "foo(bar[")
-	joined := strings.Join(f.ToPatterns("e"), " ")
+	joined := strings.Join(compilePatterns(f), " ")
 	assertContains(t, joined, `like "foo\\(bar\\[.*";`)
 }
 
@@ -188,7 +188,7 @@ func TestOr_RolePlayerBranchesScoped(t *testing.T) {
 		RolePlayer("member", Eq("name", "a")),
 		RolePlayer("member", Eq("name", "b")),
 	)
-	patterns := f.ToPatterns("e")
+	patterns := compilePatterns(f)
 	if len(patterns) != 1 {
 		t.Fatalf("expected 1 pattern, got %d", len(patterns))
 	}
@@ -202,32 +202,30 @@ func TestOr_RolePlayerBranchesScoped(t *testing.T) {
 	if left == right {
 		t.Errorf("or branches share role player variable %s:\n%s", left, p)
 	}
-	for _, v := range []string{left, right} {
-		if v == "$member" {
-			t.Errorf("role player variable %s was not scoped:\n%s", v, p)
-		}
-	}
-	// Inner attribute variables must be scoped consistently with the link.
-	assertContains(t, p, left+" has name "+left+"__name;")
-	assertContains(t, p, right+" has name "+right+"__name;")
+	// Each branch has its own player (a key per scope, R2), and the player's
+	// attribute variable belongs to the same branch scope.
+	assertContains(t, p, left+" has name "+left+"_s1__name;")
+	assertContains(t, p, right+" has name "+right+"_s2__name;")
 }
 
+// A player in a not body is a different variable from a player of the same
+// role outside it: the keys differ in scope, so the table gives distinct names.
 func TestNot_RolePlayerScoped(t *testing.T) {
-	f := Not(RolePlayer("member", Eq("name", "a")))
-	p := f.ToPatterns("e")[0]
-	assertNotContains(t, p, "(member: $member)")
-	assertContains(t, p, "not {")
-	// The relation variable itself must stay unscoped.
-	assertContains(t, p, "$e links (member: ")
+	f := And(RolePlayer("member", Eq("name", "b")), Not(RolePlayer("member", Eq("name", "a"))))
+	joined := strings.Join(compilePatterns(f), "\n")
+	vars := rolePlayerVarRe.FindAllStringSubmatch(joined, -1)
+	if len(vars) != 2 || vars[0][1] == vars[1][1] {
+		t.Fatalf("expected two distinct player variables in:\n%s", joined)
+	}
+	assertContains(t, joined, "not { $e links (member: "+vars[1][1]+");")
 }
 
 func TestOr_ComputedBranchesScoped(t *testing.T) {
 	f := Or(
-		Computed("total", ArithmeticExpr("e", "price", "*", "quantity"), ">", 100),
-		Computed("total", ArithmeticExpr("e", "price", "*", "quantity"), "<", 10),
+		Computed(Mul(Attr("price"), Attr("quantity")), ">", 100),
+		Computed(Mul(Attr("price"), Attr("quantity")), "<", 10),
 	)
-	p := f.ToPatterns("e")[0]
-	assertNotContains(t, p, "let $total =")
+	p := compilePatterns(f)[0]
 
 	letVarRe := regexp.MustCompile(`let (\$[A-Za-z0-9_]+) =`)
 	vars := letVarRe.FindAllStringSubmatch(p, -1)
@@ -242,7 +240,7 @@ func TestOr_ComputedBranchesScoped(t *testing.T) {
 func TestOr_StringLiteralsUntouchedByScoping(t *testing.T) {
 	// A value that looks like a variable reference must not be renamed.
 	f := Or(Eq("name", "$e__name"), Eq("name", "b"))
-	p := f.ToPatterns("e")[0]
+	p := compilePatterns(f)[0]
 	assertContains(t, p, `== "$e__name";`)
 }
 
@@ -353,7 +351,7 @@ func TestQuery_OrScoping_DeterministicAcrossBuilds(t *testing.T) {
 		t.Errorf("same logical query produced different text:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
 	// Numbering starts at 1 for every query.
-	assertContains(t, first, "$e_o1__name")
+	assertContains(t, first, "$e_s1__name")
 }
 
 func TestQuery_SiblingOrFilters_DistinctScopeSuffixes(t *testing.T) {
@@ -372,11 +370,11 @@ func TestQuery_SiblingOrFilters_DistinctScopeSuffixes(t *testing.T) {
 		t.Fatalf("buildQuery failed: %v", err)
 	}
 	assertContains(t, query,
-		`{ $e has name $e_o1__name; $e_o1__name == "Alice"; } or `+
-			`{ $e has name $e_o2__name; $e_o2__name == "Bob"; };`)
+		`{ $e has name $e_s1__name; $e_s1__name == "Alice"; } or `+
+			`{ $e has name $e_s2__name; $e_s2__name == "Bob"; };`)
 	assertContains(t, query,
-		`{ $e has name $e_o3__name; $e_o3__name == "Carol"; } or `+
-			`{ $e has name $e_o4__name; $e_o4__name == "Dave"; };`)
+		`{ $e has name $e_s3__name; $e_s3__name == "Carol"; } or `+
+			`{ $e has name $e_s4__name; $e_s4__name == "Dave"; };`)
 }
 
 func TestQuery_OrInsideNot_DistinctScopeSuffixes(t *testing.T) {
@@ -387,11 +385,11 @@ func TestQuery_OrInsideNot_DistinctScopeSuffixes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildQuery failed: %v", err)
 	}
-	// The not block takes suffix 1; the nested or branches take 2 and 3 from
-	// the same scope, then get re-scoped under the not prefix.
+	// The not body takes scope 1; the nested or branches take 2 and 3 from the
+	// same query counter.
 	assertContains(t, query, "not {")
-	assertContains(t, query, `$e_n1_v_e_o2__name == "Alice";`)
-	assertContains(t, query, `$e_n1_v_e_o3__name == "Bob";`)
+	assertContains(t, query, `$e_s2__name == "Alice";`)
+	assertContains(t, query, `$e_s3__name == "Bob";`)
 }
 
 func TestQuery_RolePlayerWrappingOr_ThreadsScope(t *testing.T) {
@@ -409,22 +407,23 @@ func TestQuery_RolePlayerWrappingOr_ThreadsScope(t *testing.T) {
 		t.Fatalf("buildQuery failed: %v", err)
 	}
 	assertContains(t, query, "$e links (member: $member);")
+	// The player crosses into the branches as their owner (R2).
 	assertContains(t, query,
-		`{ $member has name $member_o1__name; $member_o1__name == "Alice"; } or `+
-			`{ $member has name $member_o2__name; $member_o2__name == "Bob"; };`)
+		`{ $member has name $member_s1__name; $member_s1__name == "Alice"; } or `+
+			`{ $member has name $member_s2__name; $member_s2__name == "Bob"; };`)
 	assertContains(t, query,
-		`{ $e has squad $e_o3__squad; $e_o3__squad == "red"; } or `+
-			`{ $e has squad $e_o4__squad; $e_o4__squad == "blue"; };`)
+		`{ $e has squad $e_s3__squad; $e_s3__squad == "red"; } or `+
+			`{ $e has squad $e_s4__squad; $e_s4__squad == "blue"; };`)
 }
 
-func TestOrFilter_StandaloneToPatterns_Deterministic(t *testing.T) {
-	// A direct ToPatterns call (outside a query build) uses a fresh scope, so
-	// repeated calls yield identical text.
+func TestOrFilter_Compile_Deterministic(t *testing.T) {
+	// Each compilation uses a fresh allocator, so repeated compilations of the
+	// same filter tree yield identical text.
 	f := Or(Eq("name", "Alice"), Eq("name", "Bob"))
-	first := strings.Join(f.ToPatterns("e"), "\n")
-	second := strings.Join(f.ToPatterns("e"), "\n")
+	first := strings.Join(compilePatterns(f), "\n")
+	second := strings.Join(compilePatterns(f), "\n")
 	if first != second {
-		t.Errorf("standalone ToPatterns is not deterministic:\nfirst:\n%s\nsecond:\n%s", first, second)
+		t.Errorf("compilation is not deterministic:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
 }
 
@@ -459,15 +458,15 @@ func TestFilter_ExistsBindsAnonymousVariable(t *testing.T) {
 	}
 }
 
-// Inside a scope, attribute variables and other variables (role players,
-// computed values) get different infixes, so a role and an attribute with the
-// same label do not share a variable.
-func TestScopeLocalVars_RoleAndAttributeWithSameLabel(t *testing.T) {
-	got := scopeLocalVars(`$e has member $e__member; $member isa person; $_ has name "x";`, "e", "e_o1")
-	want := `$e has member $e_o1__member; $e_o1_v_member isa person; $_ has name "x";`
-	if got != want {
-		t.Errorf("scopeLocalVars:\n got %s\nwant %s", got, want)
-	}
+// A role and an attribute with the same label are different keys, so they
+// get different variables, in the query scope and in a branch (R1).
+func TestFilter_RoleAndAttributeWithSameLabel(t *testing.T) {
+	joined := strings.Join(compilePatterns(Or(
+		And(Eq("member", "x"), RolePlayer("member", Eq("name", "a"))),
+		Eq("name", "b"),
+	)), " ")
+	assertContains(t, joined, "$e has member $e_s1__member;")
+	assertContains(t, joined, "$e links (member: $member);")
 }
 
 // Aggregate function names are interpolated into the query, so unknown names
@@ -521,28 +520,19 @@ func TestAggregate_TranslatesAvgAndVariance(t *testing.T) {
 // Role labels get the injective encoding too: first-author and first_author
 // used to share one player variable, so the query could never match.
 func TestRolePlayer_DistinctRoleLabelsBindDistinctVariables(t *testing.T) {
-	patterns := strings.Join(And(
+	patterns := strings.Join(compilePatterns(And(
 		RolePlayer("first-author", Eq("name", "A")),
 		RolePlayer("first_author", Eq("name", "B")),
-	).ToPatterns("e"), " ")
+	)), " ")
+	// first_author uses the escaped root spelling: a variable cannot start
+	// with "_", so the old "$_first_uauthor" was invalid TypeQL (fault 6).
 	for _, want := range []string{
 		"$e links (first-author: $first_author);",
 		`$first_author__name == "A";`,
-		"$e links (first_author: $_first_uauthor);",
-		`$_first_uauthor__name == "B";`,
+		"$e links (first_author: $0first_uauthor);",
+		`$0first_uauthor__name == "B";`,
 	} {
 		assertContains(t, patterns, want)
 	}
-}
-
-// AttrVar names the same variable the filters bind, so hand-written
-// expressions reference the filtered attribute.
-func TestAttrVar_MatchesFilterVariables(t *testing.T) {
-	for _, attr := range []string{"balance", "first-name", "balance_due"} {
-		patterns := strings.Join(Gt(attr, 0).ToPatterns("e"), " ")
-		assertContains(t, patterns, AttrVar("e", attr)+" > 0;")
-	}
-	if got := AttrVar("e", "balance_due"); got != "$e___balance_udue" {
-		t.Errorf("AttrVar(e, balance_due) = %q", got)
-	}
+	assertTypeQL(t, "role labels with - and _", "match $e isa test-team;\n"+strings.ReplaceAll(patterns, "; ", ";\n"), "")
 }

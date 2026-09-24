@@ -156,7 +156,7 @@ func buildBatchUpdateQuery(typeName string, fields []FieldInfo, iids []string) s
 	for i, fi := range fields {
 		fmt.Fprintf(&b, ", $v%d: %s", i, fi.ValueType)
 	}
-	fmt.Fprintf(&b, ";\nmatch $e isa %s; %s\niid($e) == $id;\n", typeName, IIDIn(iids...).ToPatterns("e")[0])
+	fmt.Fprintf(&b, ";\nmatch $e isa %s; %s\niid($e) == $id;\n", typeName, iidInText("e", iids))
 	for i, fi := range fields {
 		fmt.Fprintf(&b, "try { $e has %s $old%d; };\n", fi.Tag.Name, i)
 	}

@@ -15,9 +15,9 @@ q := persons.Query()
 
 ## Filters
 
-All filters implement the `Filter` interface. They generate TypeQL pattern strings injected into the match clause.
+All filters implement the `Filter` interface. The interface is sealed: only `gotype` implements it. The query builders compile filters through one variable allocator for each query, so you never write or read TypeQL variable names, and two distinct meanings never share a variable.
 
-**Variable scoping gotcha**: Each attribute filter binds its own variable, in the format `$e__attr_name` (double underscore separator), to avoid TypeQL implicit equality semantics. For labels with letters, digits, and hyphens, hyphens become underscores (`first-name` → `$e__first_name`). Labels with underscores use an escaped form (`first_name` → `$e___first_uname`), so two labels never share a variable. Use `gotype.AttrVar("e", attr)` to get the variable name. Do not write it by hand.
+**Variable sharing**: filters on the same attribute in the same scope share one variable. `Gt("age", 1)` and `Lt("age", 5)` therefore apply to the same value. A filter inside `Or` or `Not` binds its own variable (see "Boolean Composition").
 
 **Decimal comparison gotcha**: Filter combinators are context-free — they don't know
 the attribute's value type, so `Eq("price", 0.1)` emits the double literal `0.1`,
@@ -95,23 +95,22 @@ Every filter type also exposes `Validate() error` for early checking.
 
 ### Computed Expressions
 
-Use `Computed` with `ArithmeticExpr` and `BuiltinFuncExpr` to filter on computed values:
+`Computed` compares a typed expression with a value:
 
 ```go
 // Filter where price * quantity > 100
-gotype.Computed("total",
-    gotype.ArithmeticExpr("e", "price", "*", "quantity"),
-    ">", 100.0)
+gotype.Computed(gotype.Mul(gotype.Attr("price"), gotype.Attr("quantity")), ">", 100.0)
 
 // Filter where abs(balance) > 1000
-gotype.Computed("abs_bal",
-    gotype.BuiltinFuncExpr("abs", gotype.AttrVar("e", "balance")),
-    ">", 1000.0)
+gotype.Computed(gotype.Abs(gotype.Attr("balance")), ">", 1000.0)
 ```
 
-`ArithmeticExpr` supports operators: `+`, `-`, `*`, `/`, `%`, `^`.
+- `Attr(label)` is an attribute of the queried instance, or of the role player inside a `RolePlayer` filter. The compiler binds the attribute. You do not need a separate filter on it.
+- `Literal(v)` is a scalar value.
+- The operators are `Add`, `Sub`, `Mul`, `Div`, `Mod`, and `Pow`.
+- The built-in functions are `Abs`, `Ceil`, `Floor`, `Round`, `Length`, `Max`, and `Min`.
 
-`BuiltinFuncExpr` wraps TypeQL built-in functions: `abs`, `ceil`, `floor`, `round`, `length`, `max`, `min`.
+The compiler gives each `Computed` filter its own result variable.
 
 ### Boolean Composition
 
@@ -123,19 +122,9 @@ gotype.Not(filter)            // not { ... } block
 
 Multiple calls to `Filter()` on the same query are ANDed together.
 
-Variables inside `Or`/`Not` blocks are locally scoped in TypeDB 3.x, so the
-builder renames them with a per-block suffix (`$e_o1__name`, `$e_n1__age`).
-Suffix numbering is deterministic: it restarts at 1 for every built query
-(and for every standalone `ToPatterns` call), so the same logical query always
-produces byte-identical TypeQL. Within one query, all `or`/`not` blocks —
-including sibling filters and nested combinators — share one numbering
-sequence, so no two blocks ever reuse a scoped variable name.
+Each branch of `Or` and the body of `Not` is a child scope. Only the queried instance (or the role player of an enclosing `RolePlayer` filter) crosses into a child scope. Every other variable belongs to the scope that uses it. So `And(Gt("age", 1), Not(Eq("age", 5)))` means "some age value is more than 1, and no age value is 5". Sibling branches never share a variable.
 
-One caveat: a custom `Filter` implementation that internally builds an
-`OrFilter`/`NotFilter` starts a fresh numbering sequence inside its own
-`ToPatterns`, so its block suffixes can collide with a sibling block in the
-same query when both bind the same attribute. Prefer composing the built-in
-combinators directly.
+The same filter tree always gives the same TypeQL text. The generated variable names are an internal detail and can change between versions.
 
 ## Sorting, Pagination
 
