@@ -15,3 +15,6 @@ reference
 # TLC model-checker output
 formal/tla/states/
 formal/tla/*.old
+
+# Lean build output
+formal/lean/.lake/

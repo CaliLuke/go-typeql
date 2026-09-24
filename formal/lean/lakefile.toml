@@ -1,0 +1,6 @@
+name = "formal"
+defaultTargets = ["Formal"]
+
+[[lean_lib]]
+name = "Formal"
+roots = ["Naming", "Allocator", "Scopes"]

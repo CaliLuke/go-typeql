@@ -1,3 +1,5 @@
+set_option autoImplicit false
+
 /-!
 # Naming round trip between tqlgen and gotype
 
