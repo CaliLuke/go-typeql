@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/internal/naming"
+	"github.com/CaliLuke/go-typeql/v3/internal/naming"
 )
 
 // ModelKind specifies whether a registered TypeDB model is an entity or a relation.

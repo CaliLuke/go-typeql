@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/CaliLuke/go-typeql/v2/tqlgen"
+	"github.com/CaliLuke/go-typeql/v3/tqlgen"
 )
 
 // internalMigrationTypes lists the schema type names owned by go-typeql's own

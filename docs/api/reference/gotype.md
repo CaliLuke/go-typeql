@@ -3,7 +3,7 @@
 # gotype
 
 ```go
-import "github.com/CaliLuke/go-typeql/v2/gotype"
+import "github.com/CaliLuke/go-typeql/v3/gotype"
 ```
 
 Package gotype provides high\-level TypeDB data mapping and CRUD operations.

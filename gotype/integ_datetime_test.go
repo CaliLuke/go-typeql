@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/gotype"
+	"github.com/CaliLuke/go-typeql/v3/gotype"
 )
 
 // DatetimeEvent exercises the plain (zone-less) datetime value type.

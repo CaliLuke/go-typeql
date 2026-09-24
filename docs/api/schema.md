@@ -1,6 +1,6 @@
 # Schema Generation and Migration
 
-`import "github.com/CaliLuke/go-typeql/v2/gotype"`
+`import "github.com/CaliLuke/go-typeql/v3/gotype"`
 
 go-typeql can generate TypeQL `define` statements from registered Go structs, migrate an existing database schema, track migration state in the database, represent migrations as discrete operations with rollback support, and run sequential file-based migrations for projects that manage schema via raw TypeQL.
 

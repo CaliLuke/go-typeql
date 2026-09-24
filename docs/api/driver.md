@@ -1,6 +1,6 @@
 # Rust FFI Driver
 
-`import "github.com/CaliLuke/go-typeql/v2/driver"` (requires build tags: `cgo,typedb`) -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2/driver)
+`import "github.com/CaliLuke/go-typeql/v3/driver"` (requires build tags: `cgo,typedb`) -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v3/driver)
 
 The `driver` package provides Go bindings to the official TypeDB `typedb-driver` 3.x Rust crate via CGo. All files are gated with `//go:build cgo && typedb` so they don't affect builds that don't need the driver.
 
@@ -29,7 +29,7 @@ The Rust crate lives in `driver/rust/` and compiles to `driver/rust/target/relea
 ## Connecting
 
 ```go
-import "github.com/CaliLuke/go-typeql/v2/driver"
+import "github.com/CaliLuke/go-typeql/v3/driver"
 
 // Basic connection
 drv, err := driver.Open("localhost:1729", "admin", "password")

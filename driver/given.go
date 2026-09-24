@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/CaliLuke/go-typeql/v2/given"
+	"github.com/CaliLuke/go-typeql/v3/given"
 )
 
 // GivenRows contains typed input rows for a TypeQL query with a given stage.

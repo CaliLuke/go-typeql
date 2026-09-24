@@ -1,6 +1,6 @@
 # Code Generator (tqlgen)
 
-`import "github.com/CaliLuke/go-typeql/v2/tqlgen"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2/tqlgen)
+`import "github.com/CaliLuke/go-typeql/v3/tqlgen"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v3/tqlgen)
 
 `tqlgen` generates Go struct definitions from TypeQL schema files. It produces structs with `gotype.BaseEntity`/`BaseRelation` embeds and `typedb:"..."` tags, ready for use with the ORM.
 
@@ -9,7 +9,7 @@ When parsing schema annotations, `tqlgen` decodes escaped string literals used i
 ## CLI Usage
 
 ```bash
-go run github.com/CaliLuke/go-typeql/v2/tqlgen/cmd/tqlgen \
+go run github.com/CaliLuke/go-typeql/v3/tqlgen/cmd/tqlgen \
     -schema schema.tql \
     -out models_gen.go \
     -pkg models
@@ -114,7 +114,7 @@ relation employment,
 package models
 
 import (
-    "github.com/CaliLuke/go-typeql/v2/gotype"
+    "github.com/CaliLuke/go-typeql/v3/gotype"
     "time"
 )
 

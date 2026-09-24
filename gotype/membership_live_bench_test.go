@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/given"
+	"github.com/CaliLuke/go-typeql/v3/given"
 )
 
 // BenchmarkLiveMembershipStrategies compares expanded In query text with

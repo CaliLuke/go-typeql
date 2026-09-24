@@ -8,7 +8,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/gotype"
+	"github.com/CaliLuke/go-typeql/v3/gotype"
 )
 
 type IcItem struct {

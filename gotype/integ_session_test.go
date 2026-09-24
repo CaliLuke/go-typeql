@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/driver"
-	"github.com/CaliLuke/go-typeql/v2/gotype"
+	"github.com/CaliLuke/go-typeql/v3/driver"
+	"github.com/CaliLuke/go-typeql/v3/gotype"
 )
 
 func TestIntegration_ExecuteRead(t *testing.T) {

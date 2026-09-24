@@ -12,12 +12,12 @@ Keep code, identifiers, commands, file paths, product names, and quoted errors u
 
 ## What This Is
 
-Go ORM for TypeDB 3.x. Wraps the Rust driver via CGo FFI. Module: `github.com/CaliLuke/go-typeql/v2`
+Go ORM for TypeDB 3.x. Wraps the Rust driver via CGo FFI. Module: `github.com/CaliLuke/go-typeql/v3`
 
 ## Commands
 
 ```bash
-# Unit tests (707 tests, no DB or CGo needed)
+# Unit tests (738 tests, no DB or CGo needed)
 go test ./ast/... ./given/... ./gotype/... ./tqlgen/...
 
 # Single test

@@ -3,7 +3,7 @@
 # driver
 
 ```go
-import "github.com/CaliLuke/go-typeql/v2/driver"
+import "github.com/CaliLuke/go-typeql/v3/driver"
 ```
 
 Package driver provides TypeDB database connectivity via Rust FFI bindings.

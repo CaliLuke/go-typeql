@@ -206,3 +206,37 @@ func TestCompile_Deterministic(t *testing.T) {
 		}
 	}
 }
+
+// Every expression constructor renders the TypeQL operator or built-in, and
+// the query passes typeql-check.
+func TestCompile_ExpressionConstructors(t *testing.T) {
+	registerTestTypes(t)
+	a, b := Attr("age"), Literal(2)
+	for want, e := range map[string]Expr{
+		"($e__age + 2)": Add(a, b), "($e__age - 2)": Sub(a, b), "($e__age * 2)": Mul(a, b),
+		"($e__age / 2)": Div(a, b), "($e__age % 2)": Mod(a, b), "($e__age ^ 2)": Pow(a, b),
+		"abs($e__age)": Abs(a), "ceil($e__age)": Ceil(a), "floor($e__age)": Floor(a),
+		"round($e__age)": Round(a), "len($e__age)": Length(a),
+		"max($e__age, 2)": Max(a, b), "min($e__age, 2)": Min(a, b),
+	} {
+		q := buildTestQuery(t, Computed(e, ">", 0))
+		assertContains(t, q, "let $result1 = "+want+";")
+		assertTypeQL(t, want, q, "")
+	}
+}
+
+// The Negated field of each attribute filter compiles as a Not scope (R2).
+func TestCompile_NegatedFieldsOpenScopes(t *testing.T) {
+	registerTestTypes(t)
+	for name, f := range map[string]Filter{
+		"comparison": &ComparisonFilter{Attr: "age", Op: ">", Value: 1, Negated: true},
+		"string":     &StringFilter{Attr: "name", Op: "contains", Pattern: "a", Negated: true},
+		"range":      &RangeFilter{Attr: "age", Min: 1, Max: 9, Negated: true},
+		"regex":      &RegexFilter{Attr: "name", Pattern: "a.*", Negated: true},
+	} {
+		q := buildTestQuery(t, f)
+		assertContains(t, q, "not { $e has ")
+		assertContains(t, q, "_s1__")
+		assertTypeQL(t, "negated "+name, q, "")
+	}
+}

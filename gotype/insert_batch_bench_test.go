@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/given"
+	"github.com/CaliLuke/go-typeql/v3/given"
 )
 
 var liveInsertBatchSequence atomic.Uint64

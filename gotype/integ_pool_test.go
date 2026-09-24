@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/driver"
+	"github.com/CaliLuke/go-typeql/v3/driver"
 )
 
 // poolTestPerson is a simple entity for pool integration testing

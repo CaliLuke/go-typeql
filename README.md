@@ -1,7 +1,7 @@
 # go-typeql
 
-[![Go Version](https://img.shields.io/github/v/tag/CaliLuke/go-typeql?label=version)](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2)
-[![Go Reference](https://pkg.go.dev/badge/github.com/CaliLuke/go-typeql/v2.svg)](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2)
+[![Go Version](https://img.shields.io/github/v/tag/CaliLuke/go-typeql?label=version)](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v3)
+[![Go Reference](https://pkg.go.dev/badge/github.com/CaliLuke/go-typeql/v3.svg)](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v3)
 
 A Go ORM for [TypeDB](https://typedb.com/) 3.x. It maps a graph schema to Go structs. It provides type-safe CRUD, queries, migrations, and code generation.
 
@@ -78,11 +78,11 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql/v2@v2.0.0
+go get github.com/CaliLuke/go-typeql/v3@v3.0.0
 ```
 
-Version 2 uses the `/v2` import path and removes the old create-only rename API.
-See [Upgrading to v2](docs/UPGRADING_V2.md) for import changes and custom transaction requirements.
+Version 3 uses the `/v3` import path, a sealed `Filter` interface, and typed `Computed` expressions.
+See [Upgrading to v3](docs/UPGRADING_V3.md) for the migration steps. For v1 to v2, see [Upgrading to v2](docs/UPGRADING_V2.md).
 
 The `ast/`, `given/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database.
 The `driver/` package targets TypeDB `3.13.0`.
@@ -109,7 +109,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 platform="$(go env GOOS)-$(go env GOARCH)"
 
 # Download for your platform
-gh release download v2.0.0 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
+gh release download v3.0.0 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 libdir=/usr/local/lib

@@ -17,7 +17,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/CaliLuke/go-typeql/v2/given"
+	"github.com/CaliLuke/go-typeql/v3/given"
 
 	"github.com/vmihailenco/msgpack/v5"
 )

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/internal/typeqlcheck"
+	"github.com/CaliLuke/go-typeql/v3/internal/typeqlcheck"
 )
 
 const callbackQuery = `match $p isa person, has name $name; fetch { "name": $name };`

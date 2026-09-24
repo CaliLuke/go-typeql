@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/driver"
+	"github.com/CaliLuke/go-typeql/v3/driver"
 )
 
 // BenchmarkLivePoolRead compares a shared driver with pools of one or four

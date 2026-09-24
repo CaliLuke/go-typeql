@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/internal/typeqlcheck"
+	"github.com/CaliLuke/go-typeql/v3/internal/typeqlcheck"
 )
 
 // assertTypeQL validates a generated query with the official typeql-check CLI

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/given"
+	"github.com/CaliLuke/go-typeql/v3/given"
 )
 
 func TestGivenRowsPreservesScalarZeroValues(t *testing.T) {

@@ -3,7 +3,7 @@
 # ast
 
 ```go
-import "github.com/CaliLuke/go-typeql/v2/ast"
+import "github.com/CaliLuke/go-typeql/v3/ast"
 ```
 
 Package ast provides builder helpers for ergonomic AST construction.

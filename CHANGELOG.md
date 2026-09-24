@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## v3.0.0 - 2026-09-24
 
 ### Breaking changes
 
+- Changed the Go module path to `github.com/CaliLuke/go-typeql/v3`. Updated generated models to import the v3 package. See [Upgrading to v3](docs/UPGRADING_V3.md).
 - Sealed the `gotype.Filter` interface. Filters now compile through one variable allocator for each query (issue #138). Removed `Filter.ToPatterns`. Custom filter types are no longer supported. Compose the built-in filters instead.
 - Replaced the string form of `Computed(varName, expr, op, value)` with typed expressions: `Computed(expr, op, value)`, with `Attr`, `Literal`, `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow`, `Abs`, `Ceil`, `Floor`, `Round`, `Length`, `Max`, and `Min`. For example, write `Computed(Mul(Attr("price"), Attr("quantity")), ">", 100)`. Removed `ArithmeticExpr` and `BuiltinFuncExpr`.
 - Changed generated variable names. Variable names are now an internal detail. In `or` and `not` blocks, attribute variables use `_s<i>` (for example `$e_s1__name`), not `_o<i>` or `_n<i>`. Count and aggregate queries use `$result0` for their output, not `$count` or `$result`.

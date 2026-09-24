@@ -7,12 +7,12 @@ description: Use the go-typeql Go ORM for TypeDB 3.x. Covers defining entities, 
 
 go-typeql is a struct-tag driven ORM for TypeDB that provides type-safe abstractions over TypeQL. It wraps the Rust TypeDB driver via CGo FFI, but the ORM packages (`gotype/`, `ast/`, `tqlgen/`) compile and test without CGo.
 
-Version 2 uses `github.com/CaliLuke/go-typeql/v2`. See [the migration guide](UPGRADING_V2.md) for the import and transaction changes.
+Version 3 uses `github.com/CaliLuke/go-typeql/v3`. See [the v3 migration guide](UPGRADING_V3.md) for the import, filter, and `Computed` changes.
 
 ## Quick Start
 
 ```go
-import "github.com/CaliLuke/go-typeql/v2/gotype"
+import "github.com/CaliLuke/go-typeql/v3/gotype"
 
 // 1. Define models with struct tags
 type Person struct {
@@ -706,7 +706,7 @@ tqlgen -schema <file>     # Required: path to .tql file
 ### Programmatic API
 
 ```go
-import "github.com/CaliLuke/go-typeql/v2/tqlgen"
+import "github.com/CaliLuke/go-typeql/v3/tqlgen"
 
 // Parse a TypeQL schema file
 schema, err := tqlgen.ParseSchemaFile("schema.tql")

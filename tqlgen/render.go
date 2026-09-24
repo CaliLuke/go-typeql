@@ -12,7 +12,7 @@ import (
 	"text/template"
 	"unicode"
 
-	"github.com/CaliLuke/go-typeql/v2/internal/naming"
+	"github.com/CaliLuke/go-typeql/v3/internal/naming"
 )
 
 // RenderConfig specifies the settings for generating Go code from a TypeQL schema.
@@ -39,7 +39,7 @@ type RenderConfig struct {
 func DefaultConfig() RenderConfig {
 	return RenderConfig{
 		PackageName:  "models",
-		ModulePath:   "github.com/CaliLuke/go-typeql/v2/gotype",
+		ModulePath:   "github.com/CaliLuke/go-typeql/v3/gotype",
 		UseAcronyms:  true,
 		SkipAbstract: true,
 		Enums:        true,
@@ -65,7 +65,7 @@ func renderWithRolePlayerIndex(w io.Writer, schema *ParsedSchema, cfg RenderConf
 		cfg.PackageName = "models"
 	}
 	if cfg.ModulePath == "" {
-		cfg.ModulePath = "github.com/CaliLuke/go-typeql/v2/gotype"
+		cfg.ModulePath = "github.com/CaliLuke/go-typeql/v3/gotype"
 	}
 
 	r := newRenderer(schema, cfg)
@@ -861,7 +861,7 @@ package {{.PackageName}}
 
 import (
 {{- if .NeedsGotype}}
-	"github.com/CaliLuke/go-typeql/v2/gotype"
+	"github.com/CaliLuke/go-typeql/v3/gotype"
 {{- end}}
 {{- if .NeedsTime}}
 	"time"

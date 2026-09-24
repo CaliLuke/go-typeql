@@ -3,7 +3,7 @@
 # given
 
 ```go
-import "github.com/CaliLuke/go-typeql/v2/given"
+import "github.com/CaliLuke/go-typeql/v3/given"
 ```
 
 Package given defines typed TypeQL input rows without a driver or CGo dependency.

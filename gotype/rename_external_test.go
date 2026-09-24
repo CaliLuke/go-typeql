@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/gotype"
+	"github.com/CaliLuke/go-typeql/v3/gotype"
 )
 
 func TestRenameOperation_HasNoExportedFields(t *testing.T) {

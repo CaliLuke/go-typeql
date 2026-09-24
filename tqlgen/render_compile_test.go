@@ -41,7 +41,7 @@ func containsCode(out, want string) bool {
 }
 
 // compileGenerated writes the generated source into a temporary module that
-// replaces github.com/CaliLuke/go-typeql/v2 with the local repository, then runs
+// replaces github.com/CaliLuke/go-typeql/v3 with the local repository, then runs
 // `go build` on it. It fails the test if the generated code does not compile.
 func compileGenerated(t *testing.T, source string) {
 	t.Helper()
@@ -75,8 +75,8 @@ func runGenerated(t *testing.T, source string, extra map[string]string, goArgs [
 		}
 	}
 	goMod := "module rendercompiletest\n\ngo 1.27.0\n\n" +
-		"require github.com/CaliLuke/go-typeql/v2 v2.0.0\n\n" +
-		"replace github.com/CaliLuke/go-typeql/v2 => " + repoRoot + "\n"
+		"require github.com/CaliLuke/go-typeql/v3 v3.0.0\n\n" +
+		"replace github.com/CaliLuke/go-typeql/v3 => " + repoRoot + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
@@ -524,7 +524,7 @@ relation member_of, relates group_member;
 import (
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/gotype"
+	"github.com/CaliLuke/go-typeql/v3/gotype"
 )
 
 func TestRegisteredNamesMatchSchema(t *testing.T) {

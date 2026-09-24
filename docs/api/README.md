@@ -1,8 +1,8 @@
 # API Guides
 
-Usage guides for the go-typeql packages. For an introduction to the library, see the [project README](../../README.md). For complete API signatures, see [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2) or the [reference docs](reference/).
+Usage guides for the go-typeql packages. For an introduction to the library, see the [project README](../../README.md). For complete API signatures, see [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v3) or the [reference docs](reference/).
 
-See [Upgrading to v2](../UPGRADING_V2.md) for the breaking changes and migration steps.
+See [Upgrading to v3](../UPGRADING_V3.md) for the breaking changes and migration steps of v3, and [Upgrading to v2](../UPGRADING_V2.md) for v2.
 
 ## Guides
 

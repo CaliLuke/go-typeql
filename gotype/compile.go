@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/CaliLuke/go-typeql/v2/ast"
-	"github.com/CaliLuke/go-typeql/v2/internal/naming"
+	"github.com/CaliLuke/go-typeql/v3/ast"
+	"github.com/CaliLuke/go-typeql/v3/internal/naming"
 )
 
 // Filter compilation and the per-query variable allocator (issue #138).

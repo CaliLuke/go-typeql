@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/CaliLuke/go-typeql/v2/internal/naming"
+	"github.com/CaliLuke/go-typeql/v3/internal/naming"
 )
 
 // IdentifierMatcher determines whether an identifier should be treated as an IID.

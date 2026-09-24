@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/ast"
+	"github.com/CaliLuke/go-typeql/v3/ast"
 )
 
 // Filter is a query filter. Filters compose via And, Or, and Not.

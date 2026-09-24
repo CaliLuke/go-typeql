@@ -1,6 +1,6 @@
 # Models
 
-`import "github.com/CaliLuke/go-typeql/v2/gotype"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2/gotype)
+`import "github.com/CaliLuke/go-typeql/v3/gotype"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v3/gotype)
 
 Models are Go structs that map to TypeDB entities and relations. They use struct tags to define attribute names, annotations, and role players.
 

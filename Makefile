@@ -82,13 +82,13 @@ clean: clean-rust
 # Installs pkgsite if needed, then serves docs at http://localhost:8080
 docs:
 	@command -v pkgsite >/dev/null 2>&1 || { echo "Installing pkgsite..."; go install golang.org/x/pkgsite/cmd/pkgsite@latest; }
-	@echo "Starting pkgsite on http://localhost:8080/github.com/CaliLuke/go-typeql/v2"
+	@echo "Starting pkgsite on http://localhost:8080/github.com/CaliLuke/go-typeql/v3"
 	pkgsite -http=:8080
 
 # Open docs in browser (macOS)
 docs-open: docs &
 	@sleep 2
-	open http://localhost:8080/github.com/CaliLuke/go-typeql/v2
+	open http://localhost:8080/github.com/CaliLuke/go-typeql/v3
 
 # Diagnose startup hangs in cgo/typedb test binary initialisation.
 # Usage:

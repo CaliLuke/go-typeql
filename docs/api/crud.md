@@ -1,6 +1,6 @@
 # CRUD Operations
 
-`import "github.com/CaliLuke/go-typeql/v2/gotype"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2/gotype)
+`import "github.com/CaliLuke/go-typeql/v3/gotype"` -- [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v3/gotype)
 
 The `Manager[T]` generic type provides Insert, Get, Update, Delete, Put (upsert), and batch operations for registered TypeDB models.
 

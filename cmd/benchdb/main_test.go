@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseBenchmarkOutputWithCustomMetrics(t *testing.T) {
-	output := `pkg: github.com/CaliLuke/go-typeql/v2/driver
+	output := `pkg: github.com/CaliLuke/go-typeql/v3/driver
 cpu: Apple M4 Pro
 BenchmarkNativeClosePolicies/async-bounded-16-14 100 595323 ns/op 0.08 MB/s 6.012 drain-ms 13.77 p50-ms 15.06 p99-ms 16 peak-native 15 peak-pending 694.1 queue-wait-ms 1295 B/op 22 allocs/op
 BenchmarkNativeClosePolicies/async-bounded-16-14 100 594157 ns/op 0.08 MB/s 5.763 drain-ms 13.73 p50-ms 15.16 p99-ms 16 peak-native 15 peak-pending 689.7 queue-wait-ms 1311 B/op 22 allocs/op

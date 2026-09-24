@@ -3,7 +3,7 @@
 # tqlgen
 
 ```go
-import "github.com/CaliLuke/go-typeql/v2/tqlgen"
+import "github.com/CaliLuke/go-typeql/v3/tqlgen"
 ```
 
 Package tqlgen provides tools for parsing TypeQL schemas and generating Go code from them.

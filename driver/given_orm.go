@@ -5,7 +5,7 @@ package driver
 import (
 	"context"
 
-	"github.com/CaliLuke/go-typeql/v2/given"
+	"github.com/CaliLuke/go-typeql/v3/given"
 )
 
 // QueryWithGivenRows executes a query using the pure-Go typed-row contract.

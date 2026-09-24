@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/CaliLuke/go-typeql/v2/given"
+	"github.com/CaliLuke/go-typeql/v3/given"
 )
 
 // PoolConfig specifies connection pool behavior.

@@ -6,10 +6,10 @@
 //
 // The module is organized into four packages:
 //
-//   - [github.com/CaliLuke/go-typeql/v2/ast] — TypeQL AST nodes and compiler
-//   - [github.com/CaliLuke/go-typeql/v2/gotype] — ORM core: models, CRUD, queries, migrations
-//   - [github.com/CaliLuke/go-typeql/v2/tqlgen] — Code generator: TypeQL schema to Go structs
-//   - [github.com/CaliLuke/go-typeql/v2/driver] — Rust FFI bindings to typedb-driver 3.x (requires CGo)
+//   - [github.com/CaliLuke/go-typeql/v3/ast] — TypeQL AST nodes and compiler
+//   - [github.com/CaliLuke/go-typeql/v3/gotype] — ORM core: models, CRUD, queries, migrations
+//   - [github.com/CaliLuke/go-typeql/v3/tqlgen] — Code generator: TypeQL schema to Go structs
+//   - [github.com/CaliLuke/go-typeql/v3/driver] — Rust FFI bindings to typedb-driver 3.x (requires CGo)
 //
 // The ast, gotype, and tqlgen packages compile and test without CGo or a
 // running database. Only the driver package requires the Rust FFI library.

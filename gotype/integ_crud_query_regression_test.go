@@ -12,7 +12,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/gotype"
+	"github.com/CaliLuke/go-typeql/v3/gotype"
 )
 
 // TaggedDoc has a multi-valued (slice) attribute.

@@ -200,7 +200,7 @@ The four packages form a layered architecture:
 
 ### Godoc
 
-All exported types and functions have doc comments that render on [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v2). To preview locally:
+All exported types and functions have doc comments that render on [pkg.go.dev](https://pkg.go.dev/github.com/CaliLuke/go-typeql/v3). To preview locally:
 
 ```bash
 make docs
@@ -210,8 +210,8 @@ make docs
 Or in the terminal:
 
 ```bash
-go doc github.com/CaliLuke/go-typeql/v2/gotype.Manager
-go doc -all github.com/CaliLuke/go-typeql/v2/ast
+go doc github.com/CaliLuke/go-typeql/v3/gotype.Manager
+go doc -all github.com/CaliLuke/go-typeql/v3/ast
 ```
 
 Regenerate the checked-in markdown reference after exported API changes:

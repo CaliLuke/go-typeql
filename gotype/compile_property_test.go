@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/CaliLuke/go-typeql/v2/internal/typeqlcheck"
+	"github.com/CaliLuke/go-typeql/v3/internal/typeqlcheck"
 )
 
 // Property-based test of the filter compiler (issue #138): for random filter
