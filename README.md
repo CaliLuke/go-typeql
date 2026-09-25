@@ -78,7 +78,7 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 ### Install
 
 ```bash
-go get github.com/CaliLuke/go-typeql/v3@v3.1.0
+go get github.com/CaliLuke/go-typeql/v3@v3.2.0
 ```
 
 Version 3 uses the `/v3` import path, a sealed `Filter` interface, and typed `Computed` expressions.
@@ -110,7 +110,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 platform="$(go env GOOS)-$(go env GOARCH)"
 
 # Download for your platform
-gh release download v3.1.0 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
+gh release download v3.2.0 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 libdir=/usr/local/lib
