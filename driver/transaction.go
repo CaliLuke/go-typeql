@@ -380,12 +380,23 @@ func (w *transactionCloseWorker) close() {
 }
 
 func runTransactionCloseJob(job transactionCloseJob) {
+	err := closeNative(job, false)
+	if job.onDone != nil {
+		job.onDone(err)
+	}
+}
+
+// closeNative runs the checked native close of a detached handle, records
+// it, and releases the admission slot. A close worker calls it for queued
+// jobs; CloseChecked calls it inline.
+func closeNative(job transactionCloseJob, inline bool) error {
 	start := time.Now()
 	_, span := perftrace.Start(job.traceCtx, "typedb.tx.close")
 	if span.Recording() {
 		span.SetAttrs(
 			perftrace.Int("typedb.tx.id", int(job.id)),
 			perftrace.String("db.namespace", job.dbName),
+			perftrace.Bool("typedb.tx.close.inline", inline),
 			perftrace.Int("typedb.tx.close.delay_us", int(start.Sub(job.start).Microseconds())),
 		)
 	}
@@ -397,9 +408,7 @@ func runTransactionCloseJob(job transactionCloseJob) {
 	logTransactionClose(job, err)
 	job.cleanup.finish(job, true, err, duration, false)
 	job.releaseSlot()
-	if job.onDone != nil {
-		job.onDone(err)
-	}
+	return err
 }
 
 func logTransactionClose(job transactionCloseJob, err error) {
@@ -1377,16 +1386,7 @@ func (t *Transaction) CloseChecked() error {
 	if job.ptr == nil {
 		return nil
 	}
-
-	closeStart := time.Now()
-	var closeErr *C.char
-	C.typedb_transaction_close(job.ptr, &closeErr)
-	duration := time.Since(closeStart)
-	err = getError(closeErr)
-	logTransactionClose(job, err)
-	job.cleanup.finish(job, true, err, duration, false)
-	job.releaseSlot()
-	return err
+	return closeNative(job, true)
 }
 
 // detachCloseJob transfers ownership of the native handle to the caller for

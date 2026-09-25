@@ -38,7 +38,7 @@ test TestIntegration_InsertRelation
 | `typedb.tx.query` | `driver` | Materialized query. Children: `typedb.ffi.query` and `typedb.decode`. |
 | `typedb.tx.query_stream` | `driver` | Streamed query. Children: `typedb.ffi.stream_open`, `typedb.ffi.stream_next`, `typedb.decode_consume`. |
 | `typedb.tx.commit`, `typedb.tx.rollback` | `driver` | Commit and rollback. |
-| `typedb.tx.close` | `driver` | Native close on the close worker. `typedb.tx.close.delay_us` is the time from `Close` to the start of the native close. |
+| `typedb.tx.close` | `driver` | Native close, on a close worker after `Close`, or inline in `CloseChecked` (`typedb.tx.close.inline`). `typedb.tx.close.delay_us` is the time from the close call to the start of the native close. |
 
 The `typedb.decode_consume` span includes the row callbacks, for example
 hydration. Query spans have the attributes `db.query.text` (the first 4096

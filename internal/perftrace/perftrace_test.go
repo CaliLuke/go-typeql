@@ -79,3 +79,16 @@ func TestUninstallKeepsNewerTracer(t *testing.T) {
 	}
 	second()
 }
+
+func TestUninstallRestoresPrevious(t *testing.T) {
+	outer := &fakeTracer{}
+	uninstallOuter := Install(outer)
+	defer uninstallOuter()
+	uninstallInner := Install(&fakeTracer{})
+	uninstallInner()
+	_, span := Start(context.Background(), "after")
+	span.End(nil)
+	if len(outer.started) != 1 || outer.started[0] != "after" {
+		t.Fatalf("outer tracer started %v, want [after]", outer.started)
+	}
+}

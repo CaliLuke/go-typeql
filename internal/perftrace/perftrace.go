@@ -71,11 +71,12 @@ type tracerBox struct{ t Tracer }
 
 var active atomic.Pointer[tracerBox]
 
-// Install makes t the active tracer and returns a function that removes it.
+// Install makes t the active tracer. The returned function restores the
+// tracer that was active before, unless another Install replaced t since.
 func Install(t Tracer) (uninstall func()) {
 	box := &tracerBox{t: t}
-	active.Store(box)
-	return func() { active.CompareAndSwap(box, nil) }
+	prev := active.Swap(box)
+	return func() { active.CompareAndSwap(box, prev) }
 }
 
 // Enabled reports whether a tracer is installed.
