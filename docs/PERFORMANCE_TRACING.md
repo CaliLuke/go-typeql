@@ -1,7 +1,7 @@
 # Performance Tracing
 
 This guide explains how to trace go-typeql with OpenTelemetry and inspect the
-data with [logal](https://github.com/CaliLuke/logal). Use tracing for
+data with [logal](https://github.com/CaliLuke/homebrew-logal). Use tracing for
 performance work only. Benchmarks do not use tracing (see
 [Benchmarks never trace](#benchmarks-never-trace)).
 
