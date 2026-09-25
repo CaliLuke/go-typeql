@@ -341,6 +341,17 @@ not a peak-memory profile; benchmark B/op covers Go allocations only. Rerun
 the opt-in `BenchmarkNativeClosePolicies` on your own server and load before
 tuning the limit.
 
+Asynchronous closes run on a pool of close workers. By default, a driver has
+8 workers. `DriverOptions.CloseWorkers` changes the number, and the admission
+limit caps it, because each queued close holds a slot. Each native close
+waits for one server round trip. With one worker, a driver completes at most
+one close per round trip. Queued closes then hold admission slots, and new
+transactions wait for them. In a traced workload with ten callers on one
+driver, that wait was 66–76% of each read with one worker. With 8 workers, it
+was 5–15%, and the median throughput increased 2.7 times (see the
+[review evidence](../../benchmarks/reviews/2026-09-25/README.md)). If you want
+the old single-worker behavior, set `CloseWorkers` to 1.
+
 ## Database Management
 
 ```go

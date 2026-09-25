@@ -5,7 +5,7 @@ These models check the correctness of go-typeql code that is hard to test well.
 | File | Models | Checked with |
 | --- | --- | --- |
 | `tla/ConnPool.tla` | `gotype/pool.go`: numOpen accounting, capacity bound, idle stack, waiter hand-off, lost wakeups | TLC |
-| `tla/TxHandle.tla` | `driver/transaction.go` and `driver/driver.go`: ownership of one native transaction handle | TLC |
+| `tla/TxHandle.tla` | `driver/transaction.go` and `driver/driver.go`: ownership of one native transaction handle, with two close workers that drain one queue | TLC |
 | `lean/Naming.lean` | `tqlgen` Go names, `gotype.toKebabCase`, the old `gotype.sanitizeVar`, and a proof that `naming.VarLabel` is injective | Lean 4 |
 | `lean/Allocator.lean` | The variable allocator that issue #138 proposes: distinct names for distinct keys, the suffix search, valid TypeQL variable spellings, and the readable candidates (`rootSpelling`, attribute names) | Lean 4 |
 | `lean/Scopes.lean` | The filter compiler and query builders of issue #138 over any filter tree: uses are bound in their scope, owners are bound in an enclosing scope, a variable lives in one scope, child scopes are fresh, `or` branches share no variable, each `Computed` result, reduce output, and old value has its own variable, one binding per variable and scope (R5), and valid names for the R8 candidates | Lean 4 |
@@ -38,8 +38,9 @@ lake build
 
 ## Limits
 
-- The models are bounded. `ConnPool` uses 3 clients, `MaxSize = 1`, and 1 or 2 rounds. `TxHandle` uses 2 user operations. There can be bugs that need more steps.
+- The models are bounded. `ConnPool` uses 3 clients, `MaxSize = 1`, and 1 or 2 rounds. `TxHandle` uses 2 user operations and 2 close workers. There can be bugs that need more steps.
 - The models are written by hand from the Go code. If the Go code changes, update the models.
 - `Allocator.lean` and `Scopes.lean` model the design of issue #138, not Go code. When the compiler is implemented, the Go code must follow the model.
 - `Scopes.lean` models filters as a binary tree (`And` and `Or` with two children). It has comparisons, `Computed`, `RolePlayer`, `And`, `Or`, and `Not`, but not the other filter constructors. It does not model error reporting, filter values, or the TypeQL text. Generated names can depend on the order of allocation (an example in `Allocator.lean` shows this).
 - A mutation test showed that each TLA+ model can find a bug. When one guard is removed from the model, TLC reports an error.
+- A second mutation test checks the close workers. When a worker checks the queue and takes the job in two separate steps, TLC reports two workers that take one job. The Go code takes a job with one channel receive.

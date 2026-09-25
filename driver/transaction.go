@@ -299,13 +299,43 @@ func (t *transactionCloseTracker) wait(ctx context.Context) error {
 	}
 }
 
-func newTransactionCloseWorker(cleanup *transactionCleanupTracker) *transactionCloseWorker {
+// defaultCloseWorkers is the number of goroutines that run native closes when
+// DriverOptions.CloseWorkers is zero. One worker caps throughput at one close
+// per close round trip: queued closes then hold native-handle slots, and
+// transaction opens wait for admission (benchmarks/reviews/2026-09-25).
+const defaultCloseWorkers = 8
+
+// closeWorkerCount resolves DriverOptions.CloseWorkers. With admission on,
+// more workers than native-handle slots cannot run, because each queued
+// close holds a slot.
+func closeWorkerCount(requested, maxNative int) int {
+	n := requested
+	if n <= 0 {
+		n = defaultCloseWorkers
+	}
+	if maxNative > 0 && n > maxNative {
+		n = maxNative
+	}
+	return n
+}
+
+// newTransactionCloseWorker starts n goroutines that drain one close queue.
+// Each job owns a distinct native handle, so jobs can run concurrently
+// (formal/tla/TxHandle.tla models two workers).
+func newTransactionCloseWorker(cleanup *transactionCleanupTracker, n int) *transactionCloseWorker {
 	w := &transactionCloseWorker{
 		jobs:    make(chan transactionCloseJob, transactionCloseQueueSize),
 		done:    make(chan struct{}),
 		cleanup: cleanup,
 	}
-	go w.run()
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(w.run)
+	}
+	go func() {
+		wg.Wait()
+		close(w.done)
+	}()
 	return w
 }
 
@@ -332,7 +362,6 @@ func (w *transactionCloseWorker) enqueue(job transactionCloseJob) bool {
 }
 
 func (w *transactionCloseWorker) run() {
-	defer close(w.done)
 	for job := range w.jobs {
 		w.cleanup.dequeued(job)
 		runTransactionCloseJob(job)

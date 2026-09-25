@@ -6,7 +6,7 @@
 (* Actors: the user goroutine (a bounded, nondeterministic sequence of     *)
 (* lifecycle calls, including a streaming query whose callback makes        *)
 (* nested calls), one background goroutine per QueryWithContext /          *)
-(* QueryEachWithContext call, the async close worker, the GC (weak pointer *)
+(* QueryEachWithContext call, the async close workers, the GC (weak pointer*)
 (* expiry + finalizer), and Driver.Close.                                  *)
 (*                                                                         *)
 (* t.mu is modelled as an explicit lock because a stream releases it in    *)
@@ -21,7 +21,7 @@ CONSTANTS NOps,          \* user operations
           WithDriverClose
 
 User    == 1
-Worker  == 2
+Workers == {2, 5}                \* several goroutines drain one close queue
 Closer  == 3
 GC      == 4
 BgIds   == 10..(10 + NOps)
@@ -38,7 +38,10 @@ variables
     \* registry / GC
     userRef = TRUE, weakNil = FALSE, closerRef = FALSE, finalized = FALSE,
     \* close worker
-    queue = <<>>, wClosed = FALSE, wDone = FALSE,
+    \* close workers: held[w] is the job a worker took (-1 = none); a job's
+    \* release closure captures the Transaction, so a held job keeps it reachable
+    queue = <<>>, wClosed = FALSE, wExited = {},
+    held = [w \in Workers |-> -1],
     \* driver
     closing = FALSE, driverFreed = FALSE,
     \* background goroutines: "idle" | "query" | "stream" | "done"
@@ -49,6 +52,8 @@ variables
 define {
     BgAlive == \E k \in BgIds : bg[k] \in {"query", "stream"}
     Reachable == userRef \/ closerRef \/ BgAlive \/ queue # <<>>
+                 \/ \E w \in Workers : held[w] >= 0
+    WDone == wExited = Workers
 
     NoDoubleSlotRelease == slotReleases <= 1
     OnDoneNotOverpaid   == onDoneOwed >= 0
@@ -350,17 +355,19 @@ b_done:
     bg[self] := "done";
 }
 
-fair process (WorkerP \in {Worker})
+fair process (WorkerP \in Workers)
 {
 w_loop:
     while (TRUE) {
+        \* range w.jobs: the channel receive takes one job atomically
         await queue # <<>> \/ wClosed;
-        if (queue = <<>>) { wDone := TRUE; goto w_end; };
+        if (queue = <<>>) { wExited := wExited \cup {self}; goto w_end; }
+        else { held[self] := Head(queue); queue := Tail(queue); };
 w_run:
         free();                                  \* typedb_transaction_close
         releaseSlotOnce();
-        onDoneOwed := onDoneOwed - Head(queue);
-        queue := Tail(queue);
+        onDoneOwed := onDoneOwed - held[self];
+        held[self] := -1;
     };
 w_end:
     skip;
@@ -410,7 +417,7 @@ d_run_orphan:
 d_worker:
     wClosed := TRUE;
 d_worker_wait:
-    await wDone;
+    await WDone;                          \* wg.Wait, then close(w.done)
 d_wg:
     await slotReleases >= 1;              \* nativeWG.Wait
 d_free:
@@ -422,12 +429,14 @@ d_end:
 \* BEGIN TRANSLATION
 VARIABLES ptr, abandoned, ctxCalls, streaming, closeReq, closeCbs, opened, mu, 
           lease, slotOnceDone, userRef, weakNil, closerRef, finalized, queue, 
-          wClosed, wDone, closing, driverFreed, bg, handle, ffiBusy, 
+          wClosed, wExited, held, closing, driverFreed, bg, handle, ffiBusy, 
           slotReleases, onDoneOwed, pc, stack
 
 (* define statement *)
 BgAlive == \E k \in BgIds : bg[k] \in {"query", "stream"}
 Reachable == userRef \/ closerRef \/ BgAlive \/ queue # <<>>
+             \/ \E w \in Workers : held[w] >= 0
+WDone == wExited = Workers
 
 NoDoubleSlotRelease == slotReleases <= 1
 OnDoneNotOverpaid   == onDoneOwed >= 0
@@ -443,12 +452,12 @@ VARIABLES owed, withCb, got, cgot, cleanup, fgot, isUser, chunks, sgot, cbs,
 
 vars == << ptr, abandoned, ctxCalls, streaming, closeReq, closeCbs, opened, 
            mu, lease, slotOnceDone, userRef, weakNil, closerRef, finalized, 
-           queue, wClosed, wDone, closing, driverFreed, bg, handle, ffiBusy, 
-           slotReleases, onDoneOwed, pc, stack, owed, withCb, got, cgot, 
-           cleanup, fgot, isUser, chunks, sgot, cbs, cbop, i, op, ggot, lgot
-        >>
+           queue, wClosed, wExited, held, closing, driverFreed, bg, handle, 
+           ffiBusy, slotReleases, onDoneOwed, pc, stack, owed, withCb, got, 
+           cgot, cleanup, fgot, isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
+           lgot >>
 
-ProcSet == ({User}) \cup (BgIds) \cup ({Worker}) \cup ({GC}) \cup ({Closer})
+ProcSet == ({User}) \cup (BgIds) \cup (Workers) \cup ({GC}) \cup ({Closer})
 
 Init == (* Global variables *)
         /\ ptr = TRUE
@@ -467,7 +476,8 @@ Init == (* Global variables *)
         /\ finalized = FALSE
         /\ queue = <<>>
         /\ wClosed = FALSE
-        /\ wDone = FALSE
+        /\ wExited = {}
+        /\ held = [w \in Workers |-> -1]
         /\ closing = FALSE
         /\ driverFreed = FALSE
         /\ bg = [k \in BgIds |-> "idle"]
@@ -501,7 +511,7 @@ Init == (* Global variables *)
         /\ stack = [self \in ProcSet |-> << >>]
         /\ pc = [self \in ProcSet |-> CASE self \in {User} -> "u_loop"
                                         [] self \in BgIds -> "b_start"
-                                        [] self \in {Worker} -> "w_loop"
+                                        [] self \in Workers -> "w_loop"
                                         [] self \in {GC} -> "g_expire"
                                         [] self \in {Closer} -> "d_start"]
 
@@ -517,14 +527,14 @@ cj_enq(self) == /\ pc[self] = "cj_enq"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, 
-                                wClosed, wDone, closing, driverFreed, bg, 
-                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                wClosed, wExited, held, closing, driverFreed, 
+                                bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                 withCb, got, cgot, cleanup, fgot, isUser, 
                                 chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 cj_drop(self) == /\ pc[self] = "cj_drop"
                  /\ Assert(handle = "live" /\ ~driverFreed, 
-                           "Failure of assertion at line 66, column 18 of macro called at line 85, column 5.")
+                           "Failure of assertion at line 71, column 18 of macro called at line 90, column 5.")
                  /\ handle' = "freed"
                  /\ IF ~slotOnceDone
                        THEN /\ slotOnceDone' = TRUE
@@ -537,10 +547,10 @@ cj_drop(self) == /\ pc[self] = "cj_drop"
                  /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, mu, lease, userRef, weakNil, 
-                                 closerRef, finalized, queue, wClosed, wDone, 
-                                 closing, driverFreed, bg, ffiBusy, withCb, 
-                                 got, cgot, cleanup, fgot, isUser, chunks, 
-                                 sgot, cbs, cbop, i, op, ggot, lgot >>
+                                 closerRef, finalized, queue, wClosed, wExited, 
+                                 held, closing, driverFreed, bg, ffiBusy, 
+                                 withCb, got, cgot, cleanup, fgot, isUser, 
+                                 chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 CloseJob(self) == cj_enq(self) \/ cj_drop(self)
 
@@ -553,8 +563,8 @@ ca_abandon(self) == /\ pc[self] = "ca_abandon"
                     /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                     closeReq, closeCbs, opened, mu, lease, 
                                     slotOnceDone, userRef, weakNil, closerRef, 
-                                    finalized, queue, wClosed, wDone, closing, 
-                                    driverFreed, bg, handle, ffiBusy, 
+                                    finalized, queue, wClosed, wExited, held, 
+                                    closing, driverFreed, bg, handle, ffiBusy, 
                                     slotReleases, stack, owed, withCb, got, 
                                     cgot, cleanup, fgot, isUser, chunks, sgot, 
                                     cbs, cbop, i, op, ggot, lgot >>
@@ -574,8 +584,8 @@ ca_check(self) == /\ pc[self] = "ca_check"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wClosed, wDone, closing, 
-                                  driverFreed, bg, handle, ffiBusy, 
+                                  finalized, queue, wClosed, wExited, held, 
+                                  closing, driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, owed, cgot, cleanup, fgot, 
                                   isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                   lgot >>
@@ -587,8 +597,8 @@ ca_lock(self) == /\ pc[self] = "ca_lock"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  stack, owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
@@ -601,7 +611,7 @@ ca_body(self) == /\ pc[self] = "ca_body"
                                   ELSE /\ TRUE
                                        /\ UNCHANGED closeCbs
                             /\ Assert(mu = self, 
-                                      "Failure of assertion at line 64, column 18 of macro called at line 109, column 9.")
+                                      "Failure of assertion at line 69, column 18 of macro called at line 114, column 9.")
                             /\ mu' = 0
                             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                             /\ got' = [got EXCEPT ![self] = Head(stack[self]).got]
@@ -614,18 +624,18 @@ ca_body(self) == /\ pc[self] = "ca_body"
                                        /\ ptr' = FALSE
                                        /\ opened' = FALSE
                                        /\ Assert(mu = self, 
-                                                 "Failure of assertion at line 64, column 18 of macro called at line 113, column 9.")
+                                                 "Failure of assertion at line 69, column 18 of macro called at line 118, column 9.")
                                        /\ mu' = 0
                                   ELSE /\ Assert(mu = self, 
-                                                 "Failure of assertion at line 64, column 18 of macro called at line 115, column 9.")
+                                                 "Failure of assertion at line 69, column 18 of macro called at line 120, column 9.")
                                        /\ mu' = 0
                                        /\ UNCHANGED << ptr, opened, lease, got >>
                             /\ pc' = [pc EXCEPT ![self] = "ca_job"]
                             /\ UNCHANGED << closeReq, closeCbs, stack, withCb >>
                  /\ UNCHANGED << abandoned, ctxCalls, streaming, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  owed, cgot, cleanup, fgot, isUser, chunks, 
                                  sgot, cbs, cbop, i, op, ggot, lgot >>
 
@@ -651,10 +661,10 @@ ca_job(self) == /\ pc[self] = "ca_job"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, queue, 
-                                wClosed, wDone, closing, driverFreed, bg, 
-                                handle, ffiBusy, slotReleases, cgot, cleanup, 
-                                fgot, isUser, chunks, sgot, cbs, cbop, i, op, 
-                                ggot, lgot >>
+                                wClosed, wExited, held, closing, driverFreed, 
+                                bg, handle, ffiBusy, slotReleases, cgot, 
+                                cleanup, fgot, isUser, chunks, sgot, cbs, cbop, 
+                                i, op, ggot, lgot >>
 
 CloseAsyncP(self) == ca_abandon(self) \/ ca_check(self) \/ ca_lock(self)
                         \/ ca_body(self) \/ ca_job(self)
@@ -668,8 +678,8 @@ cm_check(self) == /\ pc[self] = "cm_check"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wClosed, wDone, closing, 
-                                  driverFreed, bg, handle, ffiBusy, 
+                                  finalized, queue, wClosed, wExited, held, 
+                                  closing, driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, onDoneOwed, owed, withCb, got, 
                                   cgot, cleanup, fgot, isUser, chunks, sgot, 
                                   cbs, cbop, i, op, ggot, lgot >>
@@ -681,8 +691,8 @@ cm_lock(self) == /\ pc[self] = "cm_lock"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  stack, owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
@@ -690,7 +700,7 @@ cm_lock(self) == /\ pc[self] = "cm_lock"
 cm_body(self) == /\ pc[self] = "cm_body"
                  /\ IF streaming \/ ~ptr
                        THEN /\ Assert(mu = self, 
-                                      "Failure of assertion at line 64, column 18 of macro called at line 134, column 30.")
+                                      "Failure of assertion at line 69, column 18 of macro called at line 139, column 30.")
                             /\ mu' = 0
                             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
@@ -699,15 +709,15 @@ cm_body(self) == /\ pc[self] = "cm_body"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
 
 cm_ffi(self) == /\ pc[self] = "cm_ffi"
                 /\ Assert(handle = "live" /\ ~driverFreed, 
-                          "Failure of assertion at line 66, column 18 of macro called at line 136, column 5.")
+                          "Failure of assertion at line 71, column 18 of macro called at line 141, column 5.")
                 /\ handle' = "freed"
                 /\ lease' = FALSE
                 /\ ptr' = FALSE
@@ -718,15 +728,15 @@ cm_ffi(self) == /\ pc[self] = "cm_ffi"
                       ELSE /\ TRUE
                            /\ UNCHANGED << slotOnceDone, slotReleases >>
                 /\ Assert(mu = self, 
-                          "Failure of assertion at line 64, column 18 of macro called at line 139, column 5.")
+                          "Failure of assertion at line 69, column 18 of macro called at line 144, column 5.")
                 /\ mu' = 0
                 /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                 /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                 /\ UNCHANGED << abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, userRef, weakNil, closerRef, 
-                                finalized, queue, wClosed, wDone, closing, 
-                                driverFreed, bg, ffiBusy, onDoneOwed, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
+                                finalized, queue, wClosed, wExited, held, 
+                                closing, driverFreed, bg, ffiBusy, onDoneOwed, 
+                                owed, withCb, got, cgot, cleanup, fgot, isUser, 
                                 chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 CommitP(self) == cm_check(self) \/ cm_lock(self) \/ cm_body(self)
@@ -741,8 +751,8 @@ rb_check(self) == /\ pc[self] = "rb_check"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wClosed, wDone, closing, 
-                                  driverFreed, bg, handle, ffiBusy, 
+                                  finalized, queue, wClosed, wExited, held, 
+                                  closing, driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, onDoneOwed, owed, withCb, got, 
                                   cgot, cleanup, fgot, isUser, chunks, sgot, 
                                   cbs, cbop, i, op, ggot, lgot >>
@@ -754,8 +764,8 @@ rb_lock(self) == /\ pc[self] = "rb_lock"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  stack, owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
@@ -763,7 +773,7 @@ rb_lock(self) == /\ pc[self] = "rb_lock"
 rb_body(self) == /\ pc[self] = "rb_body"
                  /\ IF streaming \/ ~ptr
                        THEN /\ Assert(mu = self, 
-                                      "Failure of assertion at line 64, column 18 of macro called at line 150, column 30.")
+                                      "Failure of assertion at line 69, column 18 of macro called at line 155, column 30.")
                             /\ mu' = 0
                             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
@@ -772,23 +782,23 @@ rb_body(self) == /\ pc[self] = "rb_body"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
 
 rb_ffi(self) == /\ pc[self] = "rb_ffi"
                 /\ \/ /\ Assert(handle = "live" /\ ~driverFreed, 
-                                "Failure of assertion at line 65, column 18 of macro called at line 153, column 9.")
+                                "Failure of assertion at line 70, column 18 of macro called at line 158, column 9.")
                       /\ Assert(mu = self, 
-                                "Failure of assertion at line 64, column 18 of macro called at line 154, column 9.")
+                                "Failure of assertion at line 69, column 18 of macro called at line 159, column 9.")
                       /\ mu' = 0
                       /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                       /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                       /\ UNCHANGED <<ptr, opened, lease, slotOnceDone, handle, slotReleases>>
                    \/ /\ Assert(handle = "live" /\ ~driverFreed, 
-                                "Failure of assertion at line 66, column 18 of macro called at line 157, column 9.")
+                                "Failure of assertion at line 71, column 18 of macro called at line 162, column 9.")
                       /\ handle' = "freed"
                       /\ lease' = FALSE
                       /\ ptr' = FALSE
@@ -799,15 +809,15 @@ rb_ffi(self) == /\ pc[self] = "rb_ffi"
                             ELSE /\ TRUE
                                  /\ UNCHANGED << slotOnceDone, slotReleases >>
                       /\ Assert(mu = self, 
-                                "Failure of assertion at line 64, column 18 of macro called at line 160, column 9.")
+                                "Failure of assertion at line 69, column 18 of macro called at line 165, column 9.")
                       /\ mu' = 0
                       /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                       /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                 /\ UNCHANGED << abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, userRef, weakNil, closerRef, 
-                                finalized, queue, wClosed, wDone, closing, 
-                                driverFreed, bg, ffiBusy, onDoneOwed, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
+                                finalized, queue, wClosed, wExited, held, 
+                                closing, driverFreed, bg, ffiBusy, onDoneOwed, 
+                                owed, withCb, got, cgot, cleanup, fgot, isUser, 
                                 chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 RollbackP(self) == rb_check(self) \/ rb_lock(self) \/ rb_body(self)
@@ -823,8 +833,8 @@ cc_check(self) == /\ pc[self] = "cc_check"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wClosed, wDone, closing, 
-                                  driverFreed, bg, handle, ffiBusy, 
+                                  finalized, queue, wClosed, wExited, held, 
+                                  closing, driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, onDoneOwed, owed, withCb, got, 
                                   cleanup, fgot, isUser, chunks, sgot, cbs, 
                                   cbop, i, op, ggot, lgot >>
@@ -836,8 +846,8 @@ cc_lock(self) == /\ pc[self] = "cc_lock"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  stack, owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
@@ -845,7 +855,7 @@ cc_lock(self) == /\ pc[self] = "cc_lock"
 cc_body(self) == /\ pc[self] = "cc_body"
                  /\ IF streaming
                        THEN /\ Assert(mu = self, 
-                                      "Failure of assertion at line 64, column 18 of macro called at line 173, column 22.")
+                                      "Failure of assertion at line 69, column 18 of macro called at line 178, column 22.")
                             /\ mu' = 0
                             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                             /\ cgot' = [cgot EXCEPT ![self] = Head(stack[self]).cgot]
@@ -860,22 +870,22 @@ cc_body(self) == /\ pc[self] = "cc_body"
                                        /\ UNCHANGED << ptr, opened, lease, 
                                                        cgot >>
                             /\ Assert(mu = self, 
-                                      "Failure of assertion at line 64, column 18 of macro called at line 176, column 9.")
+                                      "Failure of assertion at line 69, column 18 of macro called at line 181, column 9.")
                             /\ mu' = 0
                             /\ pc' = [pc EXCEPT ![self] = "cc_close"]
                             /\ stack' = stack
                  /\ UNCHANGED << abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, slotOnceDone, userRef, weakNil, 
-                                 closerRef, finalized, queue, wClosed, wDone, 
-                                 closing, driverFreed, bg, handle, ffiBusy, 
-                                 slotReleases, onDoneOwed, owed, withCb, got, 
-                                 cleanup, fgot, isUser, chunks, sgot, cbs, 
-                                 cbop, i, op, ggot, lgot >>
+                                 closerRef, finalized, queue, wClosed, wExited, 
+                                 held, closing, driverFreed, bg, handle, 
+                                 ffiBusy, slotReleases, onDoneOwed, owed, 
+                                 withCb, got, cleanup, fgot, isUser, chunks, 
+                                 sgot, cbs, cbop, i, op, ggot, lgot >>
 
 cc_close(self) == /\ pc[self] = "cc_close"
                   /\ IF cgot[self]
                         THEN /\ Assert(handle = "live" /\ ~driverFreed, 
-                                       "Failure of assertion at line 66, column 18 of macro called at line 179, column 17.")
+                                       "Failure of assertion at line 71, column 18 of macro called at line 184, column 17.")
                              /\ handle' = "freed"
                              /\ IF ~slotOnceDone
                                    THEN /\ slotOnceDone' = TRUE
@@ -892,10 +902,10 @@ cc_close(self) == /\ pc[self] = "cc_close"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   userRef, weakNil, closerRef, finalized, 
-                                  queue, wClosed, wDone, closing, driverFreed, 
-                                  bg, ffiBusy, onDoneOwed, owed, withCb, got, 
-                                  cleanup, fgot, isUser, chunks, sgot, cbs, 
-                                  cbop, i, op, ggot, lgot >>
+                                  queue, wClosed, wExited, held, closing, 
+                                  driverFreed, bg, ffiBusy, onDoneOwed, owed, 
+                                  withCb, got, cleanup, fgot, isUser, chunks, 
+                                  sgot, cbs, cbop, i, op, ggot, lgot >>
 
 CloseCheckedP(self) == cc_check(self) \/ cc_lock(self) \/ cc_body(self)
                           \/ cc_close(self)
@@ -909,8 +919,8 @@ io_check(self) == /\ pc[self] = "io_check"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wClosed, wDone, closing, 
-                                  driverFreed, bg, handle, ffiBusy, 
+                                  finalized, queue, wClosed, wExited, held, 
+                                  closing, driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, onDoneOwed, owed, withCb, got, 
                                   cgot, cleanup, fgot, isUser, chunks, sgot, 
                                   cbs, cbop, i, op, ggot, lgot >>
@@ -922,8 +932,8 @@ io_lock(self) == /\ pc[self] = "io_lock"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  stack, owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
@@ -931,18 +941,18 @@ io_lock(self) == /\ pc[self] = "io_lock"
 io_body(self) == /\ pc[self] = "io_body"
                  /\ IF ptr /\ ~closeReq
                        THEN /\ Assert(handle = "live" /\ ~driverFreed, 
-                                      "Failure of assertion at line 65, column 18 of macro called at line 190, column 29.")
+                                      "Failure of assertion at line 70, column 18 of macro called at line 195, column 29.")
                        ELSE /\ TRUE
                  /\ Assert(mu = self, 
-                           "Failure of assertion at line 64, column 18 of macro called at line 191, column 5.")
+                           "Failure of assertion at line 69, column 18 of macro called at line 196, column 5.")
                  /\ mu' = 0
                  /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                  /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
@@ -956,11 +966,11 @@ fc_state(self) == /\ pc[self] = "fc_state"
                   /\ UNCHANGED << ptr, abandoned, streaming, closeReq, 
                                   closeCbs, opened, mu, lease, slotOnceDone, 
                                   userRef, weakNil, closerRef, finalized, 
-                                  queue, wClosed, wDone, closing, driverFreed, 
-                                  bg, handle, ffiBusy, slotReleases, 
-                                  onDoneOwed, stack, owed, withCb, got, cgot, 
-                                  fgot, isUser, chunks, sgot, cbs, cbop, i, op, 
-                                  ggot, lgot >>
+                                  queue, wClosed, wExited, held, closing, 
+                                  driverFreed, bg, handle, ffiBusy, 
+                                  slotReleases, onDoneOwed, stack, owed, 
+                                  withCb, got, cgot, fgot, isUser, chunks, 
+                                  sgot, cbs, cbop, i, op, ggot, lgot >>
 
 fc_lock(self) == /\ pc[self] = "fc_lock"
                  /\ IF ~cleanup[self]
@@ -976,15 +986,15 @@ fc_lock(self) == /\ pc[self] = "fc_lock"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  owed, withCb, got, cgot, isUser, chunks, sgot, 
                                  cbs, cbop, i, op, ggot, lgot >>
 
 fc_body(self) == /\ pc[self] = "fc_body"
                  /\ IF streaming
                        THEN /\ Assert(mu = self, 
-                                      "Failure of assertion at line 64, column 18 of macro called at line 205, column 22.")
+                                      "Failure of assertion at line 69, column 18 of macro called at line 210, column 22.")
                             /\ mu' = 0
                             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                             /\ cleanup' = [cleanup EXCEPT ![self] = Head(stack[self]).cleanup]
@@ -1000,17 +1010,17 @@ fc_body(self) == /\ pc[self] = "fc_body"
                                        /\ UNCHANGED << ptr, opened, lease, 
                                                        fgot >>
                             /\ Assert(mu = self, 
-                                      "Failure of assertion at line 64, column 18 of macro called at line 208, column 9.")
+                                      "Failure of assertion at line 69, column 18 of macro called at line 213, column 9.")
                             /\ mu' = 0
                             /\ pc' = [pc EXCEPT ![self] = "fc_job"]
                             /\ UNCHANGED << stack, cleanup >>
                  /\ UNCHANGED << abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, slotOnceDone, userRef, weakNil, 
-                                 closerRef, finalized, queue, wClosed, wDone, 
-                                 closing, driverFreed, bg, handle, ffiBusy, 
-                                 slotReleases, onDoneOwed, owed, withCb, got, 
-                                 cgot, isUser, chunks, sgot, cbs, cbop, i, op, 
-                                 ggot, lgot >>
+                                 closerRef, finalized, queue, wClosed, wExited, 
+                                 held, closing, driverFreed, bg, handle, 
+                                 ffiBusy, slotReleases, onDoneOwed, owed, 
+                                 withCb, got, cgot, isUser, chunks, sgot, cbs, 
+                                 cbop, i, op, ggot, lgot >>
 
 fc_job(self) == /\ pc[self] = "fc_job"
                 /\ IF fgot[self]
@@ -1030,8 +1040,8 @@ fc_job(self) == /\ pc[self] = "fc_job"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, queue, 
-                                wClosed, wDone, closing, driverFreed, bg, 
-                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                wClosed, wExited, held, closing, driverFreed, 
+                                bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                 withCb, got, cgot, isUser, chunks, sgot, cbs, 
                                 cbop, i, op, ggot, lgot >>
 
@@ -1047,8 +1057,8 @@ q_check(self) == /\ pc[self] = "q_check"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, mu, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
@@ -1060,15 +1070,16 @@ q_lock(self) == /\ pc[self] = "q_lock"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, lease, slotOnceDone, userRef, 
                                 weakNil, closerRef, finalized, queue, wClosed, 
-                                wDone, closing, driverFreed, bg, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
-                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
+                                wExited, held, closing, driverFreed, bg, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                stack, owed, withCb, got, cgot, cleanup, fgot, 
+                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
+                                lgot >>
 
 q_body(self) == /\ pc[self] = "q_body"
                 /\ IF streaming \/ ~ptr
                       THEN /\ Assert(mu = self, 
-                                     "Failure of assertion at line 64, column 18 of macro called at line 222, column 30.")
+                                     "Failure of assertion at line 69, column 18 of macro called at line 227, column 30.")
                            /\ mu' = 0
                            /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                            /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
@@ -1077,39 +1088,39 @@ q_body(self) == /\ pc[self] = "q_body"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, lease, slotOnceDone, userRef, 
                                 weakNil, closerRef, finalized, queue, wClosed, 
-                                wDone, closing, driverFreed, bg, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
+                                wExited, held, closing, driverFreed, bg, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                owed, withCb, got, cgot, cleanup, fgot, isUser, 
                                 chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 q_ffi(self) == /\ pc[self] = "q_ffi"
                /\ Assert(handle = "live" /\ ~driverFreed, 
-                         "Failure of assertion at line 65, column 18 of macro called at line 224, column 5.")
+                         "Failure of assertion at line 70, column 18 of macro called at line 229, column 5.")
                /\ ffiBusy' = ffiBusy + 1
                /\ pc' = [pc EXCEPT ![self] = "q_ffi_end"]
                /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                closeCbs, opened, mu, lease, slotOnceDone, 
                                userRef, weakNil, closerRef, finalized, queue, 
-                               wClosed, wDone, closing, driverFreed, bg, 
-                               handle, slotReleases, onDoneOwed, stack, owed, 
-                               withCb, got, cgot, cleanup, fgot, isUser, 
+                               wClosed, wExited, held, closing, driverFreed, 
+                               bg, handle, slotReleases, onDoneOwed, stack, 
+                               owed, withCb, got, cgot, cleanup, fgot, isUser, 
                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 q_ffi_end(self) == /\ pc[self] = "q_ffi_end"
                    /\ ffiBusy' = ffiBusy - 1
                    /\ Assert(mu = self, 
-                             "Failure of assertion at line 64, column 18 of macro called at line 228, column 5.")
+                             "Failure of assertion at line 69, column 18 of macro called at line 233, column 5.")
                    /\ mu' = 0
                    /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                    /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                    /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                    closeReq, closeCbs, opened, lease, 
                                    slotOnceDone, userRef, weakNil, closerRef, 
-                                   finalized, queue, wClosed, wDone, closing, 
-                                   driverFreed, bg, handle, slotReleases, 
-                                   onDoneOwed, owed, withCb, got, cgot, 
-                                   cleanup, fgot, isUser, chunks, sgot, cbs, 
-                                   cbop, i, op, ggot, lgot >>
+                                   finalized, queue, wClosed, wExited, held, 
+                                   closing, driverFreed, bg, handle, 
+                                   slotReleases, onDoneOwed, owed, withCb, got, 
+                                   cgot, cleanup, fgot, isUser, chunks, sgot, 
+                                   cbs, cbop, i, op, ggot, lgot >>
 
 QueryP(self) == q_check(self) \/ q_lock(self) \/ q_body(self)
                    \/ q_ffi(self) \/ q_ffi_end(self)
@@ -1129,8 +1140,8 @@ s_check(self) == /\ pc[self] = "s_check"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, mu, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  owed, withCb, got, cgot, cleanup, fgot, i, op, 
                                  ggot, lgot >>
 
@@ -1141,15 +1152,16 @@ s_lock(self) == /\ pc[self] = "s_lock"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, lease, slotOnceDone, userRef, 
                                 weakNil, closerRef, finalized, queue, wClosed, 
-                                wDone, closing, driverFreed, bg, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
-                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
+                                wExited, held, closing, driverFreed, bg, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                stack, owed, withCb, got, cgot, cleanup, fgot, 
+                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
+                                lgot >>
 
 s_body(self) == /\ pc[self] = "s_body"
                 /\ IF streaming \/ ~ptr
                       THEN /\ Assert(mu = self, 
-                                     "Failure of assertion at line 64, column 18 of macro called at line 242, column 30.")
+                                     "Failure of assertion at line 69, column 18 of macro called at line 247, column 30.")
                            /\ mu' = 0
                            /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                            /\ chunks' = [chunks EXCEPT ![self] = Head(stack[self]).chunks]
@@ -1165,20 +1177,21 @@ s_body(self) == /\ pc[self] = "s_body"
                                            cbs, cbop >>
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, closeReq, closeCbs, 
                                 opened, lease, slotOnceDone, userRef, weakNil, 
-                                closerRef, finalized, queue, wClosed, wDone, 
-                                closing, driverFreed, bg, handle, ffiBusy, 
-                                slotReleases, onDoneOwed, owed, withCb, got, 
-                                cgot, cleanup, fgot, i, op, ggot, lgot >>
+                                closerRef, finalized, queue, wClosed, wExited, 
+                                held, closing, driverFreed, bg, handle, 
+                                ffiBusy, slotReleases, onDoneOwed, owed, 
+                                withCb, got, cgot, cleanup, fgot, i, op, ggot, 
+                                lgot >>
 
 s_open(self) == /\ pc[self] = "s_open"
                 /\ Assert(handle = "live" /\ ~driverFreed, 
-                          "Failure of assertion at line 65, column 18 of macro called at line 244, column 5.")
+                          "Failure of assertion at line 70, column 18 of macro called at line 249, column 5.")
                 /\ pc' = [pc EXCEPT ![self] = "s_next"]
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, queue, 
-                                wClosed, wDone, closing, driverFreed, bg, 
-                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                wClosed, wExited, held, closing, driverFreed, 
+                                bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                 stack, owed, withCb, got, cgot, cleanup, fgot, 
                                 isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                 lgot >>
@@ -1187,15 +1200,15 @@ s_next(self) == /\ pc[self] = "s_next"
                 /\ IF chunks[self] < 2
                       THEN /\ chunks' = [chunks EXCEPT ![self] = chunks[self] + 1]
                            /\ Assert(handle = "live" /\ ~driverFreed, 
-                                     "Failure of assertion at line 65, column 18 of macro called at line 248, column 9.")
+                                     "Failure of assertion at line 70, column 18 of macro called at line 253, column 9.")
                            /\ pc' = [pc EXCEPT ![self] = "s_row"]
                       ELSE /\ pc' = [pc EXCEPT ![self] = "s_drop"]
                            /\ UNCHANGED chunks
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, queue, 
-                                wClosed, wDone, closing, driverFreed, bg, 
-                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                wClosed, wExited, held, closing, driverFreed, 
+                                bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                 stack, owed, withCb, got, cgot, cleanup, fgot, 
                                 isUser, sgot, cbs, cbop, i, op, ggot, lgot >>
 
@@ -1204,13 +1217,13 @@ s_row(self) == /\ pc[self] = "s_row"
                      THEN /\ pc' = [pc EXCEPT ![self] = "s_drop"]
                           /\ mu' = mu
                      ELSE /\ Assert(mu = self, 
-                                    "Failure of assertion at line 64, column 18 of macro called at line 250, column 47.")
+                                    "Failure of assertion at line 69, column 18 of macro called at line 255, column 47.")
                           /\ mu' = 0
                           /\ pc' = [pc EXCEPT ![self] = "s_cb"]
                /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                closeCbs, opened, lease, slotOnceDone, userRef, 
                                weakNil, closerRef, finalized, queue, wClosed, 
-                               wDone, closing, driverFreed, bg, handle, 
+                               wExited, held, closing, driverFreed, bg, handle, 
                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
                                withCb, got, cgot, cleanup, fgot, isUser, 
                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
@@ -1224,10 +1237,10 @@ s_cb(self) == /\ pc[self] = "s_cb"
               /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                               closeCbs, opened, mu, lease, slotOnceDone, 
                               userRef, weakNil, closerRef, finalized, queue, 
-                              wClosed, wDone, closing, driverFreed, bg, handle, 
-                              ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                              withCb, got, cgot, cleanup, fgot, isUser, chunks, 
-                              sgot, cbs, i, op, ggot, lgot >>
+                              wClosed, wExited, held, closing, driverFreed, bg, 
+                              handle, ffiBusy, slotReleases, onDoneOwed, stack, 
+                              owed, withCb, got, cgot, cleanup, fgot, isUser, 
+                              chunks, sgot, cbs, i, op, ggot, lgot >>
 
 s_cb_run(self) == /\ pc[self] = "s_cb_run"
                   /\ IF cbop[self] = "close"
@@ -1260,8 +1273,8 @@ s_cb_run(self) == /\ pc[self] = "s_cb_run"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wClosed, wDone, closing, 
-                                  driverFreed, bg, handle, ffiBusy, 
+                                  finalized, queue, wClosed, wExited, held, 
+                                  closing, driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, onDoneOwed, owed, cgot, 
                                   cleanup, fgot, isUser, chunks, sgot, cbs, 
                                   cbop, i, op, ggot, lgot >>
@@ -1277,21 +1290,21 @@ s_relock(self) == /\ pc[self] = "s_relock"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wClosed, wDone, closing, 
-                                  driverFreed, bg, handle, ffiBusy, 
+                                  finalized, queue, wClosed, wExited, held, 
+                                  closing, driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, onDoneOwed, stack, owed, 
                                   withCb, got, cgot, cleanup, fgot, isUser, 
                                   chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 s_drop(self) == /\ pc[self] = "s_drop"
                 /\ Assert(handle = "live" /\ ~driverFreed, 
-                          "Failure of assertion at line 65, column 18 of macro called at line 273, column 5.")
+                          "Failure of assertion at line 70, column 18 of macro called at line 278, column 5.")
                 /\ pc' = [pc EXCEPT ![self] = "s_finish"]
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, queue, 
-                                wClosed, wDone, closing, driverFreed, bg, 
-                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                wClosed, wExited, held, closing, driverFreed, 
+                                bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                 stack, owed, withCb, got, cgot, cleanup, fgot, 
                                 isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                 lgot >>
@@ -1300,7 +1313,7 @@ s_finish(self) == /\ pc[self] = "s_finish"
                   /\ streaming' = FALSE
                   /\ IF ~closeReq /\ ~abandoned
                         THEN /\ Assert(mu = self, 
-                                       "Failure of assertion at line 64, column 18 of macro called at line 276, column 36.")
+                                       "Failure of assertion at line 69, column 18 of macro called at line 281, column 36.")
                              /\ mu' = 0
                              /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                              /\ chunks' = [chunks EXCEPT ![self] = Head(stack[self]).chunks]
@@ -1323,16 +1336,16 @@ s_finish(self) == /\ pc[self] = "s_finish"
                                         /\ UNCHANGED << ptr, opened, lease, 
                                                         sgot >>
                              /\ Assert(mu = self, 
-                                       "Failure of assertion at line 64, column 18 of macro called at line 280, column 9.")
+                                       "Failure of assertion at line 69, column 18 of macro called at line 285, column 9.")
                              /\ mu' = 0
                              /\ pc' = [pc EXCEPT ![self] = "s_job"]
                              /\ UNCHANGED << stack, isUser, chunks, cbop >>
                   /\ UNCHANGED << abandoned, ctxCalls, slotOnceDone, userRef, 
                                   weakNil, closerRef, finalized, queue, 
-                                  wClosed, wDone, closing, driverFreed, bg, 
-                                  handle, ffiBusy, slotReleases, onDoneOwed, 
-                                  owed, withCb, got, cgot, cleanup, fgot, i, 
-                                  op, ggot, lgot >>
+                                  wClosed, wExited, held, closing, driverFreed, 
+                                  bg, handle, ffiBusy, slotReleases, 
+                                  onDoneOwed, owed, withCb, got, cgot, cleanup, 
+                                  fgot, i, op, ggot, lgot >>
 
 s_job(self) == /\ pc[self] = "s_job"
                /\ IF sgot[self]
@@ -1359,8 +1372,8 @@ s_job(self) == /\ pc[self] = "s_job"
                /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                closeCbs, opened, mu, lease, slotOnceDone, 
                                userRef, weakNil, closerRef, finalized, queue, 
-                               wClosed, wDone, closing, driverFreed, bg, 
-                               handle, ffiBusy, slotReleases, withCb, got, 
+                               wClosed, wExited, held, closing, driverFreed, 
+                               bg, handle, ffiBusy, slotReleases, withCb, got, 
                                cgot, cleanup, fgot, i, op, ggot, lgot >>
 
 StreamP(self) == s_check(self) \/ s_lock(self) \/ s_body(self)
@@ -1380,10 +1393,10 @@ n_begin(self) == /\ pc[self] = "n_begin"
                  /\ UNCHANGED << ptr, abandoned, streaming, closeReq, closeCbs, 
                                  opened, mu, lease, slotOnceDone, userRef, 
                                  weakNil, closerRef, finalized, queue, wClosed, 
-                                 wDone, closing, driverFreed, handle, ffiBusy, 
-                                 slotReleases, onDoneOwed, owed, withCb, got, 
-                                 cgot, cleanup, fgot, isUser, chunks, sgot, 
-                                 cbs, cbop, i, op, ggot, lgot >>
+                                 wExited, held, closing, driverFreed, handle, 
+                                 ffiBusy, slotReleases, onDoneOwed, owed, 
+                                 withCb, got, cgot, cleanup, fgot, isUser, 
+                                 chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 n_wait(self) == /\ pc[self] = "n_wait"
                 /\ \/ /\ bg[Bg(0)] = "done"
@@ -1399,9 +1412,9 @@ n_wait(self) == /\ pc[self] = "n_wait"
                 /\ UNCHANGED << ptr, ctxCalls, streaming, closeReq, closeCbs, 
                                 opened, mu, lease, slotOnceDone, userRef, 
                                 weakNil, closerRef, finalized, queue, wClosed, 
-                                wDone, closing, driverFreed, bg, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
+                                wExited, held, closing, driverFreed, bg, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                owed, withCb, got, cgot, cleanup, fgot, isUser, 
                                 chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 NestedCtx(self) == n_begin(self) \/ n_wait(self)
@@ -1417,8 +1430,8 @@ u_loop(self) == /\ pc[self] = "u_loop"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, queue, 
-                                wClosed, wDone, closing, driverFreed, bg, 
-                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                wClosed, wExited, held, closing, driverFreed, 
+                                bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                 stack, owed, withCb, got, cgot, cleanup, fgot, 
                                 isUser, chunks, sgot, cbs, cbop, ggot, lgot >>
 
@@ -1496,7 +1509,7 @@ u_dispatch(self) == /\ pc[self] = "u_dispatch"
                     /\ UNCHANGED << ptr, abandoned, streaming, closeReq, 
                                     closeCbs, opened, mu, lease, slotOnceDone, 
                                     userRef, weakNil, closerRef, finalized, 
-                                    queue, wClosed, wDone, closing, 
+                                    queue, wClosed, wExited, held, closing, 
                                     driverFreed, handle, ffiBusy, slotReleases, 
                                     onDoneOwed, owed, cleanup, fgot, i, op, 
                                     ggot, lgot >>
@@ -1512,10 +1525,11 @@ u_wait(self) == /\ pc[self] = "u_wait"
                 /\ UNCHANGED << ptr, ctxCalls, streaming, closeReq, closeCbs, 
                                 opened, mu, lease, slotOnceDone, userRef, 
                                 weakNil, closerRef, finalized, queue, wClosed, 
-                                wDone, closing, driverFreed, bg, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
-                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
+                                wExited, held, closing, driverFreed, bg, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                stack, owed, withCb, got, cgot, cleanup, fgot, 
+                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
+                                lgot >>
 
 u_exit(self) == /\ pc[self] = "u_exit"
                 /\ userRef' = FALSE
@@ -1523,10 +1537,11 @@ u_exit(self) == /\ pc[self] = "u_exit"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 weakNil, closerRef, finalized, queue, wClosed, 
-                                wDone, closing, driverFreed, bg, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
-                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
+                                wExited, held, closing, driverFreed, bg, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                stack, owed, withCb, got, cgot, cleanup, fgot, 
+                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
+                                lgot >>
 
 UserP(self) == u_loop(self) \/ u_dispatch(self) \/ u_wait(self)
                   \/ u_exit(self)
@@ -1556,8 +1571,8 @@ b_start(self) == /\ pc[self] = "b_start"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, mu, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  owed, withCb, got, cgot, cleanup, fgot, i, op, 
                                  ggot, lgot >>
 
@@ -1573,8 +1588,8 @@ b_finish(self) == /\ pc[self] = "b_finish"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wClosed, wDone, closing, 
-                                  driverFreed, bg, handle, ffiBusy, 
+                                  finalized, queue, wClosed, wExited, held, 
+                                  closing, driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, onDoneOwed, owed, withCb, got, 
                                   cgot, isUser, chunks, sgot, cbs, cbop, i, op, 
                                   ggot, lgot >>
@@ -1585,23 +1600,27 @@ b_done(self) == /\ pc[self] = "b_done"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, queue, 
-                                wClosed, wDone, closing, driverFreed, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
-                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
+                                wClosed, wExited, held, closing, driverFreed, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                stack, owed, withCb, got, cgot, cleanup, fgot, 
+                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
+                                lgot >>
 
 BgP(self) == b_start(self) \/ b_finish(self) \/ b_done(self)
 
 w_loop(self) == /\ pc[self] = "w_loop"
                 /\ queue # <<>> \/ wClosed
                 /\ IF queue = <<>>
-                      THEN /\ wDone' = TRUE
+                      THEN /\ wExited' = (wExited \cup {self})
                            /\ pc' = [pc EXCEPT ![self] = "w_end"]
-                      ELSE /\ pc' = [pc EXCEPT ![self] = "w_run"]
-                           /\ wDone' = wDone
+                           /\ UNCHANGED << queue, held >>
+                      ELSE /\ held' = [held EXCEPT ![self] = Head(queue)]
+                           /\ queue' = Tail(queue)
+                           /\ pc' = [pc EXCEPT ![self] = "w_run"]
+                           /\ UNCHANGED wExited
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
-                                userRef, weakNil, closerRef, finalized, queue, 
+                                userRef, weakNil, closerRef, finalized, 
                                 wClosed, closing, driverFreed, bg, handle, 
                                 ffiBusy, slotReleases, onDoneOwed, stack, owed, 
                                 withCb, got, cgot, cleanup, fgot, isUser, 
@@ -1609,22 +1628,22 @@ w_loop(self) == /\ pc[self] = "w_loop"
 
 w_run(self) == /\ pc[self] = "w_run"
                /\ Assert(handle = "live" /\ ~driverFreed, 
-                         "Failure of assertion at line 66, column 18 of macro called at line 360, column 9.")
+                         "Failure of assertion at line 71, column 18 of macro called at line 367, column 9.")
                /\ handle' = "freed"
                /\ IF ~slotOnceDone
                      THEN /\ slotOnceDone' = TRUE
                           /\ slotReleases' = slotReleases + 1
                      ELSE /\ TRUE
                           /\ UNCHANGED << slotOnceDone, slotReleases >>
-               /\ onDoneOwed' = onDoneOwed - Head(queue)
-               /\ queue' = Tail(queue)
+               /\ onDoneOwed' = onDoneOwed - held[self]
+               /\ held' = [held EXCEPT ![self] = -1]
                /\ pc' = [pc EXCEPT ![self] = "w_loop"]
                /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                closeCbs, opened, mu, lease, userRef, weakNil, 
-                               closerRef, finalized, wClosed, wDone, closing, 
-                               driverFreed, bg, ffiBusy, stack, owed, withCb, 
-                               got, cgot, cleanup, fgot, isUser, chunks, sgot, 
-                               cbs, cbop, i, op, ggot, lgot >>
+                               closerRef, finalized, queue, wClosed, wExited, 
+                               closing, driverFreed, bg, ffiBusy, stack, owed, 
+                               withCb, got, cgot, cleanup, fgot, isUser, 
+                               chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 w_end(self) == /\ pc[self] = "w_end"
                /\ TRUE
@@ -1632,8 +1651,8 @@ w_end(self) == /\ pc[self] = "w_end"
                /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                closeCbs, opened, mu, lease, slotOnceDone, 
                                userRef, weakNil, closerRef, finalized, queue, 
-                               wClosed, wDone, closing, driverFreed, bg, 
-                               handle, ffiBusy, slotReleases, onDoneOwed, 
+                               wClosed, wExited, held, closing, driverFreed, 
+                               bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                stack, owed, withCb, got, cgot, cleanup, fgot, 
                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                lgot >>
@@ -1647,11 +1666,11 @@ g_expire(self) == /\ pc[self] = "g_expire"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, closerRef, finalized, 
-                                  queue, wClosed, wDone, closing, driverFreed, 
-                                  bg, handle, ffiBusy, slotReleases, 
-                                  onDoneOwed, stack, owed, withCb, got, cgot, 
-                                  cleanup, fgot, isUser, chunks, sgot, cbs, 
-                                  cbop, i, op, ggot, lgot >>
+                                  queue, wClosed, wExited, held, closing, 
+                                  driverFreed, bg, handle, ffiBusy, 
+                                  slotReleases, onDoneOwed, stack, owed, 
+                                  withCb, got, cgot, cleanup, fgot, isUser, 
+                                  chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 g_final(self) == /\ pc[self] = "g_final"
                  /\ IF abandoned
@@ -1660,8 +1679,8 @@ g_final(self) == /\ pc[self] = "g_final"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, mu, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, closing, driverFreed, bg, 
-                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 wClosed, wExited, held, closing, driverFreed, 
+                                 bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                  stack, owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
@@ -1673,15 +1692,16 @@ g_lock(self) == /\ pc[self] = "g_lock"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, lease, slotOnceDone, userRef, 
                                 weakNil, closerRef, finalized, queue, wClosed, 
-                                wDone, closing, driverFreed, bg, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
-                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
+                                wExited, held, closing, driverFreed, bg, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                stack, owed, withCb, got, cgot, cleanup, fgot, 
+                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
+                                lgot >>
 
 g_body(self) == /\ pc[self] = "g_body"
                 /\ IF streaming
                       THEN /\ Assert(mu = self, 
-                                     "Failure of assertion at line 64, column 18 of macro called at line 382, column 22.")
+                                     "Failure of assertion at line 69, column 18 of macro called at line 389, column 22.")
                            /\ mu' = 0
                            /\ pc' = [pc EXCEPT ![self] = "g_end"]
                            /\ UNCHANGED << ptr, opened, lease, ggot >>
@@ -1693,16 +1713,16 @@ g_body(self) == /\ pc[self] = "g_body"
                                  ELSE /\ TRUE
                                       /\ UNCHANGED << ptr, opened, lease, ggot >>
                            /\ Assert(mu = self, 
-                                     "Failure of assertion at line 64, column 18 of macro called at line 385, column 9.")
+                                     "Failure of assertion at line 69, column 18 of macro called at line 392, column 9.")
                            /\ mu' = 0
                            /\ pc' = [pc EXCEPT ![self] = "g_job"]
                 /\ UNCHANGED << abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, slotOnceDone, userRef, weakNil, 
-                                closerRef, finalized, queue, wClosed, wDone, 
-                                closing, driverFreed, bg, handle, ffiBusy, 
-                                slotReleases, onDoneOwed, stack, owed, withCb, 
-                                got, cgot, cleanup, fgot, isUser, chunks, sgot, 
-                                cbs, cbop, i, op, lgot >>
+                                closerRef, finalized, queue, wClosed, wExited, 
+                                held, closing, driverFreed, bg, handle, 
+                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
+                                withCb, got, cgot, cleanup, fgot, isUser, 
+                                chunks, sgot, cbs, cbop, i, op, lgot >>
 
 g_job(self) == /\ pc[self] = "g_job"
                /\ IF ggot[self]
@@ -1717,8 +1737,8 @@ g_job(self) == /\ pc[self] = "g_job"
                /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                closeCbs, opened, mu, lease, slotOnceDone, 
                                userRef, weakNil, closerRef, finalized, queue, 
-                               wClosed, wDone, closing, driverFreed, bg, 
-                               handle, ffiBusy, slotReleases, onDoneOwed, 
+                               wClosed, wExited, held, closing, driverFreed, 
+                               bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                withCb, got, cgot, cleanup, fgot, isUser, 
                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
@@ -1728,7 +1748,7 @@ g_end(self) == /\ pc[self] = "g_end"
                /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                closeCbs, opened, mu, lease, slotOnceDone, 
                                userRef, weakNil, closerRef, queue, wClosed, 
-                               wDone, closing, driverFreed, bg, handle, 
+                               wExited, held, closing, driverFreed, bg, handle, 
                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
                                withCb, got, cgot, cleanup, fgot, isUser, 
                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
@@ -1745,9 +1765,9 @@ d_start(self) == /\ pc[self] = "d_start"
                  /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                  closeCbs, opened, mu, lease, slotOnceDone, 
                                  userRef, weakNil, closerRef, finalized, queue, 
-                                 wClosed, wDone, driverFreed, bg, handle, 
-                                 ffiBusy, slotReleases, onDoneOwed, stack, 
-                                 owed, withCb, got, cgot, cleanup, fgot, 
+                                 wClosed, wExited, held, driverFreed, bg, 
+                                 handle, ffiBusy, slotReleases, onDoneOwed, 
+                                 stack, owed, withCb, got, cgot, cleanup, fgot, 
                                  isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                  lgot >>
 
@@ -1760,10 +1780,11 @@ d_open(self) == /\ pc[self] = "d_open"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, finalized, queue, wClosed, 
-                                wDone, closing, driverFreed, bg, handle, 
-                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                                withCb, got, cgot, cleanup, fgot, isUser, 
-                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
+                                wExited, held, closing, driverFreed, bg, 
+                                handle, ffiBusy, slotReleases, onDoneOwed, 
+                                stack, owed, withCb, got, cgot, cleanup, fgot, 
+                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
+                                lgot >>
 
 d_close_tx(self) == /\ pc[self] = "d_close_tx"
                     /\ /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "CloseAsyncP",
@@ -1777,8 +1798,8 @@ d_close_tx(self) == /\ pc[self] = "d_close_tx"
                     /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                     closeReq, closeCbs, opened, mu, lease, 
                                     slotOnceDone, userRef, weakNil, closerRef, 
-                                    finalized, queue, wClosed, wDone, closing, 
-                                    driverFreed, bg, handle, ffiBusy, 
+                                    finalized, queue, wClosed, wExited, held, 
+                                    closing, driverFreed, bg, handle, ffiBusy, 
                                     slotReleases, onDoneOwed, owed, cgot, 
                                     cleanup, fgot, isUser, chunks, sgot, cbs, 
                                     cbop, i, op, ggot, lgot >>
@@ -1789,7 +1810,7 @@ d_drop_ref(self) == /\ pc[self] = "d_drop_ref"
                     /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                     closeReq, closeCbs, opened, mu, lease, 
                                     slotOnceDone, userRef, weakNil, finalized, 
-                                    queue, wClosed, wDone, closing, 
+                                    queue, wClosed, wExited, held, closing, 
                                     driverFreed, bg, handle, ffiBusy, 
                                     slotReleases, onDoneOwed, stack, owed, 
                                     withCb, got, cgot, cleanup, fgot, isUser, 
@@ -1805,8 +1826,8 @@ d_orphans(self) == /\ pc[self] = "d_orphans"
                    /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                    closeReq, closeCbs, opened, mu, 
                                    slotOnceDone, userRef, weakNil, closerRef, 
-                                   finalized, queue, wClosed, wDone, closing, 
-                                   driverFreed, bg, handle, ffiBusy, 
+                                   finalized, queue, wClosed, wExited, held, 
+                                   closing, driverFreed, bg, handle, ffiBusy, 
                                    slotReleases, onDoneOwed, stack, owed, 
                                    withCb, got, cgot, cleanup, fgot, isUser, 
                                    chunks, sgot, cbs, cbop, i, op, ggot >>
@@ -1814,7 +1835,7 @@ d_orphans(self) == /\ pc[self] = "d_orphans"
 d_run_orphan(self) == /\ pc[self] = "d_run_orphan"
                       /\ IF lgot[self]
                             THEN /\ Assert(handle = "live" /\ ~driverFreed, 
-                                           "Failure of assertion at line 66, column 18 of macro called at line 409, column 17.")
+                                           "Failure of assertion at line 71, column 18 of macro called at line 416, column 17.")
                                  /\ handle' = "freed"
                                  /\ slotReleases' = slotReleases + 1
                             ELSE /\ TRUE
@@ -1824,9 +1845,9 @@ d_run_orphan(self) == /\ pc[self] = "d_run_orphan"
                                       closeReq, closeCbs, opened, mu, lease, 
                                       slotOnceDone, userRef, weakNil, 
                                       closerRef, finalized, queue, wClosed, 
-                                      wDone, closing, driverFreed, bg, ffiBusy, 
-                                      onDoneOwed, stack, owed, withCb, got, 
-                                      cgot, cleanup, fgot, isUser, chunks, 
+                                      wExited, held, closing, driverFreed, bg, 
+                                      ffiBusy, onDoneOwed, stack, owed, withCb, 
+                                      got, cgot, cleanup, fgot, isUser, chunks, 
                                       sgot, cbs, cbop, i, op, ggot, lgot >>
 
 d_worker(self) == /\ pc[self] = "d_worker"
@@ -1835,24 +1856,24 @@ d_worker(self) == /\ pc[self] = "d_worker"
                   /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                   closeReq, closeCbs, opened, mu, lease, 
                                   slotOnceDone, userRef, weakNil, closerRef, 
-                                  finalized, queue, wDone, closing, 
+                                  finalized, queue, wExited, held, closing, 
                                   driverFreed, bg, handle, ffiBusy, 
                                   slotReleases, onDoneOwed, stack, owed, 
                                   withCb, got, cgot, cleanup, fgot, isUser, 
                                   chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 d_worker_wait(self) == /\ pc[self] = "d_worker_wait"
-                       /\ wDone
+                       /\ WDone
                        /\ pc' = [pc EXCEPT ![self] = "d_wg"]
                        /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, 
                                        closeReq, closeCbs, opened, mu, lease, 
                                        slotOnceDone, userRef, weakNil, 
                                        closerRef, finalized, queue, wClosed, 
-                                       wDone, closing, driverFreed, bg, handle, 
-                                       ffiBusy, slotReleases, onDoneOwed, 
-                                       stack, owed, withCb, got, cgot, cleanup, 
-                                       fgot, isUser, chunks, sgot, cbs, cbop, 
-                                       i, op, ggot, lgot >>
+                                       wExited, held, closing, driverFreed, bg, 
+                                       handle, ffiBusy, slotReleases, 
+                                       onDoneOwed, stack, owed, withCb, got, 
+                                       cgot, cleanup, fgot, isUser, chunks, 
+                                       sgot, cbs, cbop, i, op, ggot, lgot >>
 
 d_wg(self) == /\ pc[self] = "d_wg"
               /\ slotReleases >= 1
@@ -1860,10 +1881,10 @@ d_wg(self) == /\ pc[self] = "d_wg"
               /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                               closeCbs, opened, mu, lease, slotOnceDone, 
                               userRef, weakNil, closerRef, finalized, queue, 
-                              wClosed, wDone, closing, driverFreed, bg, handle, 
-                              ffiBusy, slotReleases, onDoneOwed, stack, owed, 
-                              withCb, got, cgot, cleanup, fgot, isUser, chunks, 
-                              sgot, cbs, cbop, i, op, ggot, lgot >>
+                              wClosed, wExited, held, closing, driverFreed, bg, 
+                              handle, ffiBusy, slotReleases, onDoneOwed, stack, 
+                              owed, withCb, got, cgot, cleanup, fgot, isUser, 
+                              chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 d_free(self) == /\ pc[self] = "d_free"
                 /\ driverFreed' = TRUE
@@ -1871,10 +1892,10 @@ d_free(self) == /\ pc[self] = "d_free"
                 /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                 closeCbs, opened, mu, lease, slotOnceDone, 
                                 userRef, weakNil, closerRef, finalized, queue, 
-                                wClosed, wDone, closing, bg, handle, ffiBusy, 
-                                slotReleases, onDoneOwed, stack, owed, withCb, 
-                                got, cgot, cleanup, fgot, isUser, chunks, sgot, 
-                                cbs, cbop, i, op, ggot, lgot >>
+                                wClosed, wExited, held, closing, bg, handle, 
+                                ffiBusy, slotReleases, onDoneOwed, stack, owed, 
+                                withCb, got, cgot, cleanup, fgot, isUser, 
+                                chunks, sgot, cbs, cbop, i, op, ggot, lgot >>
 
 d_end(self) == /\ pc[self] = "d_end"
                /\ TRUE
@@ -1882,8 +1903,8 @@ d_end(self) == /\ pc[self] = "d_end"
                /\ UNCHANGED << ptr, abandoned, ctxCalls, streaming, closeReq, 
                                closeCbs, opened, mu, lease, slotOnceDone, 
                                userRef, weakNil, closerRef, finalized, queue, 
-                               wClosed, wDone, closing, driverFreed, bg, 
-                               handle, ffiBusy, slotReleases, onDoneOwed, 
+                               wClosed, wExited, held, closing, driverFreed, 
+                               bg, handle, ffiBusy, slotReleases, onDoneOwed, 
                                stack, owed, withCb, got, cgot, cleanup, fgot, 
                                isUser, chunks, sgot, cbs, cbop, i, op, ggot, 
                                lgot >>
@@ -1905,7 +1926,7 @@ Next == (\E self \in ProcSet:  \/ CloseJob(self) \/ CloseAsyncP(self)
                                \/ StreamP(self) \/ NestedCtx(self))
            \/ (\E self \in {User}: UserP(self))
            \/ (\E self \in BgIds: BgP(self))
-           \/ (\E self \in {Worker}: WorkerP(self))
+           \/ (\E self \in Workers: WorkerP(self))
            \/ (\E self \in {GC}: GCP(self))
            \/ (\E self \in {Closer}: CloserP(self))
            \/ Terminating
@@ -1929,7 +1950,7 @@ Spec == /\ Init /\ [][Next]_vars
                                /\ WF_vars(CommitP(self))
                                /\ WF_vars(IsOpenP(self))
                                /\ WF_vars(NestedCtx(self))
-        /\ \A self \in {Worker} : WF_vars(WorkerP(self))
+        /\ \A self \in Workers : WF_vars(WorkerP(self))
         /\ \A self \in {GC} : WF_vars(GCP(self)) /\ WF_vars(CloseJob(self))
         /\ \A self \in {Closer} : /\ WF_vars(CloserP(self))
                                   /\ WF_vars(CloseAsyncP(self))

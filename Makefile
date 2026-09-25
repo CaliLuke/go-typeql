@@ -1,4 +1,4 @@
-.PHONY: build-rust test-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang install-typeql-check perf-logal-up perf-logal-down perf-logal-clear perf-trace
+.PHONY: build-rust test-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang install-typeql-check perf-logal-up perf-logal-down perf-logal-clear perf-trace perf-workload
 
 # Version of the official TypeQL syntax checker (typedb/typedb-tools).
 # Keep in lockstep with the TypeDB server version pinned in docker-compose.yml.
@@ -94,6 +94,15 @@ perf-trace: perf-logal-up
 	TEST_DB_ADDRESS=$${TEST_DB_ADDRESS:-localhost:1730} \
 	TYPEDB_GO_COMPOSE_PORT_MAP=$${TYPEDB_GO_COMPOSE_PORT_MAP:-1} \
 	go test -count=1 -tags "cgo,typedb,integration" -run '$(PERF_RUN)' $(PERF_PKGS)
+
+# Run the concurrent workload (gotype/perf_workload_integration_test.go) with
+# tracing on. PERF_WORKERS, PERF_OPS, PERF_WRITE_PCT, and PERF_CLOSE_WORKERS
+# change the load.
+perf-workload: perf-logal-up
+	TYPEDB_GO_PERF_WORKLOAD=1 TYPEDB_GO_PERFTRACE=1 \
+	TEST_DB_ADDRESS=$${TEST_DB_ADDRESS:-localhost:1730} \
+	TYPEDB_GO_COMPOSE_PORT_MAP=$${TYPEDB_GO_COMPOSE_PORT_MAP:-1} \
+	go test -count=1 -v -tags "cgo,typedb,integration" -run '^TestPerfWorkload_' ./gotype/
 
 # Run all tests
 test: test-unit

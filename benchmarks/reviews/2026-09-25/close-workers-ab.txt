@@ -1,0 +1,20 @@
+# TestPerfWorkload_ConcurrentMixed, 10 workers, 1000 ops, 20% inserts, shared driver, untraced
+# 2026-09-25T01:07:55Z host load: 40.23 49.51 44.67
+close_workers=1 run=1 loop=2.567s throughput=390 ops/s drain=24ms latency p50=12.046ms p95=90.716ms p99=164.996ms max=302.344ms 
+close_workers=default(8) run=1 loop=2.264s throughput=442 ops/s drain=1ms latency p50=12.5ms p95=83.346ms p99=125.529ms max=192.59ms 
+close_workers=1 run=2 loop=1.932s throughput=518 ops/s drain=12ms latency p50=12.703ms p95=66.461ms p99=98.686ms max=128.363ms 
+close_workers=default(8) run=2 loop=1.449s throughput=690 ops/s drain=1ms latency p50=6.535ms p95=52.371ms p99=132.906ms max=189.814ms 
+close_workers=1 run=3 loop=1.928s throughput=519 ops/s drain=45ms latency p50=13.347ms p95=52.092ms p99=153.422ms max=189.291ms 
+close_workers=default(8) run=3 loop=725ms throughput=1379 ops/s drain=1ms latency p50=4.596ms p95=20.207ms p99=57.833ms max=77.032ms 
+close_workers=1 run=4 loop=1.323s throughput=756 ops/s drain=19ms latency p50=11.154ms p95=30.21ms p99=62.338ms max=87.164ms 
+close_workers=default(8) run=4 loop=558ms throughput=1791 ops/s drain=1ms latency p50=4.977ms p95=9.945ms p99=12.919ms max=22.151ms 
+close_workers=1 run=5 loop=1.261s throughput=793 ops/s drain=29ms latency p50=10.415ms p95=27.123ms p99=40.191ms max=128.043ms 
+close_workers=default(8) run=5 loop=554ms throughput=1805 ops/s drain=1ms latency p50=4.448ms p95=13.624ms p99=20.15ms max=24.018ms 
+# end host load: 29.70 45.15 43.39
+# single caller: PERF_WORKERS=1 PERF_OPS=300
+workers=1 close_workers=1 run=1 loop=2.021s throughput=148 ops/s drain=1ms latency p50=2.723ms p95=23.478ms p99=72.243ms max=116.599ms 
+workers=1 close_workers=default(8) run=1 loop=1.475s throughput=203 ops/s drain=1ms latency p50=2.95ms p95=12.968ms p99=30.664ms max=92.731ms 
+workers=1 close_workers=1 run=2 loop=1.037s throughput=289 ops/s drain=1ms latency p50=2.305ms p95=8.721ms p99=21.757ms max=28.504ms 
+workers=1 close_workers=default(8) run=2 loop=7.229s throughput=42 ops/s drain=1ms latency p50=12.751ms p95=102.085ms p99=163.536ms max=235.366ms 
+workers=1 close_workers=1 run=3 loop=7.322s throughput=41 ops/s drain=9ms latency p50=13.887ms p95=84.605ms p99=175.304ms max=303.331ms 
+workers=1 close_workers=default(8) run=3 loop=6.1s throughput=49 ops/s drain=3ms latency p50=10.377ms p95=57.231ms p99=237.273ms max=392.83ms 

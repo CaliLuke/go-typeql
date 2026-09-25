@@ -1,0 +1,24 @@
+# Full integration suite with tracing (make perf-trace), 2026-09-25, TypeDB 3.13.6 under Colima.
+# Total time per span name, gotype + driver test services, "test <name>" roots excluded.
+name                                   n     avg_ms  total_s
+typedb.tx.open                         6546  5.797   37.94
+typedb.ffi.tx_open                     6523  4.501   29.36
+gotype.Manager.Insert                  2175  12.698  27.62
+typedb.tx.query                        5072  5.25    26.63
+typedb.ffi.query                       5058  5.223   26.42
+typedb.tx.commit                       3121  6.835   21.33
+gotype.Manager.Get                     1750  9.394   16.44
+gotype.Manager.InsertMany              428   22.639  9.69
+typedb.tx.close                        3396  2.844   9.66
+typedb.tx.query_stream                 1866  4.954   9.25
+typedb.ffi.stream_open                 1860  4.811   8.95
+typedb.tx.admission                    6546  1.281   8.38
+gotype.Manager.All                     232   14.328  3.32
+gotype.Query.Execute                   141   12.748  1.8
+gotype.pool.get                        632   2.31    1.46
+typedb.ffi.stream_next                 1860  0.091   0.17
+typedb.decode_consume                  1832  0.027   0.05
+typedb.decode                          4302  0.01    0.05
+
+# Admission waits of 1 ms or more in the gotype tests: 782 of 5920.
+# 781 of them are in databases named bench_async_close_*, 1 in pool_admission_* (MaxNativeTransactions: 1).

@@ -88,6 +88,13 @@ type DriverOptions struct {
 	// MaxNativeTransactions bounds open and detached-but-not-yet-cleaned-up
 	// native handles per driver. Zero uses 16; negative disables admission.
 	MaxNativeTransactions int
+	// CloseWorkers is the number of goroutines that run native transaction
+	// closes after Close or CloseAsync. Zero or negative uses 8. With
+	// admission on, the value is capped at MaxNativeTransactions. Each close
+	// waits for a server round trip, so one worker limits a driver to one
+	// completed close per round trip, and queued closes delay later
+	// transaction opens.
+	CloseWorkers int
 	// TLSEnabled controls whether the driver connects with TLS.
 	TLSEnabled bool
 	// TLSRootCA optionally points to a custom root CA certificate when TLS is enabled.
@@ -178,7 +185,7 @@ func OpenWithOptions(address, username, password string, opts DriverOptions) (*D
 	}
 
 	logFFIDurationLazy("driver.open", start, func() []any { return []any{"address", address, "result", "ok"} })
-	return newDriver(ptr, opts.MaxNativeTransactions), nil
+	return newDriver(ptr, opts.MaxNativeTransactions, opts.CloseWorkers), nil
 }
 
 // OpenWithAddresses creates a new connection using one or more public TypeDB addresses.
@@ -278,10 +285,10 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 	}
 
 	logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "ok"} })
-	return newDriver(ptr, opts.MaxNativeTransactions), nil
+	return newDriver(ptr, opts.MaxNativeTransactions, opts.CloseWorkers), nil
 }
 
-func newDriver(ptr unsafe.Pointer, maxNative int) *Driver {
+func newDriver(ptr unsafe.Pointer, maxNative, closeWorkers int) *Driver {
 	cleanup := newTransactionCleanupTracker()
 	if maxNative == 0 {
 		maxNative = 16
@@ -295,7 +302,7 @@ func newDriver(ptr unsafe.Pointer, maxNative int) *Driver {
 	}
 	return &Driver{
 		ptr:          ptr,
-		closeWorker:  newTransactionCloseWorker(cleanup),
+		closeWorker:  newTransactionCloseWorker(cleanup, closeWorkerCount(closeWorkers, maxNative)),
 		cleanup:      cleanup,
 		closedSignal: make(chan struct{}),
 		nativeSlots:  slots,

@@ -1,0 +1,9 @@
+# Traced runs, experiment knob (1 vs 8 close workers), interleaved. Span averages from logal per run.
+workers=1 run=1 loop=1.23s throughput=813 ops/s drain=12ms latency p50=10.212ms p95=27.686ms p99=54.221ms max=110.237ms | adm_ms=7.57 close_ms=1.49 get_ms=11.46 open_ms=1.73
+workers=8 run=1 loop=463ms throughput=2161 ops/s drain=1ms latency p50=3.954ms p95=8.42ms p99=9.816ms max=15.797ms | adm_ms=0.21 close_ms=1.73 get_ms=3.88 open_ms=1.72
+workers=1 run=2 loop=2.05s throughput=488 ops/s drain=14ms latency p50=14.171ms p95=45.938ms p99=155.241ms max=318.666ms | adm_ms=12.06 close_ms=2.54 get_ms=15.88 open_ms=2.96
+workers=8 run=2 loop=1.17s throughput=855 ops/s drain=1ms latency p50=8.985ms p95=26.381ms p99=48.109ms max=81.73ms | adm_ms=1.41 close_ms=6.75 get_ms=9.69 open_ms=5.71
+workers=1 run=3 loop=6.609s throughput=151 ops/s drain=43ms latency p50=36.168ms p95=235.858ms p99=373.671ms max=441.249ms | adm_ms=46 close_ms=8.21 get_ms=66.87 open_ms=9.19
+workers=8 run=3 loop=10.742s throughput=93 ops/s drain=107ms latency p50=56.356ms p95=320.626ms p99=443.987ms max=636.917ms | adm_ms=5.06 close_ms=44.91 get_ms=90.83 open_ms=45.37
+workers=1 run=4 loop=13.316s throughput=75 ops/s drain=435ms latency p50=95.703ms p95=360.999ms p99=438.748ms max=511.872ms | adm_ms=85.37 close_ms=16.71 get_ms=122.61 open_ms=18.95
+workers=8 run=4 loop=4.414s throughput=227 ops/s drain=29ms latency p50=21.789ms p95=124.353ms p99=341.77ms max=518.632ms | adm_ms=2.79 close_ms=19.57 get_ms=35.79 open_ms=18

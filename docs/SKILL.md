@@ -506,6 +506,34 @@ rows, err := gotype.NewFunctionQuery(db, "get_user_score").Arg("Alice").Arg(42).
 
 ---
 
+## Concurrency
+
+- Share one `*driver.Driver` across goroutines. One driver runs separate transactions concurrently.
+- Do not share one transaction across goroutines for parallel work. The native handle is single-threaded, so the calls run one at a time. A call during an active stream returns `driver.ErrTransactionBusy`.
+- Unbound `Manager` operations open their own transaction, so concurrent callers do not share a handle.
+
+Two `driver.DriverOptions` fields control the parallelism of one driver:
+
+| Field | Default | Effect |
+| --- | --- | --- |
+| `MaxNativeTransactions` | 16 | Limit for transactions that are open or wait for native cleanup. A new transaction waits for a free slot. Negative disables the limit. |
+| `CloseWorkers` | 8 | Goroutines that run the native closes after `Close`. `MaxNativeTransactions` caps the value. |
+
+```go
+drv, err := driver.OpenWithOptions(addr, user, password, driver.DriverOptions{
+    MaxNativeTransactions: 32, // more concurrent callers than 16
+    CloseWorkers:          16,
+})
+```
+
+- `Close` returns immediately, but the slot stays taken until the native close completes. Each close waits for one server round trip.
+- If callers wait in transaction open, the driver is at its limit. `drv.CleanupStats()` shows `NativeInUse`, `NativeCapacity`, and `Queued`.
+- If the wait for a slot must be cancellable, open with `drv.TransactionWithContextAndOptions(ctx, db, kind, nil)`.
+- `CloseChecked` waits for the native close and returns its error. It does not use a close worker.
+- Before the process exits, call `driver.WaitForPendingCloses(ctx)` to drain the queued closes.
+- A `gotype.ConnPool` (`NewDatabaseWithPool`) limits concurrency. It does not add throughput: a pool of one runs one transaction at a time. Use it for an intentional cap or for connection isolation.
+- Measure before you change the defaults. See `docs/PERFORMANCE_TRACING.md` in the repository for the traced concurrent workload.
+
 ## Database Management
 
 ```go

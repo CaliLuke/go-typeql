@@ -91,6 +91,30 @@ Other targets:
 | `make perf-logal-down` | Stop the logal instance. |
 | `make perf-logal-clear` | Delete all stored telemetry. The instance continues to run. |
 
+## Run the concurrent workload
+
+The integration tests run one operation at a time, so they do not show
+contention. `TestPerfWorkload_ConcurrentMixed` runs concurrent reads and
+inserts on one driver. It runs only when `TYPEDB_GO_PERF_WORKLOAD=1` is set.
+
+```bash
+make perf-workload PERF_WORKERS=10 PERF_OPS=1000
+```
+
+The test logs the throughput, the p50, p95, and p99 latency, and the time to
+drain the asynchronous closes. These variables change the load:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PERF_WORKERS` | 10 | Concurrent callers |
+| `PERF_OPS` | 1000 | Operations in total |
+| `PERF_WRITE_PCT` | 20 | Percentage of operations that are inserts |
+| `PERF_CLOSE_WORKERS` | 0 | `DriverOptions.CloseWorkers` (0 uses the driver default) |
+
+The workload is not a benchmark, and `benchdb` does not run it. To compare
+two settings, run them in alternation several times, because the load on the
+host changes the numbers.
+
 ## Inspect the data
 
 Set the database path once per shell:
