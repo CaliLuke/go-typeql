@@ -1,0 +1,21 @@
+# Exploratory driver test, one read and one write transaction, 300 alternating iterations
+# per run, 200-person fixture, TypeDB 3.13.6 under Colima, load average about 7-10.
+# run 1
+read: trivial match, no fetch               0.450 ms/query
+read: generated iid fetch (literal)         0.528 ms/query
+insert: literal values                      0.567 ms/query
+insert: given parameters                    0.468 ms/query
+# run 2
+read: trivial match, no fetch               0.536 ms/query
+read: generated iid fetch (literal)         0.621 ms/query
+insert: literal values                      0.589 ms/query
+insert: given parameters                    0.585 ms/query
+# run 3
+read: trivial match, no fetch               0.421 ms/query
+read: generated iid fetch (literal)         0.481 ms/query
+insert: literal values                      0.461 ms/query
+insert: given parameters                    0.429 ms/query
+
+# Optional given values (live server): this query inserted "alice" with age 30 and
+# "eve" without age, from one typed-row query with an empty value for eve.
+given $n: string, $a: integer?; insert $p isa person, has name == $n; try { $p has age == $a; }; fetch { "_iid": iid($p), "n": $p.name };

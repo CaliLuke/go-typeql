@@ -27,14 +27,17 @@ err := persons.Insert(ctx, alice)
 ```
 
 `InsertMany` inserts multiple instances in a single write transaction. With the
-bundled driver and a scalar entity model that has one string key and no absent
-optional values or slice fields, it uses typed input rows in groups of at most
-32 (one query per group). It maps returned IIDs by key rather than result order
-and assigns them only after successful completion. Relations, decimals, list
-fields, absent optional values, and custom `Tx` implementations without typed
+bundled driver and a scalar entity model that has one string key and no slice
+fields, it uses typed input rows in groups of at most 32 (one query per group).
+A nil pointer field is an empty value in the row: the query declares it as an
+optional variable and inserts the attribute in a `try` block, so the entity has
+no value for that attribute, as with `Insert`. It maps returned IIDs by key
+rather than result order and assigns them only after successful completion.
+Relations, decimals, list fields, and custom `Tx` implementations without typed
 row support use the compatible one-query-per-instance path. Both paths keep
 the transaction atomic. `PutMany` also uses one transaction but has its own
-query behavior.
+query behavior: it still uses one query per instance when an optional value is
+absent.
 
 Insert and Put (and their Many variants) validate key attributes before writing: a
 zero-value key (`""`, `0`, nil pointer) returns a `*KeyAttributeError` instead of

@@ -161,6 +161,19 @@ func TestTypeQLSyntax_CRUDQueries(t *testing.T) {
 		assertTypeQL(t, "batch insert", batchTx.queriesWithRows[0], "")
 	})
 
+	t.Run("batch insert with optional fields", func(t *testing.T) {
+		defer registerTestTypes(t)
+		batchTx := &batchTestTx{}
+		ClearRegistry()
+		MustRegister[testPerson]()
+		mgr := MustNewManager[testPerson](NewDatabase(&batchTestConn{tx: batchTx}, "test_db"))
+		instances := []*testPerson{{Name: "Alice", Email: "a@example.com"}, {Name: "Bob", Email: "b@example.com"}}
+		if err := mgr.InsertMany(context.Background(), instances); err != nil {
+			t.Fatalf("InsertMany failed: %v", err)
+		}
+		assertTypeQL(t, "batch insert with optional fields", batchTx.queriesWithRows[0], "")
+	})
+
 	t.Run("batch heterogeneous update with typed rows", func(t *testing.T) {
 		defer registerTestTypes(t)
 		batchTx := &batchTestTx{}

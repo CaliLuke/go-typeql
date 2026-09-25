@@ -7,6 +7,8 @@
 - A driver now runs asynchronous transaction closes on 8 workers instead of 1. Each close waits for a server round trip, so one worker limited a driver to one completed close per round trip. Queued closes held native-handle slots, and new transactions waited for admission. With ten concurrent callers on one driver, the median throughput increased from 519 to 1,379 operations per second, and the median p99 latency decreased from 98.7 ms to 57.8 ms. See [the review evidence](benchmarks/reviews/2026-09-25/README.md).
 - Added `DriverOptions.CloseWorkers`. Zero keeps the default of 8. The admission limit (`MaxNativeTransactions`) caps the value. Set it to 1 for the old behavior.
 
+- `InsertMany` now batches rows that have a nil pointer field. The batch query declares the field as an optional variable and inserts it in a `try` block. Before, one nil value made the whole call use one query per row. For 32 rows with a nil value in every second row, the median time decreased from 64.7–200.5 ms to 9.0–10.9 ms.
+
 ### Development
 
 - Added OpenTelemetry tracing for performance work. `make perf-trace` runs the integration tests with spans and metrics, and exports them to a logal instance that belongs to this repository. See [docs/PERFORMANCE_TRACING.md](docs/PERFORMANCE_TRACING.md). Benchmarks never use tracing.

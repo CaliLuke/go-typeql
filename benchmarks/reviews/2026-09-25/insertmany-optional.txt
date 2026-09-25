@@ -1,0 +1,7 @@
+# InsertMany of 32 Person rows, every second row has a nil Age; 15 calls per run, median. before = c2b200a (per-row fallback), after = typed-row batch with optional variables
+before run=1 InsertMany(32, half nil age) median=66.102ms min=40.064ms max=96.882ms
+after run=1 InsertMany(32, half nil age) median=9.005ms min=7.414ms max=20.577ms
+before run=2 InsertMany(32, half nil age) median=64.655ms min=37.777ms max=223.13ms
+after run=2 InsertMany(32, half nil age) median=10.515ms min=7.199ms max=18.656ms
+before run=3 InsertMany(32, half nil age) median=200.511ms min=47.473ms max=352.781ms
+after run=3 InsertMany(32, half nil age) median=10.872ms min=7.499ms max=70.461ms

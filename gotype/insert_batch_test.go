@@ -113,17 +113,36 @@ func TestInsertMany_BatchDuplicateInputAndFailedCommit(t *testing.T) {
 	}
 }
 
-func TestInsertMany_BatchFallsBackForOptionalAndUnsupportedShapes(t *testing.T) {
-	tx := &batchTestTx{mockTx: mockTx{responses: [][]map[string]any{{{"_iid": "0x01"}}, {{"_iid": "0x02"}}}}}
+func TestInsertMany_BatchesNilOptionalFields(t *testing.T) {
+	tx := &batchTestTx{}
 	ClearRegistry()
 	MustRegister[testPerson]()
 	mgr := MustNewManager[testPerson](NewDatabase(&batchTestConn{tx: tx}, "test_db"))
-	instances := []*testPerson{{Name: "Alice", Email: "a@example.com"}, {Name: "Bob", Email: "b@example.com"}}
+	age := 30
+	instances := []*testPerson{{Name: "Alice", Email: "a@example.com", Age: &age}, {Name: "Bob", Email: "b@example.com"}}
 	if err := mgr.InsertMany(context.Background(), instances); err != nil {
 		t.Fatal(err)
 	}
-	if len(tx.queriesWithRows) != 0 || len(tx.queries) != 2 {
-		t.Fatalf("expected two fallback queries, got batch=%d legacy=%d", len(tx.queriesWithRows), len(tx.queries))
+	if len(tx.queriesWithRows) != 1 || len(tx.queries) != 0 {
+		t.Fatalf("expected one batch query, got batch=%d legacy=%d", len(tx.queriesWithRows), len(tx.queries))
+	}
+	query := tx.queriesWithRows[0]
+	for _, want := range []string{"$v2: integer?", "try { $e has age == $v2; };"} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("batch query lacks %q:\n%s", want, query)
+		}
+	}
+	if strings.Contains(query, ", has age ==") {
+		t.Fatalf("optional age must only be inside the try block:\n%s", query)
+	}
+	rows := tx.rows[0].Rows
+	if rows[0][2] != (given.Value{Type: "integer", Value: int64(30)}) || rows[1][2] != (given.Value{Type: "empty"}) {
+		t.Fatalf("age values = %+v, %+v; want integer 30 and empty", rows[0][2], rows[1][2])
+	}
+	for i, instance := range instances {
+		if instance.GetIID() == "" {
+			t.Fatalf("instance %d missing IID", i)
+		}
 	}
 }
 

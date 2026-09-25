@@ -635,7 +635,9 @@ func (m *Manager[T]) countByIID(ctx context.Context, iid string) (int64, error) 
 	return countFromResult(results[0])
 }
 
-// InsertMany inserts multiple instances in a single transaction.
+// InsertMany inserts multiple instances in a single transaction. For scalar
+// entity models it sends typed-row batches of up to 32 instances; a nil
+// pointer field leaves that attribute out, as Insert does.
 func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 	ctx, span := m.startOp(ctx, "gotype.Manager.InsertMany")
 	defer span.End(nil)

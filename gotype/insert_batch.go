@@ -63,7 +63,14 @@ func (m *Manager[T]) prepareBatchValues(instances []*T, keyIndex int) ([][]given
 		v := reflectValue(inst)
 		values := make([]given.Value, len(m.info.Fields))
 		for j, fi := range m.info.Fields {
-			value, supported := batchValue(fi, extractSingleFieldValue(v, fi))
+			raw := extractSingleFieldValue(v, fi)
+			if raw == nil && optionalBatchField(fi, j, keyIndex) {
+				// Insert omits a nil optional field; the batch query skips it
+				// through the optional variable and its try block.
+				values[j] = given.Value{Type: "empty"}
+				continue
+			}
+			value, supported := batchValue(fi, raw)
 			if !supported {
 				return nil, nil, false, nil
 			}
@@ -116,8 +123,43 @@ func (m *Manager[T]) mapBatchIIDs(results []map[string]any, seen map[string]int,
 	return nil
 }
 
+// buildBatchInsertQuery builds the typed-row insert. Pointer fields are
+// optional variables whose attribute is inserted in a try block, so a row
+// with an empty value inserts the entity without that attribute, like Insert.
 func buildBatchInsertQuery(info *ModelInfo, keyIndex int) (string, []string) {
-	return buildBatchWriteQuery(info, keyIndex, "insert")
+	variables := make([]string, len(info.Fields))
+	var b strings.Builder
+	b.WriteString("given ")
+	for i, fi := range info.Fields {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		variables[i] = fmt.Sprintf("v%d", i)
+		fmt.Fprintf(&b, "$%s: %s", variables[i], fi.ValueType)
+		if optionalBatchField(fi, i, keyIndex) {
+			b.WriteByte('?')
+		}
+	}
+	fmt.Fprintf(&b, ";\ninsert $e isa %s", info.TypeName)
+	for i, fi := range info.Fields {
+		if !optionalBatchField(fi, i, keyIndex) {
+			fmt.Fprintf(&b, ", has %s == $%s", fi.Tag.Name, variables[i])
+		}
+	}
+	b.WriteByte(';')
+	for i, fi := range info.Fields {
+		if optionalBatchField(fi, i, keyIndex) {
+			fmt.Fprintf(&b, "\ntry { $e has %s == $%s; };", fi.Tag.Name, variables[i])
+		}
+	}
+	fmt.Fprintf(&b, "\nfetch {"+`"_iid": iid($e), "_key": $%s`+"};", variables[keyIndex])
+	return b.String(), variables
+}
+
+// optionalBatchField reports whether a batch insert treats field i as
+// optional. The key is never optional.
+func optionalBatchField(fi FieldInfo, i, keyIndex int) bool {
+	return fi.IsPointer && i != keyIndex
 }
 
 func buildBatchWriteQuery(info *ModelInfo, keyIndex int, keyword string) (string, []string) {
