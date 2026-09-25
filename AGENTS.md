@@ -135,6 +135,7 @@ docs/
 ├── UPGRADING_V2.md         # Migration guide: v1 → v2
 ├── UPGRADING_V3.md         # Migration guide: v2 → v3
 ├── DEBUGGING_HANGS.md      # Diagnosing stuck queries and transactions
+├── PERFORMANCE_TRACING.md  # OTel spans + the repo logal instance (perf work only, never benchmarks)
 ├── PERFORMANCE_REVIEW.md   # Performance measurements
 ├── benchmarks/             # Benchmark reports
 └── api/

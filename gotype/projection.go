@@ -187,6 +187,8 @@ func decodeProjectedNode(row map[string]any, fields []FieldInfo) (ProjectedResul
 // GetProjected reads selected attributes without creating mutable model values.
 // The filter keys and projection fields use TypeDB attribute names.
 func (m *Manager[T]) GetProjected(ctx context.Context, filters map[string]any, spec Projection) ([]ProjectedResult, error) {
+	ctx, span := m.startOp(ctx, "gotype.Manager.GetProjected")
+	defer span.End(nil)
 	plan, err := planProjection(m.info, spec)
 	if err != nil {
 		return nil, err
@@ -218,6 +220,8 @@ func (m *Manager[T]) readProjected(ctx context.Context, query string, plan proje
 // ExecuteProjected runs a fluent read with selected attributes. It preserves
 // the query's filters, order, offset, and limit. The result is not a model.
 func (q *Query[T]) ExecuteProjected(ctx context.Context, spec Projection) ([]ProjectedResult, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.ExecuteProjected")
+	defer span.End(nil)
 	plan, err := planProjection(q.mgr.info, spec)
 	if err != nil {
 		return nil, err

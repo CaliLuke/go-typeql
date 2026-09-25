@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/CaliLuke/go-typeql/v3/driver"
+	"github.com/CaliLuke/go-typeql/v3/internal/perftrace/otelperf"
 )
 
 type liveBenchPerson struct {
@@ -141,10 +142,18 @@ var liveBenchData *liveBenchFixture
 var liveBenchErr error
 
 func TestMain(m *testing.M) {
+	shutdownTracing, err := otelperf.InstallFromEnv("go-typeql-gotype-tests")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	code := m.Run()
 	if liveBenchData != nil {
 		_ = liveBenchData.drv.Databases().Delete(liveBenchData.dbName)
 		liveBenchData.drv.Close()
+	}
+	if err := shutdownTracing(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
 	os.Exit(code)
 }

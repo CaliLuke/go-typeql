@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Quality gates for day-to-day development. Scoped to unit packages
-# (ast/, given/, gotype/, tqlgen/, cmd/, internal/) — driver/ needs CGo + built Rust lib, which
-# is the province of release-checks and `make test-integration`.
+# Quality gates for day-to-day development. Tests run for unit packages
+# (ast/, given/, gotype/, tqlgen/, cmd/, internal/) only — driver/ needs CGo + built Rust lib, which
+# is the province of release-checks and `make test-integration`. Lint also covers driver/ and the
+# integration-tagged test files when the Rust lib is built.
 #
 # Usage:
 #   ./check.sh          run all gates
@@ -79,6 +80,20 @@ else
 fi
 
 run_gate "staticcheck" "$STATICCHECK_BIN" "${UNIT_PKGS[@]}"
+
+# Tagged sources: driver/ and the integration test files only compile with
+# cgo,typedb,integration, so the gates above never see them. Lint them (tests
+# included) when the Rust FFI library is built.
+TAGS="cgo,typedb,integration"
+TAGGED_PKGS=(./driver/... ./gotype/...)
+if [ -f driver/rust/target/release/libtypedb_go_ffi.a ]; then
+  run_gate "go vet ($TAGS)" go vet -tags "$TAGS" "${TAGGED_PKGS[@]}"
+  run_gate "golangci-lint ($TAGS)" golangci-lint run --build-tags "$TAGS" "${TAGGED_PKGS[@]}"
+  run_gate "staticcheck ($TAGS)" "$STATICCHECK_BIN" -tags "$TAGS" "${TAGGED_PKGS[@]}"
+else
+  echo ""
+  echo "▶  tagged lint ($TAGS): skipped — run make build-rust first"
+fi
 
 run_gate "go test (-race)" go test -race "${UNIT_PKGS[@]}" -timeout 180s
 

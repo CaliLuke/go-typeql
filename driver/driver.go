@@ -21,6 +21,8 @@ import (
 	"time"
 	"unsafe"
 	"weak"
+
+	"github.com/CaliLuke/go-typeql/v3/internal/perftrace"
 )
 
 // TransactionType specifies the intended mode of operation for a transaction.
@@ -612,18 +614,31 @@ func (d *Driver) TransactionWithOptions(databaseName string, txnType Transaction
 // TransactionWithContextAndOptions opens a transaction, allowing cancellation
 // while waiting for a native-handle admission slot. The slot remains occupied
 // until native cleanup, even when Close returns before cleanup finishes.
-func (d *Driver) TransactionWithContextAndOptions(ctx context.Context, databaseName string, txnType TransactionType, opts *TransactionOptions) (*Transaction, error) {
+func (d *Driver) TransactionWithContextAndOptions(ctx context.Context, databaseName string, txnType TransactionType, opts *TransactionOptions) (_ *Transaction, err error) {
 	start := time.Now()
 	txID := nextTxID()
+	spanCtx, span := perftrace.Start(ctx, "typedb.tx.open")
+	if span.Recording() {
+		span.SetAttrs(
+			perftrace.Int("typedb.tx.id", int(txID)),
+			perftrace.String("db.namespace", databaseName),
+			perftrace.Int("typedb.tx.type", int(txnType)),
+		)
+	}
+	defer func() { span.End(err) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if d.nativeSlots != nil {
+		_, admission := perftrace.Start(spanCtx, "typedb.tx.admission")
 		select {
 		case <-d.nativeSlots:
+			admission.End(nil)
 		case <-d.closedSignal:
+			admission.End(ErrNotConnected)
 			return nil, ErrNotConnected
 		case <-ctx.Done():
+			admission.End(ctx.Err())
 			return nil, ctx.Err()
 		}
 	}
@@ -666,7 +681,9 @@ func (d *Driver) TransactionWithContextAndOptions(ctx context.Context, databaseN
 	}
 
 	var txErr *C.char
+	_, ffiSpan := perftrace.Start(spanCtx, "typedb.ffi.tx_open")
 	ptr := C.typedb_transaction_open(d.ptr, cName, C.int(txnType), cOpts, &txErr)
+	ffiSpan.End(nil)
 	if ptr == nil {
 		if err := getError(txErr); err != nil {
 			logFFIDurationLazy("tx.open", start, func() []any {
@@ -681,6 +698,7 @@ func (d *Driver) TransactionWithContextAndOptions(ctx context.Context, databaseN
 	}
 
 	tx := newTransaction(ptr, txID, databaseName, txnType, d, d.closeWorker)
+	tx.traceCtx = traceContext(ctx)
 	tx.releaseNativeSlot = func() {
 		if d.nativeSlots != nil {
 			d.nativeSlots <- struct{}{}

@@ -1,0 +1,25 @@
+# Collector configuration for the go-typeql logal instance. It is for
+# performance work only; benchmarks are never traced. See
+# docs/PERFORMANCE_TRACING.md. The ports avoid logal's defaults (4317, 4318,
+# 13133), so this instance does not collide with other projects.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:44317
+      http:
+        endpoint: 127.0.0.1:44318
+exporters:
+  logal_sqlite: {}
+extensions:
+  logal_store:
+    # Disposable. logal recreates or deletes this file; keep nothing there.
+    path: ${env:TYPEDB_GO_LOGAL_DB}
+  logal_status:
+    endpoint: 127.0.0.1:43133
+service:
+  extensions: [logal_store, logal_status]
+  pipelines:
+    traces: {receivers: [otlp], exporters: [logal_sqlite]}
+    metrics: {receivers: [otlp], exporters: [logal_sqlite]}
+    logs: {receivers: [otlp], exporters: [logal_sqlite]}

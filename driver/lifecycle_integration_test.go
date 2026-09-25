@@ -11,10 +11,14 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/CaliLuke/go-typeql/v3/internal/perftrace/otelperf"
 )
 
 func setupLifecycleDB(t *testing.T, schema string) (*Driver, string) {
 	t.Helper()
+	endTrace := otelperf.StartTest(t.Name())
+	t.Cleanup(func() { endTrace(t.Failed()) })
 	conn, err := OpenWithTLS(testAddr(), "admin", "password", false, "")
 	if err != nil {
 		t.Fatalf("connect: %v", err)

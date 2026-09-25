@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/CaliLuke/go-typeql/v3/given"
+	"github.com/CaliLuke/go-typeql/v3/internal/perftrace"
 )
 
 // PoolConfig specifies connection pool behavior.
@@ -139,6 +140,8 @@ func NewConnPool(config PoolConfig, factory func() (Conn, error)) (*ConnPool, er
 // If no connections are available and the pool is at max capacity, it waits for one to become available.
 // Returns ErrPoolClosed if the pool is closed, or ErrPoolTimeout if WaitTimeout is exceeded.
 func (p *ConnPool) Get(ctx context.Context) (Conn, error) {
+	ctx, span := perftrace.Start(ctx, "gotype.pool.get")
+	defer span.End(nil)
 	// Fast path: check context before acquiring lock
 	if err := ctx.Err(); err != nil {
 		return nil, err

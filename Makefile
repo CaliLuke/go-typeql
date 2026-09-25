@@ -1,4 +1,4 @@
-.PHONY: build-rust test-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang install-typeql-check
+.PHONY: build-rust test-rust clean-rust clean test test-all test-unit test-integration bench lint check diagnose-startup-hang install-typeql-check perf-logal-up perf-logal-down perf-logal-clear perf-trace
 
 # Version of the official TypeQL syntax checker (typedb/typedb-tools).
 # Keep in lockstep with the TypeDB server version pinned in docker-compose.yml.
@@ -53,6 +53,47 @@ test-integration:
 	TEST_DB_ADDRESS=$${TEST_DB_ADDRESS:-localhost:1730} \
 	TYPEDB_GO_COMPOSE_PORT_MAP=$${TYPEDB_GO_COMPOSE_PORT_MAP:-1} \
 	go test -tags "cgo,typedb,integration" ./driver/... ./gotype/...
+
+# --- Performance tracing (docs/PERFORMANCE_TRACING.md) ---
+# The repo runs its own logal collector with its own ports and database.
+# Tracing is for performance work only: `make bench` and benchdb never trace.
+PERF_DIR       := $(CURDIR)/.perf
+LOGAL_DB       := $(PERF_DIR)/otel.debug.sqlite
+LOGAL_PID      := $(PERF_DIR)/logal.pid
+LOGAL_HEALTH   := http://127.0.0.1:43133
+PERF_RUN       ?= .
+PERF_PKGS      ?= ./driver/... ./gotype/...
+
+# Start the repo logal instance in the background and wait until it is ready.
+perf-logal-up:
+	@mkdir -p "$(PERF_DIR)"
+	@if curl -fsS "$(LOGAL_HEALTH)/readyz" >/dev/null 2>&1; then \
+		echo "logal already ready at $(LOGAL_HEALTH)"; exit 0; \
+	fi; \
+	TYPEDB_GO_LOGAL_DB="$(LOGAL_DB)" nohup logal --config "file:$(CURDIR)/perf/logal.yaml" \
+		>"$(PERF_DIR)/logal.log" 2>&1 & echo $$! >"$(LOGAL_PID)"; \
+	for i in $$(seq 1 50); do \
+		curl -fsS "$(LOGAL_HEALTH)/readyz" >/dev/null 2>&1 && { echo "logal ready (db $(LOGAL_DB))"; exit 0; }; \
+		sleep 0.2; \
+	done; \
+	echo "logal did not become ready; see $(PERF_DIR)/logal.log"; exit 1
+
+# Stop the repo logal instance.
+perf-logal-down:
+	@if [ -f "$(LOGAL_PID)" ]; then kill "$$(cat "$(LOGAL_PID)")" 2>/dev/null || true; rm -f "$(LOGAL_PID)"; echo "logal stopped"; \
+	else echo "no logal pid file"; fi
+
+# Delete the stored telemetry of the repo logal instance.
+perf-logal-clear:
+	logal clear --db "$(LOGAL_DB)" --endpoint "$(LOGAL_HEALTH)" --confirm
+
+# Run integration tests with tracing on. Narrow the run with PERF_RUN (a -run
+# pattern) and PERF_PKGS. Then inspect with: logal spans --db .perf/otel.debug.sqlite
+perf-trace: perf-logal-up
+	TYPEDB_GO_PERFTRACE=1 \
+	TEST_DB_ADDRESS=$${TEST_DB_ADDRESS:-localhost:1730} \
+	TYPEDB_GO_COMPOSE_PORT_MAP=$${TYPEDB_GO_COMPOSE_PORT_MAP:-1} \
+	go test -count=1 -tags "cgo,typedb,integration" -run '$(PERF_RUN)' $(PERF_PKGS)
 
 # Run all tests
 test: test-unit

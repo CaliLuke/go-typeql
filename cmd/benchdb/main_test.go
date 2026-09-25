@@ -154,3 +154,16 @@ func TestStreamLatencyGroupRequiresAllCases(t *testing.T) {
 		t.Fatal("missing latency case was accepted")
 	}
 }
+
+func TestBenchmarkEnvDropsPerfTrace(t *testing.T) {
+	got := benchmarkEnv([]string{"A=1", "TYPEDB_GO_PERFTRACE=1", "TYPEDB_GO_PERFTRACE_X=2", "B=2"})
+	want := []string{"A=1", "TYPEDB_GO_PERFTRACE_X=2", "B=2"}
+	if len(got) != len(want) {
+		t.Fatalf("benchmarkEnv = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("benchmarkEnv = %v, want %v", got, want)
+		}
+	}
+}

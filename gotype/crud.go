@@ -115,6 +115,8 @@ func lookupManagerInfo[T any]() (*ModelInfo, error) {
 // Key attributes must be set to non-zero values; a missing key returns a
 // *KeyAttributeError instead of silently inserting a zero-value key.
 func (m *Manager[T]) Insert(ctx context.Context, instance *T) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.Insert")
+	defer span.End(nil)
 	if instance == nil {
 		return fmt.Errorf("insert %s: instance must not be nil", m.info.TypeName)
 	}
@@ -161,6 +163,8 @@ func (m *Manager[T]) Insert(ctx context.Context, instance *T) error {
 // Get retrieves instances of T that match the specified attribute filters.
 // filters is a map where keys are TypeDB attribute names and values are the target values.
 func (m *Manager[T]) Get(ctx context.Context, filters map[string]any) ([]*T, error) {
+	ctx, span := m.startOp(ctx, "gotype.Manager.Get")
+	defer span.End(nil)
 	matchQuery, err := m.buildFilteredMatch("e", filters)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: build match: %w", m.info.TypeName, err)
@@ -183,6 +187,8 @@ func (m *Manager[T]) Get(ctx context.Context, filters map[string]any) ([]*T, err
 // *NotUniqueError when more than one instance matches, so callers can
 // distinguish those cases with errors.As.
 func (m *Manager[T]) GetOne(ctx context.Context, filters map[string]any) (*T, error) {
+	ctx, span := m.startOp(ctx, "gotype.Manager.GetOne")
+	defer span.End(nil)
 	results, err := m.Get(ctx, filters)
 	if err != nil {
 		return nil, err
@@ -199,12 +205,16 @@ func (m *Manager[T]) GetOne(ctx context.Context, filters map[string]any) (*T, er
 
 // All retrieves all instances of the model type T from the database.
 func (m *Manager[T]) All(ctx context.Context) ([]*T, error) {
+	ctx, span := m.startOp(ctx, "gotype.Manager.All")
+	defer span.End(nil)
 	return m.Get(ctx, nil)
 }
 
 // GetWithRoles retrieves instances of T and populates their role players.
 // This is primarily used for relation models.
 func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) ([]*T, error) {
+	ctx, span := m.startOp(ctx, "gotype.Manager.GetWithRoles")
+	defer span.End(nil)
 	matchQuery, err := m.buildFilteredMatch("e", filters)
 	if err != nil {
 		return nil, fmt.Errorf("get_with_roles %s: build match: %w", m.info.TypeName, err)
@@ -230,6 +240,8 @@ func (m *Manager[T]) GetWithRoles(ctx context.Context, filters map[string]any) (
 // match 0x[0-9a-fA-F]+; anything else is rejected with an error before any
 // query is sent.
 func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error) {
+	ctx, span := m.startOp(ctx, "gotype.Manager.GetByIID")
+	defer span.End(nil)
 	if err := validateIID(iid); err != nil {
 		return nil, fmt.Errorf("get_by_iid %s: %w", m.info.TypeName, err)
 	}
@@ -253,6 +265,8 @@ func (m *Manager[T]) GetByIID(ctx context.Context, iid string) (*T, error) {
 // Update modifies an existing instance of T in the database.
 // The instance must have its IID populated (typically from a prior Get or Insert).
 func (m *Manager[T]) Update(ctx context.Context, instance *T) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.Update")
+	defer span.End(nil)
 	if instance == nil {
 		return fmt.Errorf("update %s: instance must not be nil", m.info.TypeName)
 	}
@@ -355,6 +369,8 @@ func WithStrict() DeleteOption {
 
 // Delete deletes an instance by IID.
 func (m *Manager[T]) Delete(ctx context.Context, instance *T, opts ...DeleteOption) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.Delete")
+	defer span.End(nil)
 	if instance == nil {
 		return fmt.Errorf("delete %s: instance must not be nil", m.info.TypeName)
 	}
@@ -402,6 +418,8 @@ const deleteBatchSize = 32
 // WithStrict checks existence in groups before deleting and reports the first
 // missing input. Duplicate IIDs are checked and deleted only once.
 func (m *Manager[T]) DeleteMany(ctx context.Context, instances []*T, opts ...DeleteOption) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.DeleteMany")
+	defer span.End(nil)
 	if len(instances) == 0 {
 		return nil
 	}
@@ -476,6 +494,8 @@ func (m *Manager[T]) deleteManyMatch(iids []string) string {
 // scalar entity updates with distinct IIDs use bounded typed-row batches;
 // other shapes retain the per-instance update path.
 func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.UpdateMany")
+	defer span.End(nil)
 	if len(instances) == 0 {
 		return nil
 	}
@@ -500,6 +520,8 @@ func (m *Manager[T]) UpdateMany(ctx context.Context, instances []*T) error {
 // Key attributes must be set to non-zero values; a missing key returns a
 // *KeyAttributeError since the upsert match is meaningless without it.
 func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.Put")
+	defer span.End(nil)
 	if instance == nil {
 		return fmt.Errorf("put %s: instance must not be nil", m.info.TypeName)
 	}
@@ -538,6 +560,8 @@ func (m *Manager[T]) Put(ctx context.Context, instance *T) error {
 // For keyed models, each put returns its IID in the same query. IIDs are
 // assigned after the transaction completes successfully.
 func (m *Manager[T]) PutMany(ctx context.Context, instances []*T) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.PutMany")
+	defer span.End(nil)
 	if len(instances) == 0 {
 		return nil
 	}
@@ -613,6 +637,8 @@ func (m *Manager[T]) countByIID(ctx context.Context, iid string) (int64, error) 
 
 // InsertMany inserts multiple instances in a single transaction.
 func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.InsertMany")
+	defer span.End(nil)
 	if len(instances) == 0 {
 		return nil
 	}
@@ -670,6 +696,8 @@ func (m *Manager[T]) InsertMany(ctx context.Context, instances []*T) error {
 // and an error if any. Use GetByIIDPolymorphicAny for full subtype hydration.
 // Returns nil, "", nil if not found.
 func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, string, error) {
+	ctx, span := m.startOp(ctx, "gotype.Manager.GetByIIDPolymorphic")
+	defer span.End(nil)
 	if err := checkCtx(ctx, "get_by_iid_polymorphic", m.info.TypeName); err != nil {
 		return nil, "", err
 	}
@@ -713,6 +741,8 @@ func (m *Manager[T]) GetByIIDPolymorphic(ctx context.Context, iid string) (*T, s
 // The concrete subtype must be registered via Register[ConcreteType]().
 // Returns nil, "", nil if not found.
 func (m *Manager[T]) GetByIIDPolymorphicAny(ctx context.Context, iid string) (any, string, error) {
+	ctx, span := m.startOp(ctx, "gotype.Manager.GetByIIDPolymorphicAny")
+	defer span.End(nil)
 	if err := checkCtx(ctx, "get_by_iid_polymorphic_any", m.info.TypeName); err != nil {
 		return nil, "", err
 	}

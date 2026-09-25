@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	"github.com/CaliLuke/go-typeql/v3/given"
+	"github.com/CaliLuke/go-typeql/v3/internal/perftrace"
 
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -70,6 +71,10 @@ type Transaction struct {
 	lease             *nativeHandleLease
 	slotOnce          sync.Once
 	releaseNativeSlot func()
+
+	// traceCtx parents the spans of calls that take no context (commit,
+	// rollback, close, Query). It is nil unless perftrace is enabled.
+	traceCtx context.Context
 }
 
 // A lease does not retain its Transaction, so finalizers can still run. It
@@ -115,6 +120,7 @@ type transactionCloseJob struct {
 	start     time.Time
 	onDone    func(error)
 	release   func()
+	traceCtx  context.Context
 }
 
 func (job transactionCloseJob) releaseSlot() {
@@ -346,10 +352,19 @@ func (w *transactionCloseWorker) close() {
 
 func runTransactionCloseJob(job transactionCloseJob) {
 	start := time.Now()
+	_, span := perftrace.Start(job.traceCtx, "typedb.tx.close")
+	if span.Recording() {
+		span.SetAttrs(
+			perftrace.Int("typedb.tx.id", int(job.id)),
+			perftrace.String("db.namespace", job.dbName),
+			perftrace.Int("typedb.tx.close.delay_us", int(start.Sub(job.start).Microseconds())),
+		)
+	}
 	var closeErr *C.char
 	C.typedb_transaction_close(job.ptr, &closeErr)
 	duration := time.Since(start)
 	err := getError(closeErr)
+	span.End(err)
 	logTransactionClose(job, err)
 	job.cleanup.finish(job, true, err, duration, false)
 	job.releaseSlot()
@@ -498,6 +513,7 @@ func (t *Transaction) finishContextCall() {
 
 type queryMetadata struct {
 	query       string
+	ctx         context.Context // caller context for spans; nil without one
 	once        sync.Once
 	operation   string
 	fingerprint string
@@ -588,9 +604,11 @@ func (t *Transaction) queryDecoded(
 	rows given.Rows,
 	decode queryDecoder,
 	logExtra ...any,
-) error {
+) (err error) {
 	query := meta.query
 	start := time.Now()
+	ctx, span := t.startQuerySpan(meta, "typedb.tx.query")
+	defer func() { span.End(err) }()
 	if nilGivenRows(rows) {
 		rows = nil
 	}
@@ -602,7 +620,6 @@ func (t *Transaction) queryDecoded(
 	}
 
 	var rowsJSON []byte
-	var err error
 	if rows != nil {
 		rowsJSON, err = rows.MarshalGivenRows()
 		if err != nil {
@@ -639,6 +656,7 @@ func (t *Transaction) queryDecoded(
 	var outLen C.size_t
 	var queryErr *C.char
 	var buf *C.uchar
+	_, ffiSpan := perftrace.Start(ctx, "typedb.ffi.query")
 	if rows != nil {
 		cRows := C.CString(string(rowsJSON))
 		defer C.free(unsafe.Pointer(cRows))
@@ -646,6 +664,10 @@ func (t *Transaction) queryDecoded(
 	} else {
 		buf = C.typedb_transaction_query(t.ptr, cQuery, cOpts, C.bool(registerConcepts), &outLen, &queryErr)
 	}
+	if ffiSpan.Recording() {
+		ffiSpan.SetAttrs(perftrace.Int("typedb.result.bytes", int(outLen)))
+	}
+	ffiSpan.End(nil)
 	if buf == nil {
 		if err := withQuery(getError(queryErr), query); err != nil {
 			t.logQueryDuration(start, meta, 0, 0, err, logFields)
@@ -655,7 +677,13 @@ func (t *Transaction) queryDecoded(
 		return nil
 	}
 	defer C.typedb_free_bytes((*C.uchar)(unsafe.Pointer(buf)), outLen)
+	_, decodeSpan := perftrace.Start(ctx, "typedb.decode")
 	rowCount, err := decode(buf, outLen)
+	if decodeSpan.Recording() {
+		decodeSpan.SetAttrs(perftrace.Int("typedb.result.rows", rowCount), perftrace.Int("typedb.result.bytes", int(outLen)))
+		span.SetAttrs(perftrace.Int("typedb.result.rows", rowCount), perftrace.Int("typedb.result.bytes", int(outLen)))
+	}
+	decodeSpan.End(err)
 	err = withQuery(err, query)
 	if err != nil {
 		t.logQueryDuration(start, meta, 0, int(outLen), err, logFields)
@@ -691,12 +719,14 @@ func (t *Transaction) queryEachConfigured(
 	onChunk func(rows, bytes int),
 	fn func(rowCount int, row map[string]any) error,
 	logExtra ...any,
-) error {
+) (err error) {
 	if chunkLimit <= 0 {
 		return fmt.Errorf("driver: query stream chunk size must be positive")
 	}
 	query := meta.query
 	start := time.Now()
+	ctx, span := t.startQuerySpan(meta, "typedb.tx.query_stream")
+	defer func() { span.End(err) }()
 	logFields := func() []any { return append([]any{"row_consumer", true}, logExtra...) }
 
 	if t.isAbandoned() {
@@ -728,7 +758,9 @@ func (t *Transaction) queryEachConfigured(
 	if opts != nil {
 		cOpts = opts.ptr
 	}
+	_, openSpan := perftrace.Start(ctx, "typedb.ffi.stream_open")
 	stream := C.typedb_transaction_query_stream_open(t.ptr, cQuery, cOpts, false, &queryErr)
+	openSpan.End(nil)
 	if stream == nil {
 		err := withQuery(getError(queryErr), query)
 		if err == nil {
@@ -746,6 +778,7 @@ func (t *Transaction) queryEachConfigured(
 		var done C.bool
 		var outLen C.size_t
 		var nextErr *C.char
+		_, nextSpan := perftrace.Start(ctx, "typedb.ffi.stream_next")
 		buf := C.typedb_query_stream_next(
 			stream,
 			C.size_t(chunkLimit),
@@ -754,6 +787,10 @@ func (t *Transaction) queryEachConfigured(
 			&outLen,
 			&nextErr,
 		)
+		if nextSpan.Recording() {
+			nextSpan.SetAttrs(perftrace.Int("typedb.result.rows", int(chunkRows)), perftrace.Int("typedb.result.bytes", int(outLen)))
+		}
+		nextSpan.End(nil)
 		if err := withQuery(getError(nextErr), query); err != nil {
 			t.logQueryDuration(start, meta, rowCount, byteCount, err, logFields)
 			return err
@@ -763,12 +800,18 @@ func (t *Transaction) queryEachConfigured(
 			if onChunk != nil {
 				onChunk(int(chunkRows), int(outLen))
 			}
+			// The span includes the row callbacks, for example hydration.
+			_, decodeSpan := perftrace.Start(ctx, "typedb.decode_consume")
 			decodedRows, err := func() (int, error) {
 				defer C.typedb_free_bytes(buf, outLen)
 				return decodeMsgpackEach(buf, outLen, func(count int, row map[string]any) error {
 					return t.consumeStreamRow(fn, count, row)
 				})
 			}()
+			if decodeSpan.Recording() {
+				decodeSpan.SetAttrs(perftrace.Int("typedb.result.rows", decodedRows))
+			}
+			decodeSpan.End(err)
 			if err != nil {
 				err = withQuery(err, query)
 				t.logQueryDuration(start, meta, rowCount, byteCount, err, logFields)
@@ -788,6 +831,9 @@ func (t *Transaction) queryEachConfigured(
 		}
 
 		if bool(done) {
+			if span.Recording() {
+				span.SetAttrs(perftrace.Int("typedb.result.rows", rowCount), perftrace.Int("typedb.result.bytes", byteCount))
+			}
 			t.logQueryDuration(start, meta, rowCount, byteCount, nil, logFields)
 			return nil
 		}
@@ -846,7 +892,7 @@ func (t *Transaction) QueryEachWithContext(
 	if fn == nil {
 		return fmt.Errorf("driver: row function must not be nil")
 	}
-	meta := &queryMetadata{query: query}
+	meta := &queryMetadata{query: query, ctx: traceContext(ctx)}
 	if deadline, ok := ctx.Deadline(); ok {
 		logFFIDebugLazy("tx.query_each_with_context.start", func() []any {
 			return t.queryLogFields(meta, "deadline_remaining_ms", time.Until(deadline).Milliseconds())
@@ -931,7 +977,7 @@ func (t *Transaction) QueryWithContextAndRows(ctx context.Context, query string,
 // the driver returns; do not call opts.Close until the transaction's pending
 // closes have drained (see WaitForPendingCloses).
 func (t *Transaction) QueryWithContextAndOptions(ctx context.Context, query string, opts *QueryOptions, rows given.Rows) ([]map[string]any, error) {
-	meta := &queryMetadata{query: query}
+	meta := &queryMetadata{query: query, ctx: traceContext(ctx)}
 	if deadline, ok := ctx.Deadline(); ok {
 		logFFIDebugLazy("tx.query_with_context.start", func() []any {
 			return t.queryLogFields(meta, "deadline_remaining_ms", time.Until(deadline).Milliseconds())
@@ -1158,8 +1204,10 @@ func decodeMsgpackEachBytes(
 // handle on success or failure. The transaction cannot be reused afterwards.
 // Commit on a transaction abandoned by a cancelled QueryWithContext call
 // returns ErrTransactionAbandoned immediately.
-func (t *Transaction) Commit() error {
+func (t *Transaction) Commit() (err error) {
 	start := time.Now()
+	span := t.startTxSpan("typedb.tx.commit")
+	defer func() { span.End(err) }()
 	if t.isAbandoned() {
 		t.logTransactionDuration("tx.commit", start, ErrTransactionAbandoned)
 		return ErrTransactionAbandoned
@@ -1193,8 +1241,10 @@ func (t *Transaction) Commit() error {
 // An active query stream returns ErrTransactionBusy without rolling back.
 // Rollback on a transaction abandoned by a cancelled QueryWithContext call
 // returns ErrTransactionAbandoned immediately.
-func (t *Transaction) Rollback() error {
+func (t *Transaction) Rollback() (err error) {
 	start := time.Now()
+	span := t.startTxSpan("typedb.tx.rollback")
+	defer func() { span.End(err) }()
 	if t.isAbandoned() {
 		t.logTransactionDuration("tx.rollback", start, ErrTransactionAbandoned)
 		return ErrTransactionAbandoned
@@ -1332,13 +1382,14 @@ func (t *Transaction) detachCloseJobLocked(start time.Time, onDone func(error)) 
 		return transactionCloseJob{}
 	}
 	job := transactionCloseJob{
-		ptr:     t.claimNativeHandle(),
-		id:      t.id,
-		dbName:  t.dbName,
-		txType:  t.txType,
-		start:   start,
-		onDone:  onDone,
-		release: t.releaseSlot,
+		ptr:      t.claimNativeHandle(),
+		id:       t.id,
+		dbName:   t.dbName,
+		txType:   t.txType,
+		start:    start,
+		onDone:   onDone,
+		release:  t.releaseSlot,
+		traceCtx: t.traceCtx,
 	}
 	t.ptr = nil
 	t.markClosedLocked("close")

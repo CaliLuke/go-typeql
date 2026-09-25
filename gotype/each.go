@@ -17,6 +17,8 @@ var ErrStopIteration = errors.New("gotype: stop iteration")
 // Otherwise the transaction first materializes all raw rows, but the ORM
 // still hydrates and delivers one model at a time.
 func (m *Manager[T]) ForEach(ctx context.Context, filters map[string]any, fn func(*T) error) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.ForEach")
+	defer span.End(nil)
 	if fn == nil {
 		return fmt.Errorf("for_each %s: callback must not be nil", m.info.TypeName)
 	}
@@ -34,6 +36,8 @@ func (m *Manager[T]) ForEach(ctx context.Context, filters map[string]any, fn fun
 // ForEachWithRoles streams models with their role players, like GetWithRoles.
 // Nested role-player models are separately hydrated and safe to retain.
 func (m *Manager[T]) ForEachWithRoles(ctx context.Context, filters map[string]any, fn func(*T) error) error {
+	ctx, span := m.startOp(ctx, "gotype.Manager.ForEachWithRoles")
+	defer span.End(nil)
 	if fn == nil {
 		return fmt.Errorf("for_each_with_roles %s: callback must not be nil", m.info.TypeName)
 	}
@@ -55,6 +59,8 @@ func (m *Manager[T]) ForEachWithRoles(ctx context.Context, filters map[string]an
 // Filters, sorting, offset, and limit match Execute. Returning
 // ErrStopIteration from fn ends the read without an error.
 func (q *Query[T]) ForEach(ctx context.Context, fn func(*T) error) error {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.ForEach")
+	defer span.End(nil)
 	if fn == nil {
 		return fmt.Errorf("query %s: callback must not be nil", q.mgr.info.TypeName)
 	}

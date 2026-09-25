@@ -340,6 +340,7 @@ func saveResults(ctx context.Context, dbPath string, reset bool, benchArgs []str
 
 func executeBenchmarks(ctx context.Context, args []string) (string, []benchmarkResult, string, error) {
 	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Env = benchmarkEnv(os.Environ())
 	out, err := cmd.CombinedOutput()
 	output := string(out)
 	if err != nil {
@@ -351,6 +352,18 @@ func executeBenchmarks(ctx context.Context, args []string) (string, []benchmarkR
 		return output, nil, cpuName, parseErr
 	}
 	return output, results, cpuName, nil
+}
+
+// benchmarkEnv removes the performance-tracing switch: tracing changes the
+// numbers that benchmarks record.
+func benchmarkEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "TYPEDB_GO_PERFTRACE=") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 func sampleSuffix(count int, live bool) string {

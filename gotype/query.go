@@ -60,6 +60,8 @@ func (q *Query[T]) Offset(n int) *Query[T] {
 // Exists returns true if the query matches at least one instance in the database.
 // Like Count, it considers all matching instances regardless of Limit and Offset.
 func (q *Query[T]) Exists(ctx context.Context) (bool, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.Exists")
+	defer span.End(nil)
 	query, key, err := q.buildCountQueryWithLimit(1)
 	if err != nil {
 		return false, fmt.Errorf("exists %s: build: %w", q.mgr.info.TypeName, err)
@@ -73,12 +75,16 @@ func (q *Query[T]) Exists(ctx context.Context) (bool, error) {
 
 // All executes the query and returns all matching instances as a slice of pointers to T.
 func (q *Query[T]) All(ctx context.Context) ([]*T, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.All")
+	defer span.End(nil)
 	return q.Execute(ctx)
 }
 
 // Execute performs the query against the database and hydrates the results into Go structs.
 // When the Manager is bound to a transaction, the query runs inside it.
 func (q *Query[T]) Execute(ctx context.Context) ([]*T, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.Execute")
+	defer span.End(nil)
 	query, err := q.buildQuery()
 	if err != nil {
 		return nil, fmt.Errorf("query %s: build: %w", q.mgr.info.TypeName, err)
@@ -94,6 +100,8 @@ func (q *Query[T]) Execute(ctx context.Context) ([]*T, error) {
 // The builder itself is not modified, so a later All on the same query
 // returns the full result set.
 func (q *Query[T]) First(ctx context.Context) (*T, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.First")
+	defer span.End(nil)
 	limited := *q
 	limited.limit = 1
 	results, err := limited.Execute(ctx)
@@ -111,6 +119,8 @@ func (q *Query[T]) First(ctx context.Context) (*T, error) {
 // multi-valued attribute) are counted once. Limit and Offset do not affect
 // the count; only the query filters do.
 func (q *Query[T]) Count(ctx context.Context) (int64, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.Count")
+	defer span.End(nil)
 	query, key, err := q.buildCountQuery()
 	if err != nil {
 		return 0, fmt.Errorf("count %s: build: %w", q.mgr.info.TypeName, err)
@@ -138,6 +148,8 @@ func (q *Query[T]) readCount(ctx context.Context, query, key, op string) (int64,
 // returns how many there were. When the Manager is bound to a transaction,
 // the delete runs inside it and is committed by the transaction owner.
 func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.Delete")
+	defer span.End(nil)
 	countQuery, countKey, err := q.buildCountQuery()
 	if err != nil {
 		return 0, fmt.Errorf("delete %s: build count: %w", q.mgr.info.TypeName, err)
@@ -153,6 +165,8 @@ func (q *Query[T]) Delete(ctx context.Context) (int64, error) {
 // DeleteNoCount removes matching instances without querying the affected-row
 // count. It uses the same distinct-entity selection as Delete.
 func (q *Query[T]) DeleteNoCount(ctx context.Context) error {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.DeleteNoCount")
+	defer span.End(nil)
 	query, err := q.buildDeleteQuery()
 	if err != nil {
 		return fmt.Errorf("delete_no_count %s: build: %w", q.mgr.info.TypeName, err)
@@ -336,6 +350,8 @@ func (q *Query[T]) buildDeleteQuery() (string, error) {
 // atomicity. When the Manager is bound to a transaction, that transaction is
 // reused and committed by its owner.
 func (q *Query[T]) UpdateWith(ctx context.Context, fn func(*T)) ([]*T, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.UpdateWith")
+	defer span.End(nil)
 	query, err := q.buildQuery()
 	if err != nil {
 		return nil, fmt.Errorf("update_with %s: build: %w", q.mgr.info.TypeName, err)
@@ -378,6 +394,8 @@ func (q *Query[T]) UpdateWith(ctx context.Context, fn func(*T)) ([]*T, error) {
 // Returns the number of distinct instances updated. When the Manager is bound
 // to a transaction, the update runs inside it and is committed by its owner.
 func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.Update")
+	defer span.End(nil)
 	if len(updates) == 0 {
 		return 0, nil
 	}
@@ -395,6 +413,8 @@ func (q *Query[T]) Update(ctx context.Context, updates map[string]any) (int64, e
 // UpdateNoCount applies the same bulk attribute mutation as Update but does
 // not query or return an affected-row count. An empty updates map is a no-op.
 func (q *Query[T]) UpdateNoCount(ctx context.Context, updates map[string]any) error {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.UpdateNoCount")
+	defer span.End(nil)
 	if len(updates) == 0 {
 		return nil
 	}
@@ -566,6 +586,8 @@ type AggregateSpec struct {
 // Each spec produces a result keyed by "fn_attr" (e.g., "sum_age", "mean_score").
 // All aggregations are computed in a single query using multiple reduce assignments.
 func (q *Query[T]) Aggregate(ctx context.Context, specs ...AggregateSpec) (map[string]float64, error) {
+	ctx, span := q.mgr.startOp(ctx, "gotype.Query.Aggregate")
+	defer span.End(nil)
 	if len(specs) == 0 {
 		return nil, nil
 	}

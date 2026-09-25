@@ -55,6 +55,10 @@ completed close lifecycles, see [benchmark groups](../benchmarks/README.md).
 `go run ./cmd/benchdb -group=<name>` is exploratory and does not alter the
 tracked SQLite history; pass `-db` explicitly only for a reviewed baseline.
 
+To find where the time of one operation goes, trace the integration tests
+with `make perf-trace`. See [Performance Tracing](PERFORMANCE_TRACING.md).
+Benchmarks do not use tracing.
+
 When using the repo `docker-compose.yml`, TypeDB is exposed on host port `1730` by default even though the server listens on container port `1729`. The tests default to `localhost:1729`, so set `TEST_DB_ADDRESS=localhost:1730` when running against the compose-managed instance. Because the container advertises its internal `127.0.0.1:1729` address, also set `TYPEDB_GO_COMPOSE_PORT_MAP=1` so the driver maps the dialed `localhost:1730` back to the advertised address (the driver no longer rewrites localhost ports implicitly; `make test-integration` sets both variables by default).
 
 ## Mock Patterns

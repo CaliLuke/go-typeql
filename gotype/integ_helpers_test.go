@@ -11,6 +11,7 @@ import (
 
 	"github.com/CaliLuke/go-typeql/v3/driver"
 	"github.com/CaliLuke/go-typeql/v3/gotype"
+	"github.com/CaliLuke/go-typeql/v3/internal/perftrace/otelperf"
 )
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,16 @@ func (a *driverAdapter) Transaction(dbName string, txType int) (gotype.Tx, error
 	return tx, nil
 }
 
+// TransactionContext passes ctx to the driver, so the transaction's spans
+// have the calling operation as their parent when tracing is on.
+func (a *driverAdapter) TransactionContext(ctx context.Context, dbName string, txType int) (gotype.Tx, error) {
+	tx, err := a.drv.TransactionWithContextAndOptions(ctx, dbName, driver.TransactionType(txType), nil)
+	if err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
 func (a *driverAdapter) Schema(dbName string) (string, error) {
 	return a.drv.Databases().Schema(dbName)
 }
@@ -103,8 +114,6 @@ func (a *driverAdapter) IsOpen() bool {
 // Shared constants and helpers
 // ---------------------------------------------------------------------------
 
-const testDBName = "go_typeql_integration_test"
-
 func dbAddress() string {
 	if addr := os.Getenv("TEST_DB_ADDRESS"); addr != "" {
 		return addr
@@ -122,6 +131,8 @@ func dbAddress() string {
 // handled via t.Cleanup.
 func setupTestDBWith(t *testing.T, registerFn func()) *gotype.Database {
 	t.Helper()
+	endTrace := otelperf.StartTest(t.Name())
+	t.Cleanup(func() { endTrace(t.Failed()) })
 
 	addr := dbAddress()
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Development
+
+- Added OpenTelemetry tracing for performance work. `make perf-trace` runs the integration tests with spans and metrics, and exports them to a logal instance that belongs to this repository. See [docs/PERFORMANCE_TRACING.md](docs/PERFORMANCE_TRACING.md). Benchmarks never use tracing.
+- The span points in `gotype` and `driver` use the internal `internal/perftrace` hook. When tracing is off, a span point does not allocate. Programs that import go-typeql do not link the OpenTelemetry SDK. The go.mod file now lists the OpenTelemetry modules because the test adapter uses them.
+- `check.sh` now also lints `driver/` and the integration test files (tags `cgo,typedb,integration`) when the Rust library is built. Removed 5 unused integration test helpers that this lint found.
+
 ## v3.1.0 - 2026-09-24
 
 ### Upgrade notes

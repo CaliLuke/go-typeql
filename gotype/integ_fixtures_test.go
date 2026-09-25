@@ -4,42 +4,10 @@ package gotype_test
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"testing"
 
 	"github.com/CaliLuke/go-typeql/v3/gotype"
 )
-
-// ---------------------------------------------------------------------------
-// Data builders — generate unique test data to prevent collisions.
-// ---------------------------------------------------------------------------
-
-// uniqueSuffix returns a 6-character random hex string.
-func uniqueSuffix() string {
-	b := make([]byte, 3)
-	if _, err := rand.Read(b); err != nil {
-		panic("uniqueSuffix: " + err.Error())
-	}
-	return hex.EncodeToString(b)
-}
-
-// makeName returns a unique name like "Test-a1b2c3".
-func makeName(prefix string) string {
-	if prefix == "" {
-		prefix = "Test"
-	}
-	return fmt.Sprintf("%s-%s", prefix, uniqueSuffix())
-}
-
-// makeEmail returns a unique email like "user-a1b2c3@test.com".
-func makeEmail(name string) string {
-	if name == "" {
-		name = "user-" + uniqueSuffix()
-	}
-	return fmt.Sprintf("%s@test.com", name)
-}
 
 // ---------------------------------------------------------------------------
 // Assertion helpers — reduce boilerplate in integration tests.
@@ -56,18 +24,6 @@ func assertCount[T any](t *testing.T, ctx context.Context, mgr *gotype.Manager[T
 		t.Fatalf("assertCount: expected %d results, got %d", expected, len(results))
 	}
 	return results
-}
-
-// assertQueryCount asserts that a fresh query's Count returns exactly `expected`.
-func assertQueryCount[T any](t *testing.T, ctx context.Context, mgr *gotype.Manager[T], expected int64) {
-	t.Helper()
-	count, err := mgr.Query().Count(ctx)
-	if err != nil {
-		t.Fatalf("assertQueryCount: Count() failed: %v", err)
-	}
-	if count != expected {
-		t.Fatalf("assertQueryCount: expected count %d, got %d", expected, count)
-	}
 }
 
 // assertGetOne fetches via mgr.Get with the given filter map and asserts

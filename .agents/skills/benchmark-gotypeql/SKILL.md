@@ -14,6 +14,7 @@ Follow this order. Stop and report if an earlier step already explains the issue
 - If the user wants a routine checkpoint, use the recorded suite: `make bench`.
 - If the user wants tag-to-tag comparison, root-cause analysis, or a rollback decision, do **not** start by writing to `benchmarks/benchmarks.sqlite`.
 - If the user says "run tests" or "test", that means full unit + integration per repo rules. Benchmarking does not replace tests.
+- If the question is where the time of one operation goes (transaction open, FFI, decode, commit), trace it with `make perf-trace` and inspect it with logal. See `docs/PERFORMANCE_TRACING.md`. Tracing never runs in benchmarks, and logal never stores benchmark results.
 
 ## 2. Preserve the user worktree
 
