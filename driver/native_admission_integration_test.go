@@ -197,3 +197,44 @@ func TestNativeAdmissionFailedOpensDrainOnShutdown(t *testing.T) {
 		t.Fatalf("failed opens left admission occupied after shutdown: %+v", usage)
 	}
 }
+
+// TestReadCloseDropsAndReleasesAdmission checks DropReadClose: Close drops the
+// read transaction and returns its slot before Close returns, so the next open
+// does not wait. A write transaction still uses the checked close.
+func TestReadCloseDropsAndReleasesAdmission(t *testing.T) {
+	conn, err := OpenWithOptions(closeBacklogTestAddr(), "admin", "password", DriverOptions{MaxNativeTransactions: 1, DropReadClose: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	name := fmt.Sprintf("read_drop_%d", time.Now().UnixNano())
+	if err := conn.Databases().Create(name); err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Databases().Delete(name)
+
+	for i := range 3 {
+		tx, err := conn.Transaction(name, Read)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tx.Close()
+		if got := conn.CleanupStats(); got.NativeInUse != 0 || got.Pending != 0 || got.ReadDrops != uint64(i+1) {
+			t.Fatalf("read close %d: %+v", i, got)
+		}
+	}
+	// One slot, and it is free: an immediate open must not wait.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	write, err := conn.TransactionWithContextAndOptions(ctx, name, Write, nil)
+	if err != nil {
+		t.Fatalf("open after read drops: %v", err)
+	}
+	write.Close()
+	if err := WaitForPendingCloses(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := conn.CleanupStats(); got.NativeCompletions != 1 || got.ReadDrops != 3 || got.NativeInUse != 0 {
+		t.Fatalf("write close must stay checked: %+v", got)
+	}
+}

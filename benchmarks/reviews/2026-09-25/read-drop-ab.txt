@@ -1,0 +1,20 @@
+# Final code. TestPerfWorkload_ConcurrentMixed, 20% inserts, untraced, default slots (16) and close workers (8).
+# checked = default checked read close; drop = DriverOptions.DropReadClose (opt-in)
+# start 2026-09-25T03:19:46Z load: 12.06 14.66 13.52
+callers=10 mode=checked run=1 loop=1.589s throughput=1258 ops/s drain=5ms latency p50=6.066ms p95=16.923ms p99=33.605ms max=51.774ms 
+callers=10 mode=drop run=1 loop=4.214s throughput=475 ops/s drain=0s latency p50=9.792ms p95=73.302ms p99=153.734ms max=248.454ms 
+callers=10 mode=checked run=2 loop=2.154s throughput=929 ops/s drain=2ms latency p50=6.919ms p95=30.68ms p99=74.562ms max=126.617ms 
+callers=10 mode=drop run=2 loop=8.643s throughput=231 ops/s drain=0s latency p50=22.764ms p95=146.977ms p99=226.861ms max=390.002ms 
+callers=10 mode=checked run=3 loop=6.808s throughput=294 ops/s drain=4ms latency p50=22.202ms p95=104.572ms p99=207.102ms max=305.756ms 
+callers=10 mode=drop run=3 loop=6.822s throughput=293 ops/s drain=0s latency p50=18.325ms p95=110.921ms p99=224.367ms max=391.569ms 
+callers=10 mode=checked run=4 loop=7.527s throughput=266 ops/s drain=1ms latency p50=23.435ms p95=135.647ms p99=227.264ms max=364.158ms 
+callers=10 mode=drop run=4 loop=7.372s throughput=271 ops/s drain=0s latency p50=20.323ms p95=132.428ms p99=284.455ms max=422.504ms 
+callers=32 mode=checked run=1 loop=9.925s throughput=202 ops/s drain=29ms latency p50=114.925ms p95=427.989ms p99=576.554ms max=618.197ms 
+callers=32 mode=drop run=1 loop=10.24s throughput=195 ops/s drain=0s latency p50=153.748ms p95=404.619ms p99=578.105ms max=651.204ms 
+callers=32 mode=checked run=2 loop=10.898s throughput=184 ops/s drain=127ms latency p50=150.054ms p95=406.952ms p99=578.903ms max=683.977ms 
+callers=32 mode=drop run=2 loop=5.501s throughput=364 ops/s drain=0s latency p50=74.445ms p95=195.745ms p99=330.757ms max=388.24ms 
+callers=32 mode=checked run=3 loop=8.124s throughput=246 ops/s drain=2ms latency p50=107.048ms p95=339.1ms p99=529.222ms max=641.542ms 
+callers=32 mode=drop run=3 loop=6.124s throughput=327 ops/s drain=0s latency p50=73.629ms p95=284.572ms p99=371.647ms max=450.32ms 
+callers=32 mode=checked run=4 loop=5.532s throughput=362 ops/s drain=3ms latency p50=79.929ms p95=214.367ms p99=274.839ms max=385.873ms 
+callers=32 mode=drop run=4 loop=5.534s throughput=361 ops/s drain=0s latency p50=62.526ms p95=300.247ms p99=551.141ms max=623.09ms 
+# end load: 51.24 36.80 23.56

@@ -67,7 +67,9 @@ type Driver struct {
 	closeMu      sync.Mutex
 	nativeSlots  chan struct{}
 	nativeWG     sync.WaitGroup
-	txMu         sync.Mutex
+	// dropReadClose is DriverOptions.DropReadClose.
+	dropReadClose bool
+	txMu          sync.Mutex
 	// txs tracks locally opened transactions by id. Entries are weak so an
 	// abandoned *Transaction can still be garbage-collected, letting its
 	// finalizer free the native handle; Close and the per-database helpers
@@ -95,6 +97,14 @@ type DriverOptions struct {
 	// completed close per round trip, and queued closes delay later
 	// transaction opens.
 	CloseWorkers int
+	// DropReadClose makes Close and CloseAsync drop read transactions: the
+	// driver sends the close without waiting for the server and releases the
+	// admission slot at once. A read transaction has no changes to lose, so
+	// only its close error is lost. The admission limit then no longer bounds
+	// the closes that the server has still to finish. This helped an idle
+	// server and hurt a loaded one, so it is off by default: measure it on
+	// your workload. CloseChecked always runs a checked close.
+	DropReadClose bool
 	// TLSEnabled controls whether the driver connects with TLS.
 	TLSEnabled bool
 	// TLSRootCA optionally points to a custom root CA certificate when TLS is enabled.
@@ -185,7 +195,7 @@ func OpenWithOptions(address, username, password string, opts DriverOptions) (*D
 	}
 
 	logFFIDurationLazy("driver.open", start, func() []any { return []any{"address", address, "result", "ok"} })
-	return newDriver(ptr, opts.MaxNativeTransactions, opts.CloseWorkers), nil
+	return newDriver(ptr, opts.MaxNativeTransactions, opts.CloseWorkers, opts.DropReadClose), nil
 }
 
 // OpenWithAddresses creates a new connection using one or more public TypeDB addresses.
@@ -285,10 +295,10 @@ func openWithAddressSet(publicAddresses, privateAddresses []string, username, pa
 	}
 
 	logFFIDurationLazy("driver.open_addresses", start, func() []any { return []any{"address_count", len(publicAddresses), "result", "ok"} })
-	return newDriver(ptr, opts.MaxNativeTransactions, opts.CloseWorkers), nil
+	return newDriver(ptr, opts.MaxNativeTransactions, opts.CloseWorkers, opts.DropReadClose), nil
 }
 
-func newDriver(ptr unsafe.Pointer, maxNative, closeWorkers int) *Driver {
+func newDriver(ptr unsafe.Pointer, maxNative, closeWorkers int, dropReadClose bool) *Driver {
 	cleanup := newTransactionCleanupTracker()
 	if maxNative == 0 {
 		maxNative = 16
@@ -301,13 +311,14 @@ func newDriver(ptr unsafe.Pointer, maxNative, closeWorkers int) *Driver {
 		}
 	}
 	return &Driver{
-		ptr:          ptr,
-		closeWorker:  newTransactionCloseWorker(cleanup, closeWorkerCount(closeWorkers, maxNative)),
-		cleanup:      cleanup,
-		closedSignal: make(chan struct{}),
-		nativeSlots:  slots,
-		txs:          make(map[uint64]weak.Pointer[Transaction]),
-		leases:       make(map[uint64]*nativeHandleLease),
+		ptr:           ptr,
+		closeWorker:   newTransactionCloseWorker(cleanup, closeWorkerCount(closeWorkers, maxNative)),
+		cleanup:       cleanup,
+		closedSignal:  make(chan struct{}),
+		nativeSlots:   slots,
+		dropReadClose: dropReadClose,
+		txs:           make(map[uint64]weak.Pointer[Transaction]),
+		leases:        make(map[uint64]*nativeHandleLease),
 	}
 }
 

@@ -28,11 +28,12 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// closeSpanTracer records the typedb.tx.close spans. The close workers call
+// closeSpanTracer records the close and drop spans. The close workers call
 // it from other goroutines.
 type closeSpanTracer struct {
 	mu     sync.Mutex
 	inline []bool
+	drops  int
 }
 
 func (c *closeSpanTracer) Start(ctx context.Context, name string) (context.Context, perftrace.SpanRecorder) {
@@ -45,6 +46,12 @@ type closeSpanRecorder struct {
 }
 
 func (r *closeSpanRecorder) SetAttrs(attrs []perftrace.Attr) {
+	if r.name == "typedb.tx.drop" {
+		r.c.mu.Lock()
+		r.c.drops++
+		r.c.mu.Unlock()
+		return
+	}
 	if r.name != "typedb.tx.close" {
 		return
 	}
@@ -72,11 +79,21 @@ func TestTracing_CloseSpans(t *testing.T) {
 	if err := checked.CloseChecked(); err != nil {
 		t.Fatalf("CloseChecked: %v", err)
 	}
-	queued, err := conn.Transaction(name, Read)
+	queued, err := conn.Transaction(name, Write)
 	if err != nil {
 		t.Fatal(err)
 	}
 	queued.Close()
+	dropConn, err := OpenWithOptions(testAddr(), "admin", "password", DriverOptions{DropReadClose: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dropConn.Close()
+	dropped, err := dropConn.Transaction(name, Read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropped.Close()
 	if err := WaitForPendingCloses(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +101,9 @@ func TestTracing_CloseSpans(t *testing.T) {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	if len(rec.inline) != 2 || !rec.inline[0] || rec.inline[1] {
-		t.Fatalf("close spans inline = %v, want [true false] (CloseChecked, then Close)", rec.inline)
+		t.Fatalf("close spans inline = %v, want [true false] (CloseChecked, then a write Close)", rec.inline)
+	}
+	if rec.drops != 1 {
+		t.Fatalf("drop spans = %d, want 1 (a read Close with DropReadClose)", rec.drops)
 	}
 }

@@ -8,6 +8,7 @@
 - Added `DriverOptions.CloseWorkers`. Zero keeps the default of 8. The admission limit (`MaxNativeTransactions`) caps the value. Set it to 1 for the old behavior.
 
 - `InsertMany` now batches rows that have a nil pointer field. The batch query declares the field as an optional variable and inserts it in a `try` block. Before, one nil value made the whole call use one query per row. For 32 rows with a nil value in every second row, the median time decreased from 64.7–200.5 ms to 9.0–10.9 ms.
+- Added `DriverOptions.DropReadClose` (off by default) and `TransactionCleanupStats.ReadDrops`. The option drops read transactions on `Close`, so their admission slots return at once. It helped an idle server and gave no gain on a loaded one, so measure it first.
 
 ### Development
 

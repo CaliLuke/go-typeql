@@ -9,6 +9,11 @@ The fix runs closes on 8 workers. These files do not update `benchmarks/benchmar
 | [suite-span-summary.txt](suite-span-summary.txt) | Time per span name for the full traced integration suite |
 | [close-workers-traced.txt](close-workers-traced.txt) | Four traced pairs, 1 against 8 workers, with span averages |
 | [close-workers-ab.txt](close-workers-ab.txt) | Five untraced pairs of the final code, and three single-caller pairs |
+| [slots-drop-matrix.txt](slots-drop-matrix.txt) | 32 callers: slot limits 16, 32, 64, and the read drop, four rounds at low load |
+| [read-drop-ab.txt](read-drop-ab.txt) | Final code, checked read close against `DropReadClose`, 10 and 32 callers, at a rising load |
+| [read-drop-traced.txt](read-drop-traced.txt) | The same comparison with span averages, at a high load |
+| [query-shapes.txt](query-shapes.txt) | Generated read and insert queries against baseline queries, and the optional `given` check |
+| [insertmany-optional.txt](insertmany-optional.txt) | `InsertMany` with nil optional fields, before and after the change |
 
 Environment:
 
@@ -78,6 +83,65 @@ The default had a higher throughput in all five pairs. The ratio per pair was 1.
 With one caller, the three pairs show no consistent difference.
 One caller rarely has more than one close in the queue, so this result is expected.
 
+## Finding 4: more native-handle slots are not always better
+
+The workload ran with 32 callers, 16 more than the default slot limit.
+At a load average of about 9, four interleaved rounds gave these medians:
+
+| Slot limit | Throughput | p50 | p99 |
+| ---: | ---: | ---: | ---: |
+| 16 (default) | 3,525 ops/s | 7.6 ms | 22.5 ms |
+| 32 | 4,195 ops/s | 6.2 ms | 18.8 ms |
+| 64 | 1,935 ops/s | 13.4 ms | 50.7 ms |
+
+32 slots gave 1.19 times the throughput. 64 slots gave 0.55 times.
+The server becomes slower when it has more live transactions.
+The default stays at 16. The review did not trace the cause of the 64-slot result.
+
+## Finding 5: the generated queries are efficient
+
+In one transaction, a trivial `match` on one IID took 0.42–0.54 ms.
+The generated `GetByIID` fetch took 0.06–0.09 ms more.
+So the round trip, not the query shape, sets the cost of a read.
+A literal insert and a typed-row insert of the same shape differed by 0–18%.
+This difference does not justify a change to `Insert`.
+
+## Finding 6: `InsertMany` did not batch rows with a nil optional field
+
+`InsertMany` sends 32 rows in one typed-row query.
+But one nil pointer field in one row made the complete call fall back to one query for each row.
+The traces showed this: five seed rows, one without `age`, gave five insert queries.
+
+The batch query now declares a pointer field as an optional variable (`$v2: integer?`).
+It inserts that attribute in a `try` block, and a nil value is an `empty` given value.
+The official TypeQL checker accepts the query, and the live server inserts the rows correctly.
+An entity with a nil field has no value for that attribute, as with `Insert`.
+
+For 32 rows with a nil `age` in every second row, three runs of 15 calls gave these medians:
+
+| Run | Before (one query per row) | After (one batch) |
+| ---: | ---: | ---: |
+| 1 | 66.1 ms | 9.0 ms |
+| 2 | 64.7 ms | 10.5 ms |
+| 3 | 200.5 ms | 10.9 ms |
+
+`PutMany` and `UpdateMany` still fall back for nil optional fields.
+For an update, a nil value can mean "delete the value", so these need a separate design.
+
+## Finding 7: dropping read transactions depends on the server load
+
+`DriverOptions.DropReadClose` drops a read transaction in `Close`.
+The driver sends the close without a wait for the server, and the slot returns at once.
+
+- At a load average of about 9, the drop gave 1.18 times the throughput with 16 slots (four rounds).
+- At a load average of 12–74, the 11 recorded pairs gave no gain: the drop was slower in 5, faster in 3, and about equal in 3.
+- The traces show the cost. With the drop, the server-side spans took longer:
+  transaction open 24–31 ms → 26–46 ms, query 25–35 ms → 34–51 ms, commit up to 98 ms.
+  The server has more live transactions, as in the 64-slot run.
+
+The drop removes the bound that the slot limit puts on closes that the server has still to finish.
+Thus, `DropReadClose` is off by default. Measure it on the target server before you use it.
+
 ## Correctness
 
 - `formal/tla/TxHandle.tla` now models two close workers that drain one queue.
@@ -86,6 +150,10 @@ One caller rarely has more than one close in the queue, so this result is expect
   TLC reports that two workers take one job (`Head` of an empty sequence).
   The Go code takes a job with one channel receive (`for job := range w.jobs`).
 - Unit tests pass with `-race`. The full driver and ORM integration suites pass with `-race`.
+- The TLA+ model includes an inline drop as a possible result of every close job.
+  Thus, `DropReadClose` uses a path that the model checks.
+- `TestIntegration_InsertManyNilOptionalFields` inserts 40 people (two batches), with an age for every third one.
+  It reads each person back and checks the name, the email, and the age or its absence.
 
 ## Limits
 

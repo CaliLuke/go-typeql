@@ -153,8 +153,11 @@ type TransactionCleanupStats struct {
 	NativeCompletions  uint64
 	NativeFailures     uint64
 	QueueFullFallbacks uint64
-	QueueWaitTotal     time.Duration
-	NativeCloseTotal   time.Duration
+	// ReadDrops counts read transactions that Close or CloseAsync dropped
+	// without a checked native close (see DriverOptions.DropReadClose).
+	ReadDrops        uint64
+	QueueWaitTotal   time.Duration
+	NativeCloseTotal time.Duration
 }
 
 type transactionCleanupTracker struct {
@@ -206,6 +209,18 @@ func (c *transactionCleanupTracker) dequeued(job transactionCloseJob) {
 	c.mu.Lock()
 	c.stats.Queued--
 	c.stats.QueueWaitTotal += time.Since(job.enqueued)
+	c.mu.Unlock()
+}
+
+// finishDrop records a read transaction dropped without a checked close.
+func (c *transactionCleanupTracker) finishDrop(job transactionCloseJob) {
+	if c == nil || job.cleanupID == 0 {
+		return
+	}
+	c.mu.Lock()
+	delete(c.started, job.cleanupID)
+	c.stats.Pending--
+	c.stats.ReadDrops++
 	c.mu.Unlock()
 }
 
@@ -1361,12 +1376,34 @@ func (t *Transaction) closeAsyncJob(job transactionCloseJob, onDone func(error))
 		}
 		return
 	}
+	if job.txType == Read && t.owner != nil && t.owner.dropReadClose {
+		dropReadTransaction(job)
+		return
+	}
 	if t.closer.enqueue(job) {
 		return
 	}
 
 	C.typedb_transaction_drop(job.ptr)
 	job.cleanup.finish(job, false, nil, 0, true)
+	job.releaseSlot()
+	if job.onDone != nil {
+		job.onDone(nil)
+	}
+}
+
+// dropReadTransaction releases a detached read transaction without a checked
+// close (DriverOptions.DropReadClose). The Rust driver sends the close to the
+// server without waiting, so the admission slot returns at once.
+func dropReadTransaction(job transactionCloseJob) {
+	_, span := perftrace.Start(job.traceCtx, "typedb.tx.drop")
+	if span.Recording() {
+		span.SetAttrs(perftrace.Int("typedb.tx.id", int(job.id)), perftrace.String("db.namespace", job.dbName))
+	}
+	C.typedb_transaction_drop(job.ptr)
+	span.End(nil)
+	logTransactionClose(job, nil)
+	job.cleanup.finishDrop(job)
 	job.releaseSlot()
 	if job.onDone != nil {
 		job.onDone(nil)

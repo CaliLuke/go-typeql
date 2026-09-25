@@ -518,6 +518,7 @@ Two `driver.DriverOptions` fields control the parallelism of one driver:
 | --- | --- | --- |
 | `MaxNativeTransactions` | 16 | Limit for transactions that are open or wait for native cleanup. A new transaction waits for a free slot. Negative disables the limit. |
 | `CloseWorkers` | 8 | Goroutines that run the native closes after `Close`. `MaxNativeTransactions` caps the value. |
+| `DropReadClose` | false | Drop read transactions on `Close` instead of a checked close. The slot returns at once, but the server can then have more live transactions. |
 
 ```go
 drv, err := driver.OpenWithOptions(addr, user, password, driver.DriverOptions{
@@ -532,6 +533,7 @@ drv, err := driver.OpenWithOptions(addr, user, password, driver.DriverOptions{
 - `CloseChecked` waits for the native close and returns its error. It does not use a close worker.
 - Before the process exits, call `driver.WaitForPendingCloses(ctx)` to drain the queued closes.
 - A `gotype.ConnPool` (`NewDatabaseWithPool`) limits concurrency. It does not add throughput: a pool of one runs one transaction at a time. Use it for an intentional cap or for connection isolation.
+- Do not raise `MaxNativeTransactions` or set `DropReadClose` without a measurement. Both can make a loaded server slower: 64 slots gave about half the throughput of 16.
 - Measure before you change the defaults. See `docs/PERFORMANCE_TRACING.md` in the repository for the traced concurrent workload.
 
 ## Database Management

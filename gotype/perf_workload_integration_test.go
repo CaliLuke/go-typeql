@@ -27,7 +27,9 @@ import (
 //
 // PERF_WORKERS (default 10), PERF_OPS (default 1000), and PERF_WRITE_PCT
 // (default 20) change the load. PERF_CLOSE_WORKERS sets
-// driver.DriverOptions.CloseWorkers (default 0, the driver default).
+// driver.DriverOptions.CloseWorkers and PERF_MAX_NATIVE sets
+// driver.DriverOptions.MaxNativeTransactions (default 0 for both, the driver
+// defaults). PERF_DROP_READ_CLOSE=1 sets driver.DriverOptions.DropReadClose.
 func TestPerfWorkload_ConcurrentMixed(t *testing.T) {
 	if os.Getenv("TYPEDB_GO_PERF_WORKLOAD") != "1" {
 		t.Skip("set TYPEDB_GO_PERF_WORKLOAD=1 to run the performance workload")
@@ -36,13 +38,15 @@ func TestPerfWorkload_ConcurrentMixed(t *testing.T) {
 	ops := envInt(t, "PERF_OPS", 1000)
 	writePct := envInt(t, "PERF_WRITE_PCT", 20)
 	closeWorkers := envInt(t, "PERF_CLOSE_WORKERS", 0)
+	maxNative := envInt(t, "PERF_MAX_NATIVE", 0)
+	dropReadClose := os.Getenv("PERF_DROP_READ_CLOSE") == "1"
 	if workers == 0 || ops == 0 {
 		t.Fatal("PERF_WORKERS and PERF_OPS must be positive")
 	}
 
 	// The workload uses its own driver so that PERF_CLOSE_WORKERS applies.
 	base := setupTestDBDefault(t)
-	drv, err := driver.OpenWithOptions(dbAddress(), "admin", "password", driver.DriverOptions{CloseWorkers: closeWorkers})
+	drv, err := driver.OpenWithOptions(dbAddress(), "admin", "password", driver.DriverOptions{CloseWorkers: closeWorkers, MaxNativeTransactions: maxNative, DropReadClose: dropReadClose})
 	if err != nil {
 		t.Fatalf("open workload driver: %v", err)
 	}
@@ -100,7 +104,7 @@ func TestPerfWorkload_ConcurrentMixed(t *testing.T) {
 	all := slices.Concat(latencies...)
 	slices.Sort(all)
 	pct := func(p float64) time.Duration { return all[int(p*float64(len(all)-1))] }
-	t.Logf("workers=%d ops=%d write_pct=%d close_workers=%d failures=%d", workers, ops, writePct, closeWorkers, failures.Load())
+	t.Logf("workers=%d ops=%d write_pct=%d close_workers=%d max_native=%d drop_read_close=%v failures=%d", workers, ops, writePct, closeWorkers, maxNative, dropReadClose, failures.Load())
 	t.Logf("loop=%v throughput=%.0f ops/s drain=%v", loop.Round(time.Millisecond), float64(ops)/loop.Seconds(), drain.Round(time.Millisecond))
 	t.Logf("latency p50=%v p95=%v p99=%v max=%v", pct(0.50).Round(time.Microsecond), pct(0.95).Round(time.Microsecond), pct(0.99).Round(time.Microsecond), all[len(all)-1].Round(time.Microsecond))
 }

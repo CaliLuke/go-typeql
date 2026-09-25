@@ -1,0 +1,8 @@
+# Final code, traced, 32 callers, 2000 ops, span averages in ms. start load: 73.77 52.73 32.99 checked = default; drop = DriverOptions.DropReadClose.
+mode=checked run=1 loop=10.542s throughput=190 ops/s drain=10ms | adm_ms=104.96 commit_ms=36.15 get_ms=167.59 open_ms=29.51 query_ms=25.38 adm_share=63%
+mode=drop run=1 loop=13.635s throughput=147 ops/s drain=0s | adm_ms=108.29 commit_ms=46.36 get_ms=193.06 open_ms=46.42 query_ms=51.3 adm_share=56%
+mode=checked run=2 loop=12.196s throughput=164 ops/s drain=11ms | adm_ms=123.04 commit_ms=32.09 get_ms=199.24 open_ms=30.93 query_ms=34.81 adm_share=62%
+mode=drop run=2 loop=14.827s throughput=135 ops/s drain=0s | adm_ms=118.09 commit_ms=97.79 get_ms=219.5 open_ms=45.09 query_ms=49.44 adm_share=54%
+mode=checked run=3 loop=9.98s throughput=200 ops/s drain=2ms | adm_ms=104.41 commit_ms=24.05 get_ms=159.73 open_ms=23.95 query_ms=26.7 adm_share=65%
+mode=drop run=3 loop=8.616s throughput=232 ops/s drain=0s | adm_ms=68.52 commit_ms=44.24 get_ms=127.93 open_ms=26.23 query_ms=33.66 adm_share=54%
+# end load: 59.53 55.09 37.87

@@ -352,6 +352,17 @@ was 5–15%, and the median throughput increased 2.7 times (see the
 [review evidence](../../benchmarks/reviews/2026-09-25/README.md)). If you want
 the old single-worker behavior, set `CloseWorkers` to 1.
 
+`DriverOptions.DropReadClose` makes `Close` and `CloseAsync` drop read
+transactions. The driver sends the close without a wait for the server, and
+the slot returns at once. `CleanupStats().ReadDrops` counts these drops, and
+`CloseChecked` still runs a checked close. The option is off by default. With
+the drop, the slot limit no longer bounds the closes that the server has still
+to finish. The drop gave 1.18 times the throughput on an idle server. On a
+loaded server it gave no gain, and the server-side open and query times
+increased. Measure it on your own server before you use it. A higher
+`MaxNativeTransactions` has the same risk: 64 slots gave 0.55 times the
+throughput of 16 slots with 32 callers.
+
 ## Database Management
 
 ```go

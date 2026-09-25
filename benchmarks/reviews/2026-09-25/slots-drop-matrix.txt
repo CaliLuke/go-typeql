@@ -1,0 +1,24 @@
+# TestPerfWorkload_ConcurrentMixed, 32 callers, 2000 ops, 20% inserts, untraced, CloseWorkers default
+# config: max_native (0 = default 16); drop = read drop (experiment switch, now DriverOptions.DropReadClose)
+# start 2026-09-25T02:47:38Z load: 7.34 12.42 20.05
+max_native=0 drop=0 run=1 loop=576ms throughput=3471 ops/s drain=1ms latency p50=7.313ms p95=14.447ms p99=40.829ms max=46.938ms 
+max_native=32 drop=0 run=1 loop=481ms throughput=4156 ops/s drain=4ms latency p50=6.033ms p95=15.988ms p99=20.832ms max=29.272ms 
+max_native=64 drop=0 run=1 loop=980ms throughput=2041 ops/s drain=4ms latency p50=12.833ms p95=32.857ms p99=42.235ms max=48.852ms 
+max_native=0 drop=1 run=1 loop=465ms throughput=4305 ops/s drain=0s latency p50=6.432ms p95=11.505ms p99=13.491ms max=17.891ms 
+max_native=32 drop=1 run=1 loop=397ms throughput=5037 ops/s drain=0s latency p50=5.351ms p95=11.78ms p99=13.846ms max=26.789ms 
+max_native=0 drop=0 run=2 loop=559ms throughput=3578 ops/s drain=0s latency p50=7.937ms p95=13.527ms p99=18.364ms max=23.085ms 
+max_native=32 drop=0 run=2 loop=442ms throughput=4520 ops/s drain=1ms latency p50=6.105ms p95=12.392ms p99=14.42ms max=16.412ms 
+max_native=64 drop=0 run=2 loop=1.092s throughput=1831 ops/s drain=4ms latency p50=13.394ms p95=38.257ms p99=59.183ms max=82.926ms 
+max_native=0 drop=1 run=2 loop=476ms throughput=4203 ops/s drain=0s latency p50=6.491ms p95=12.886ms p99=15.921ms max=19.191ms 
+max_native=32 drop=1 run=2 loop=382ms throughput=5231 ops/s drain=0s latency p50=5.102ms p95=11.549ms p99=13.647ms max=20.244ms 
+max_native=0 drop=0 run=3 loop=509ms throughput=3928 ops/s drain=1ms latency p50=6.893ms p95=12.602ms p99=20.644ms max=25.87ms 
+max_native=32 drop=0 run=3 loop=500ms throughput=3997 ops/s drain=1ms latency p50=6.369ms p95=15.836ms p99=37.44ms max=44.457ms 
+max_native=64 drop=0 run=3 loop=981ms throughput=2039 ops/s drain=5ms latency p50=13.345ms p95=31.922ms p99=40.915ms max=56.246ms 
+max_native=0 drop=1 run=3 loop=485ms throughput=4127 ops/s drain=0s latency p50=6.617ms p95=13.843ms p99=16.907ms max=19.697ms 
+max_native=32 drop=1 run=3 loop=438ms throughput=4563 ops/s drain=0s latency p50=5.944ms p95=12.497ms p99=15.095ms max=19.684ms 
+max_native=0 drop=0 run=4 loop=592ms throughput=3380 ops/s drain=1ms latency p50=8.24ms p95=14.984ms p99=24.407ms max=33.543ms 
+max_native=32 drop=0 run=4 loop=472ms throughput=4233 ops/s drain=2ms latency p50=6.464ms p95=14.525ms p99=16.848ms max=26.432ms 
+max_native=64 drop=0 run=4 loop=1.199s throughput=1668 ops/s drain=5ms latency p50=16.049ms p95=39.509ms p99=69.451ms max=110.859ms 
+max_native=0 drop=1 run=4 loop=566ms throughput=3536 ops/s drain=0s latency p50=7.632ms p95=17.683ms p99=32.542ms max=42.958ms 
+max_native=32 drop=1 run=4 loop=437ms throughput=4579 ops/s drain=0s latency p50=5.486ms p95=13.648ms p99=22.779ms max=28.345ms 
+# end load: 9.69 12.29 19.53
