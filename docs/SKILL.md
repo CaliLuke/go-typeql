@@ -7,7 +7,7 @@ description: Use the go-typeql Go ORM for TypeDB 3.x. Covers defining entities, 
 
 go-typeql is a struct-tag driven ORM for TypeDB that provides type-safe abstractions over TypeQL. It wraps the Rust TypeDB driver via CGo FFI, but the ORM packages (`gotype/`, `ast/`, `tqlgen/`) compile and test without CGo.
 
-The driver targets TypeDB server 3.13.6 (`typedb-driver` 3.13.6, `typeql` 3.13.4).
+The driver targets TypeDB server 3.14.0-rc0 (`typedb-driver` 3.14.0-rc0, `typeql` 3.13.4).
 
 Version 3 uses `github.com/CaliLuke/go-typeql/v3`. See [the v3 migration guide](UPGRADING_V3.md) for the import, filter, and `Computed` changes.
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -97,15 +98,17 @@ func benchmarkServerCPU(b *testing.B) uint64 {
 func TestIntegration_MembershipTypedRowsDuplicateSemantics(t *testing.T) {
 	f := liveBenchSetup(t)
 	values := []any{"person-00", "person-00"}
-	rows := membershipInputsForNames("person-00", "person-00")
+	// TypeDB 3.14 coalesces duplicate inputs in this membership match.
 	for _, tc := range []struct {
 		name  string
 		query string
-		rows  bool
-		want  int
+		rows  *given.TypedRows
+		want  []string
 	}{
-		{"expanded", membershipExpandedQuery(values), false, 1},
-		{"typed", membershipGivenQuery, true, 2},
+		{"expanded", membershipExpandedQuery(values), nil, []string{"person-00"}},
+		{"typed", membershipGivenQuery, membershipInputsForNames("person-00", "person-00"), []string{"person-00"}},
+		{"distinct", membershipGivenQuery, membershipInputsForNames("person-00", "person-01"), []string{"person-00", "person-01"}},
+		{"mixed", membershipGivenQuery, membershipInputsForNames("person-00", "person-01", "person-00"), []string{"person-00", "person-01"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tx, err := f.db.GetConn().Transaction(f.dbName, int(ReadTransaction))
@@ -113,8 +116,8 @@ func TestIntegration_MembershipTypedRowsDuplicateSemantics(t *testing.T) {
 				t.Fatal(err)
 			}
 			var result []map[string]any
-			if tc.rows {
-				result, err = tx.(batchInsertTx).QueryWithGivenRows(context.Background(), tc.query, rows)
+			if tc.rows != nil {
+				result, err = tx.(batchInsertTx).QueryWithGivenRows(context.Background(), tc.query, tc.rows)
 			} else {
 				result, err = tx.QueryWithContext(context.Background(), tc.query)
 			}
@@ -122,8 +125,17 @@ func TestIntegration_MembershipTypedRowsDuplicateSemantics(t *testing.T) {
 			if err != nil || closeErr != nil {
 				t.Fatalf("query=%v close=%v", err, closeErr)
 			}
-			if len(result) != tc.want {
-				t.Fatalf("duplicate input returned %d rows, want %d", len(result), tc.want)
+			names := make([]string, 0, len(result))
+			for _, row := range result {
+				name, ok := row["name"].(string)
+				if !ok {
+					t.Fatalf("name = %#v, want string", row["name"])
+				}
+				names = append(names, name)
+			}
+			slices.Sort(names)
+			if !slices.Equal(names, tc.want) {
+				t.Fatalf("membership returned %v, want %v", names, tc.want)
 			}
 		})
 	}

@@ -32,7 +32,7 @@ func TestIntegration_ProjectedEntityAndRoleReads(t *testing.T) {
 	if len(jobs) != 1 || jobs[0].Roles["employee"] == nil || jobs[0].Roles["employer"] == nil {
 		t.Fatalf("wrong projected relation: %+v", jobs)
 	}
-	if jobs[0].Fields["since"].Value != float64(2000) || jobs[0].Roles["employee"].Fields["name"].Value != "person-00" {
+	if jobs[0].Fields["since"].Value != uint64(2000) || jobs[0].Roles["employee"].Fields["name"].Value != "person-00" {
 		t.Fatalf("wrong relation fields: since=%#v (%T), employee=%#v (%T)", jobs[0].Fields["since"].Value, jobs[0].Fields["since"].Value, jobs[0].Roles["employee"].Fields["name"].Value, jobs[0].Roles["employee"].Fields["name"].Value)
 	}
 	if len(jobs[0].Roles["employer"].Fields) != 0 || jobs[0].Roles["employer"].IID == "" {

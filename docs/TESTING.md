@@ -144,6 +144,9 @@ generated TypeQL with the official `typeql-check` CLI from
 make install-typeql-check
 ```
 
+The pinned checker and test server use `3.14.0-rc0` (release candidate).
+After an upgrade, run `make install-typeql-check` again.
+
 **How it works:**
 
 - `internal/typeqlcheck` locates the binary (`$TYPEQL_CHECK` env override → `$PATH` →

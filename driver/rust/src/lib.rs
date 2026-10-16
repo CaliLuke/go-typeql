@@ -235,9 +235,7 @@ impl Serialize for DocumentValue<'_> {
     {
         match self.0 {
             Value::Boolean(value) => serializer.serialize_bool(*value),
-            // Keep the typedb-driver JSON representation, which converts
-            // document integers to JSON numbers before MessagePack encoding.
-            Value::Integer(value) => serializer.serialize_f64(*value as f64),
+            Value::Integer(value) => serializer.serialize_i64(*value),
             Value::Double(value) => serializer.serialize_f64(*value),
             Value::String(value) => serializer.serialize_str(value),
             Value::Decimal(_)
@@ -1786,9 +1784,8 @@ mod tests {
             "redefine employment:old-employee label employee;",
             "redefine employment:employee label old-employee;",
         ] {
-            typeql::parse_query(query).unwrap_or_else(|err| {
-                panic!("TypeQL rejected native rename {query:?}: {err}")
-            });
+            typeql::parse_query(query)
+                .unwrap_or_else(|err| panic!("TypeQL rejected native rename {query:?}: {err}"));
         }
     }
 
@@ -1982,7 +1979,9 @@ mod tests {
         let root = Node::Map(HashMap::from([
             (
                 "integer".to_string(),
-                Node::Leaf(Some(Leaf::Concept(Concept::Value(Value::Integer(42))))),
+                Node::Leaf(Some(Leaf::Concept(Concept::Value(Value::Integer(
+                    9_007_199_254_740_993,
+                ))))),
             ),
             (
                 "datetime".to_string(),

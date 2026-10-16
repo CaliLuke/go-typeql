@@ -9,7 +9,7 @@ name = "typedb_go_ffi"
 crate-type = ["staticlib"]
 
 [dependencies]
-typedb-driver = { version = "3.13.6", features = ["sync"] }
+typedb-driver = { version = "=3.14.0-rc0", features = ["sync"] }
 typeql = "3.13.4"
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }

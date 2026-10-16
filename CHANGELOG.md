@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.2.1-alpha.1 - 2026-10-16
+
+### Dependencies
+
+- Adopted TypeDB server, `typedb-driver`, and `typeql-check` `3.14.0-rc0` (release candidate). The TypeQL grammar crate remains `3.13.4`.
+- Rebuild the FFI library with `make build-rust`. Reinstall the checker with `make install-typeql-check`.
+
+### Fixes
+
+- Fetched integers now retain their exact values across the FFI boundary, including values beyond the exact range of `float64`. Raw result maps now return integer types (`int64` or `uint64`) instead of `float64` for these values. Doubles remain `float64`.
+- Adopted the upstream fix for negative fractional decimals. For example, fetched `-9.59dec` now returns `-9.59dec` instead of `-10.41dec`.
+
+### Compatibility
+
+- Selected-field reads now expose integers as `int64` or `uint64` through `ProjectedField.Value`.
+- On TypeDB `3.14.0-rc0`, the membership query with duplicate `given` names returns one answer per matching person. The integration test covers duplicate, distinct, and mixed inputs.
+
 ## v3.2.0 - 2026-09-24
 
 ### Performance

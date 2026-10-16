@@ -33,7 +33,7 @@ The empty `employer` list requests its IID and type label, with no attributes. A
 
 `ProjectedResult.IID` and `TypeName` identify the concrete TypeDB instance. The type can be a subtype of the registered manager type. Selected attributes must belong to the registered manager or role-player model.
 
-`Fields` contains only requested attributes. A requested but missing scalar has `Present == false` and `Value == nil`. An omitted attribute has no map entry. A requested slice has `Present == true`, even if it is empty. A present value uses the driver's decoded type. For example, an integer can appear as `float64`.
+`Fields` contains only requested attributes. A requested but missing scalar has `Present == false` and `Value == nil`. An omitted attribute has no map entry. A requested slice has `Present == true`, even if it is empty. A present value uses the driver's decoded type. Integers use `int64` or `uint64`, and doubles use `float64`.
 
 The projection result cannot be passed to `Manager.Update`, which accepts a full model pointer. Use a normal full-model read before a full-model update. This prevents omitted attributes from becoming zero-value writes.
 
