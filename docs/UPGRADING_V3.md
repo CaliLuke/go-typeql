@@ -9,7 +9,7 @@ If you use the built-in expressions (`Abs`, `Length`, and the others) or call a 
 1. Update the dependency.
 
    ```bash
-   go get github.com/CaliLuke/go-typeql/v3@v3.2.1-alpha.1
+   go get github.com/CaliLuke/go-typeql/v3@v3.2.1
    ```
 
 2. Replace `/v2` with `/v3` in every import.

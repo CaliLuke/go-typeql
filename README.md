@@ -77,19 +77,18 @@ results, _ := persons.Query().Filter(gotype.Eq("name", "Alice")).Execute(ctx)
 
 ### Install
 
-This version is an alpha release for TypeDB `3.14.0-rc0`.
-The latest stable framework release remains `v3.2.0`.
+The latest stable release is `v3.2.1`, for TypeDB `3.14.2`.
 
 ```bash
-go get github.com/CaliLuke/go-typeql/v3@v3.2.1-alpha.1
+go get github.com/CaliLuke/go-typeql/v3@v3.2.1
 ```
 
 Version 3 uses the `/v3` import path, a sealed `Filter` interface, and typed `Computed` expressions.
 See [Upgrading to v3](docs/UPGRADING_V3.md) for the migration steps. For v1 to v2, see [Upgrading to v2](docs/UPGRADING_V2.md).
 
 The `ast/`, `given/`, `gotype/`, and `tqlgen/` packages work without CGo or a running database.
-The `driver/` package targets TypeDB `3.14.0-rc0` (release candidate).
-It uses the `typedb-driver` `3.14.0-rc0` and `typeql` `3.13.4` Rust crates.
+The `driver/` package targets TypeDB `3.14.2`.
+It uses the `typedb-driver` `3.14.0` and `typeql` `3.14.0` Rust crates.
 The built-in function expressions (`Abs`, `Length`, and the others) emit fully qualified names such as `std::math::abs`. These names need TypeDB server `3.13.6` or later.
 If you use TypeDB `3.10.x`, use go-typeql `v1.10.x`.
 
@@ -113,7 +112,7 @@ Each [release](https://github.com/CaliLuke/go-typeql/releases) includes prebuilt
 platform="$(go env GOOS)-$(go env GOARCH)"
 
 # Download for your platform
-gh release download v3.2.1-alpha.1 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
+gh release download v3.2.1 -p "libtypedb_go_ffi-${platform}.a" -R CaliLuke/go-typeql
 
 # Option A: place in standard lib path, build with typedb_prebuilt tag
 libdir=/usr/local/lib

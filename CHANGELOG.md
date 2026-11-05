@@ -1,5 +1,23 @@
 # Changelog
 
+## v3.2.1 - 2026-11-05
+
+### Dependencies
+
+- Upgraded the test server to TypeDB `3.14.2` and the Rust driver, TypeQL grammar crate, and syntax checker to `3.14.0`.
+- The vendored grammar is unchanged in TypeQL `3.14.0`.
+- Rebuild the FFI library with `make build-rust`. Reinstall the checker with `make install-typeql-check`.
+
+### Fixes
+
+- Fetched integers retain their exact values across the FFI boundary, including values beyond the exact range of `float64`.
+- Fetched negative fractional decimals use the correct sign and magnitude. For example, `-9.59dec` returns `-9.59dec` instead of `-10.41dec`.
+
+### Compatibility
+
+- This stable release includes the fixes from `v3.2.1-alpha.1`. It adds no new Go API.
+- Compared with `v3.2.0`, raw result maps and `ProjectedField.Value` now return integers as `int64` or `uint64`. Doubles remain `float64`.
+
 ## v3.2.1-alpha.1 - 2026-10-16
 
 ### Dependencies

@@ -144,7 +144,8 @@ generated TypeQL with the official `typeql-check` CLI from
 make install-typeql-check
 ```
 
-The pinned checker and test server use `3.14.0-rc0` (release candidate).
+The pinned checker uses `3.14.0`. The test server uses `3.14.2`.
+The checker and server have separate release versions.
 After an upgrade, run `make install-typeql-check` again.
 
 **How it works:**
